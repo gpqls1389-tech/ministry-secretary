@@ -225,3 +225,4 @@ table.t tr.picked td { background:var(--primary-bg); }
 .res-card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
 .res-name { font-weight:700; color:var(--primary-dk); text-decoration:none; } .res-name:hover { text-decoration:underline; }
 .res-host { margin:2px 0 6px; word-break:break-all; } .res-desc { margin:0 0 4px; font-size:.95rem; line-height:1.5; } .res-note { margin:0; }
+.todo.flash { background:var(--bg); outline:2px solid var(--primary); border-radius:10px; } a .sched, a.sched { cursor:pointer; } a.sched:focus-visible { outline:2px solid var(--primary); }
