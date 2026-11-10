@@ -1,6 +1,6 @@
 // 목회 비서 데이터 로직. 브라우저(localStorage)와 Node 테스트 양쪽에서 동작하도록 저장소를 주입받는다.
 import { makeSeed } from './seed.js';
-import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES } from './templates.js';
+import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
 
 export const KEY = 'ministry-secretary:v1';
 export class ValidationError extends Error {}
@@ -29,12 +29,15 @@ export function validateState(j) {
   if (!j.plans || typeof j.plans !== 'object' || Array.isArray(j.plans)) bad('plans');
   if (j.supplies !== undefined && !Array.isArray(j.supplies)) bad('준비물');
   if (j.schedules !== undefined && !Array.isArray(j.schedules)) bad('일정');
+  for (const k of ['visits', 'assets']) if (j[k] !== undefined && !Array.isArray(j[k])) bad(k === 'visits' ? '심방 기록' : '비품');
   if (!Number.isSafeInteger(j.nextId) || j.nextId < 1) bad('nextId');
   const dids = new Set(); for (const d of j.depts) { if (!isId(d.id) || typeof d.name !== 'string') bad('부서'); dids.add(d.id); }
   if (!dids.size) bad('부서 없음');
   const pids = new Set(); for (const p of j.people) { if (!isId(p.id) || typeof p.name !== 'string' || (p.dept_id != null && !dids.has(p.dept_id))) bad('인원'); pids.add(p.id); }
   const eids = new Set(); for (const e of j.events) { if (!isId(e.id) || typeof e.title !== 'string' || !dids.has(e.dept_id) || !isDate(e.start_date) || !isDate(e.end_date)) bad('행사'); eids.add(e.id); }
   const sids = new Set(); for (const s of j.services) { if (!isId(s.id) || typeof s.title !== 'string' || !dids.has(s.dept_id) || !isDate(s.date)) bad('예배'); sids.add(s.id); }
+  for (const v of (j.visits || [])) if (!isId(v.id) || !pids.has(v.person_id) || !isDate(v.date) || typeof v.note !== 'string') bad('심방 기록');
+  for (const a of (j.assets || [])) if (!isId(a.id) || typeof a.name !== 'string' || !dids.has(a.dept_id) || (a.repairs !== undefined && !Array.isArray(a.repairs))) bad('비품');
   for (const s of (j.schedules || [])) if (!isId(s.id) || typeof s.title !== 'string' || !dids.has(s.dept_id) || !isDate(s.date)) bad('일정');
   for (const t of j.tasks) if (!isId(t.id) || !eids.has(t.event_id) || typeof t.title !== 'string') bad('준비 업무');
   for (const p of j.participants) if (!eids.has(p.event_id) || !pids.has(p.person_id) || !['applied', 'attended', 'cancelled'].includes(p.status)) bad('참가');
@@ -48,7 +51,7 @@ export function validateState(j) {
 // 비어 있는 새 데이터(부서만 있음). 새 계정과 ‘실제 데이터로 시작’에서 사용
 export function emptyState(todayStr = kstToday()) {
   const base = makeSeed(todayStr);
-  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [] };
+  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [], visits: [], assets: [] };
 }
 
 export function createStore(storage, today = kstToday) {
@@ -61,7 +64,7 @@ export function createStore(storage, today = kstToday) {
   let recovered = false;
   function load() {
     let raw = null;
-    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; S = j; return S; } } catch {
+    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; S = j; return S; } } catch {
       // 저장된 값이 손상된 경우: 가상 데이터로 덮어쓰기 전에 원본을 따로 남겨 둔다(복구 가능)
       if (raw) { try { storage.setItem(KEY + ':broken', raw); recovered = true; } catch { /* 무시 */ } }
     }
@@ -94,7 +97,7 @@ export function createStore(storage, today = kstToday) {
     importJson(text) {
       let j; try { j = JSON.parse(text); } catch { throw new ValidationError('JSON 형식이 아닙니다.'); }
       validateState(j);
-      j.schedules = j.schedules || []; const before = S; S = j;
+      j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; const before = S; S = j;
       try { save(); } catch (e) { S = before; throw e; }
     },
     markExported() { S.lastExport = new Date().toISOString(); save(); },
@@ -179,6 +182,64 @@ export function createStore(storage, today = kstToday) {
       return { ok, dup, errors };
     },
     addPeopleBulk(list) { for (const p of list) S.people.push({ id: nid(), name: reqText(p.name, '이름'), kind: p.kind, dept_id: p.dept_id, class_name: p.class_name || '', birth_year: p.birth_year || null, status: 'active' }); save(); return list.length; },
+    // 여러 명을 한 번에 이동(className이 비어 있으면 반·조는 그대로)·명단 제외/복귀
+    movePeople(ids, deptId, className) {
+      if (!dept(deptId)) throw new ValidationError('부서를 선택하세요.'); const set = new Set(ids); let n = 0;
+      for (const p of S.people) if (set.has(p.id)) { p.dept_id = deptId; if (className) p.class_name = String(className).trim().slice(0, 30); n++; }
+      if (!n) throw new ValidationError('선택한 사람이 없습니다.'); save(); return n;
+    },
+    setPeopleStatus(ids, status) { if (!['active', 'graduated', 'inactive'].includes(status)) throw new ValidationError('상태 오류'); const set = new Set(ids); let n = 0; for (const p of S.people) if (set.has(p.id)) { p.status = status; n++; } if (!n) throw new ValidationError('선택한 사람이 없습니다.'); save(); return n; },
+
+    // ----- 심방·돌봄 기록 (민감 정보는 적지 않도록 화면에서 안내) -----
+    addVisit(v) {
+      if (!person(Number(v.person_id))) throw new ValidationError('사람을 찾을 수 없습니다.');
+      const note = reqText(v.note, '내용'); if (note.length > 300) throw new ValidationError('내용은 300자 이하로 적어 주세요.');
+      const rec = { person_id: Number(v.person_id), date: reqDate(v.date), type: VISIT_TYPES.includes(v.type) ? v.type : '기타', note, follow_up: v.follow_up ? reqDate(v.follow_up, '다음 연락일') : null };
+      S.visits = S.visits || []; if (v.id) { const x = S.visits.find(a => a.id === v.id); if (!x) throw new ValidationError('기록을 찾을 수 없습니다.'); Object.assign(x, rec); save(); return v.id; }
+      const id = nid(); S.visits.push({ id, ...rec }); save(); return id;
+    },
+    deleteVisit(id) { S.visits = (S.visits || []).filter(v => v.id !== id); save(); },
+    visit: id => (S.visits || []).find(v => v.id === id),
+    visits({ personId, deptId } = {}) {
+      return (S.visits || []).filter(v => (!personId || v.person_id === personId) && (!deptId || (person(v.person_id) || {}).dept_id === deptId)).map(v => ({ ...v, person: person(v.person_id) })).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+    },
+    // 현재 명단의 사람별 마지막 심방일(없으면 null)과 다음 연락 예정일
+    visitSummary(deptId, t = today()) {
+      const last = new Map(), next = new Map(); for (const v of (S.visits || [])) { if (!last.has(v.person_id) || v.date > last.get(v.person_id)) last.set(v.person_id, v.date); if (v.follow_up && v.follow_up >= t && (!next.has(v.person_id) || v.follow_up < next.get(v.person_id))) next.set(v.person_id, v.follow_up); }
+      return S.people.filter(p => p.status === 'active' && (!deptId || p.dept_id === deptId)).map(p => ({ person: p, last: last.get(p.id) || null, next: next.get(p.id) || null, days: last.has(p.id) ? Math.round((Date.parse(t + 'T00:00:00Z') - Date.parse(last.get(p.id) + 'T00:00:00Z')) / 864e5) : null }));
+    },
+
+    // ----- 비품 -----
+    saveAsset(a) {
+      const qty = a.qty === '' || a.qty == null ? 1 : Number(a.qty); if (!Number.isInteger(qty) || qty < 0 || qty > 99999) throw new ValidationError('수량은 0 이상의 정수여야 합니다.');
+      const rec = { dept_id: Number(a.dept_id), name: reqText(a.name, '품목 이름'), category: ASSET_CATEGORIES.includes(a.category) ? a.category : '기타', place: a.place || '', qty, status: ASSET_STATUS.includes(a.status) ? a.status : '사용 중', note: a.note || '' };
+      if (!dept(rec.dept_id)) throw new ValidationError('부서를 선택하세요.'); S.assets = S.assets || [];
+      if (a.id) { const x = S.assets.find(v => v.id === a.id); if (!x) throw new ValidationError('비품을 찾을 수 없습니다.'); Object.assign(x, rec); save(); return a.id; }
+      const id = nid(); S.assets.push({ id, ...rec, repairs: [] }); save(); return id;
+    },
+    asset: id => (S.assets || []).find(a => a.id === id),
+    assets(deptId) { return (S.assets || []).filter(a => !deptId || a.dept_id === deptId).sort((a, b) => a.category.localeCompare(b.category, 'ko') || a.name.localeCompare(b.name, 'ko')); },
+    deleteAsset(id) { S.assets = (S.assets || []).filter(a => a.id !== id); save(); },
+    addRepair(assetId, r) {
+      const a = (S.assets || []).find(v => v.id === assetId); if (!a) throw new ValidationError('비품을 찾을 수 없습니다.');
+      a.repairs = a.repairs || []; a.repairs.push({ id: nid(), date: reqDate(r.date), note: reqText(r.note, '수리 내용'), cost: r.cost === '' || r.cost == null ? 0 : reqMoney(Number(r.cost), '수리비', true) }); save();
+    },
+    deleteRepair(assetId, repairId) { const a = (S.assets || []).find(v => v.id === assetId); if (a) { a.repairs = (a.repairs || []).filter(r => r.id !== repairId); save(); } },
+
+    // ----- 월 결산 보고서 (부서 하나 또는 전체) -----
+    monthlyReport(deptId, year, month) {
+      const mm = String(month).padStart(2, '0'); const rows = api.transactions({ deptId, year, month });
+      const upto = S.transactions.filter(t => !t.voided && (!deptId || t.dept_id === deptId) && t.date.startsWith(String(year)) && t.date.slice(5, 7) <= mm);
+      const sum = (arr, k) => arr.filter(t => t.kind === k).reduce((a, t) => a + t.amount, 0);
+      const cats = new Map(); const get = c => { if (!cats.has(c)) cats.set(c, { category: c, budget: 0, month: 0, ytd: 0 }); return cats.get(c); };
+      for (const b of S.budgets) if (b.year === year && (!deptId || b.dept_id === deptId)) get(b.category).budget += b.amount;
+      for (const t of rows) if (t.kind === 'expense') get(t.category || '(항목 없음)').month += t.amount;
+      for (const t of upto) if (t.kind === 'expense') get(t.category || '(항목 없음)').ytd += t.amount;
+      const exp = rows.filter(t => t.kind === 'expense'); const noRc = exp.filter(t => !t.receipt);
+      return { year, month, deptId, rows, income: sum(rows, 'income'), expense: sum(rows, 'expense'), net: sum(rows, 'income') - sum(rows, 'expense'), ytdExpense: sum(upto, 'expense'),
+        categories: [...cats.values()].map(c => ({ ...c, remaining: c.budget - c.ytd })).sort((a, b) => b.ytd - a.ytd || a.category.localeCompare(b.category, 'ko')),
+        receipts: { with: exp.length - noRc.length, without: noRc.length, withoutAmount: noRc.reduce((a, t) => a + t.amount, 0) } };
+    },
     movePerson(id, deptId, className) { const p = person(id); p.dept_id = deptId; p.class_name = className || ''; save(); },
     setPersonStatus(id, status) { person(id).status = status; save(); }, // 명단 제외 ≠ 기록 삭제
     people({ deptId, status = 'active', className } = {}) {
@@ -188,7 +249,7 @@ export function createStore(storage, today = kstToday) {
         .sort((a, b) => a.class_name.localeCompare(b.class_name, 'ko') || a.name.localeCompare(b.name, 'ko'));
     },
     deletePerson(id) {
-      if (S.attendance.some(a => a.person_id === id) || S.participants.some(a => a.person_id === id)) throw new ValidationError('출석·참가 기록이 있는 사람은 삭제할 수 없습니다. 명단에서 제외하세요.');
+      if (S.attendance.some(a => a.person_id === id) || S.participants.some(a => a.person_id === id) || (S.visits || []).some(v => v.person_id === id)) throw new ValidationError('출석·참가·심방 기록이 있는 사람은 삭제할 수 없습니다. 명단에서 제외하세요.');
       S.people = S.people.filter(p => p.id !== id); save();
     },
 

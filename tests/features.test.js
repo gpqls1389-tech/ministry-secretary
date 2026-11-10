@@ -137,3 +137,68 @@ test('[영수증·상태] 거래의 영수증 번호는 안전한 문자만 허�
   assert.equal((await call(env, 'PUT', '/api/state', { cookie: a, body: { baseVersion: 0, state: JSON.stringify(evil) } })).status, 422);
   evil.transactions[0].receipt = 'a'.repeat(32); assert.equal((await call(env, 'PUT', '/api/state', { cookie: a, body: { baseVersion: 0, state: JSON.stringify(evil) } })).status, 200);
 });
+
+
+// ---------- 심방·일괄 이동·비품·월 결산·안내 문구 ----------
+import { eventNotice, serviceNotice, weekNotice, fmtTimeKo, fmtDateKo } from '../public/js/templates.js';
+
+test('[심방·돌봄] 기록 추가·수정·삭제, 마지막 심방·다음 연락 계산, 기록이 있는 사람은 삭제 불가', () => {
+  const s = mk(); const p = s.addPerson({ name: '가', dept_id: 1 }); const q = s.addPerson({ name: '나', dept_id: 2 });
+  const v = s.addVisit({ person_id: p, date: '2026-10-01', type: '전화', note: '안부 전화', follow_up: '2026-11-20' }); s.addVisit({ person_id: p, date: '2026-10-20', type: '이상한값', note: '문자' });
+  assert.equal(s.visits({ personId: p })[0].type, '기타'); assert.equal(s.visits({ personId: p }).length, 2); assert.equal(s.visits({ deptId: 2 }).length, 0);
+  const sum = s.visitSummary(1, '2026-11-10'); assert.equal(sum.length, 1); assert.equal(sum[0].last, '2026-10-20'); assert.equal(sum[0].days, 21); assert.equal(sum[0].next, '2026-11-20');
+  assert.equal(s.visitSummary(2, '2026-11-10')[0].last, null); assert.equal(s.visitSummary(2, '2026-11-10')[0].days, null);
+  assert.throws(() => s.addVisit({ person_id: 9999, date: '2026-10-01', note: 'x' }), /사람/); assert.throws(() => s.addVisit({ person_id: p, date: '2026-10-01', note: '  ' }), /내용/);
+  assert.throws(() => s.addVisit({ person_id: p, date: '2026-10-01', note: 'a'.repeat(301) }), /300자/); assert.throws(() => s.addVisit({ person_id: p, date: '2026-13-01', note: 'x' }), /날짜/);
+  s.addVisit({ id: v, person_id: p, date: '2026-10-02', type: '심방', note: '수정함' }); assert.equal(s.visit(v).note, '수정함');
+  assert.throws(() => s.deletePerson(p), /심방/); s.deleteVisit(v); assert.equal(s.visits({ personId: p }).length, 1); assert.equal(s.deletePerson(q) === undefined, true);
+  const s2 = createStore(mem(), () => '2026-11-10'); s2.importJson(s.exportJson()); assert.equal(s2.visits({ personId: p }).length, 1); // 백업·복원에 포함
+});
+
+test('[일괄 이동] 선택한 사람만 부서·반을 한 번에 바꾸고, 반을 비우면 그대로 둔다', () => {
+  const s = mk(); const a = s.addPerson({ name: '가', dept_id: 1, class_name: '해님반' }), b = s.addPerson({ name: '나', dept_id: 1, class_name: '달님반' }), c = s.addPerson({ name: '다', dept_id: 1, class_name: '별님반' });
+  assert.equal(s.movePeople([a, b], 2, '1조'), 2); assert.deepEqual([a, b, c].map(i => s.person(i).dept_id), [2, 2, 1]); assert.equal(s.person(a).class_name, '1조'); assert.equal(s.person(c).class_name, '별님반');
+  assert.equal(s.movePeople([a], 1, ''), 1); assert.equal(s.person(a).class_name, '1조'); // 반 비움 → 그대로
+  assert.throws(() => s.movePeople([a], 99, 'x'), /부서/); assert.throws(() => s.movePeople([], 1, 'x'), /선택/); assert.throws(() => s.movePeople([123456], 1, 'x'), /선택/);
+  assert.equal(s.setPeopleStatus([a, b], 'graduated'), 2); assert.equal(s.people({ deptId: 2 }).length, 0); assert.throws(() => s.setPeopleStatus([a], 'weird'), /상태/);
+});
+
+test('[비품] 저장·수정·수리 내역·삭제와 입력 검사', () => {
+  const s = mk(); const id = s.saveAsset({ dept_id: 1, name: '스피커', category: '악기·음향', place: '교육관', qty: '2', status: '사용 중' });
+  assert.equal(s.asset(id).qty, 2); assert.equal(s.asset(id).repairs.length, 0); s.saveAsset({ id, dept_id: 1, name: '스피커', status: '수리 중', category: '엉뚱한값', qty: 1 }); assert.equal(s.asset(id).status, '수리 중'); assert.equal(s.asset(id).category, '기타');
+  s.addRepair(id, { date: '2026-11-01', note: '케이블 교체', cost: '15000' }); s.addRepair(id, { date: '2026-11-05', note: '점검', cost: '' }); assert.equal(s.asset(id).repairs.length, 2); assert.equal(s.asset(id).repairs[1].cost, 0);
+  assert.throws(() => s.addRepair(id, { date: '2026-11-01', note: '', cost: 0 }), /수리 내용/); assert.throws(() => s.addRepair(id, { date: '2026-11-01', note: 'x', cost: -1 }), /수리비/); assert.throws(() => s.addRepair(999, { date: '2026-11-01', note: 'x' }), /찾을 수/);
+  assert.throws(() => s.saveAsset({ dept_id: 1, name: 'x', qty: -1 }), /수량/); assert.throws(() => s.saveAsset({ dept_id: 1, name: ' ' }), /품목/); assert.throws(() => s.saveAsset({ dept_id: 9, name: 'x' }), /부서/);
+  s.deleteRepair(id, s.asset(id).repairs[0].id); assert.equal(s.asset(id).repairs.length, 1); assert.equal(s.assets(2).length, 0); s.deleteAsset(id); assert.equal(s.assets().length, 0);
+  const s2 = mk(); s2.saveAsset({ dept_id: 1, name: '의자' }); const s3 = createStore(mem(), () => '2026-11-10'); s3.importJson(s2.exportJson()); assert.equal(s3.assets().length, 1);
+});
+
+test('[월 결산] 이달·누계·예산 잔액·영수증 유무를 부서별/전체로 계산한다', () => {
+  const s = mk(); s.saveBudget(1, 2026, '교육비', 100000); s.saveBudget(2, 2026, '교육비', 50000);
+  s.addTransaction({ dept_id: 1, date: '2026-10-05', kind: 'expense', amount: 20000, category: '교육비', receipt: 'r1' });
+  s.addTransaction({ dept_id: 1, date: '2026-11-03', kind: 'expense', amount: 30000, category: '교육비' }); s.addTransaction({ dept_id: 1, date: '2026-11-04', kind: 'expense', amount: 5000, category: '', receipt: 'r2' });
+  s.addTransaction({ dept_id: 1, date: '2026-11-06', kind: 'income', amount: 70000, category: '후원' }); s.addTransaction({ dept_id: 2, date: '2026-11-07', kind: 'expense', amount: 10000, category: '교육비' });
+  const v = s.addTransaction({ dept_id: 1, date: '2026-11-08', kind: 'expense', amount: 99999, category: '교육비' }); s.voidTransaction(v); // 취소된 거래는 제외
+  const R = s.monthlyReport(1, 2026, 11); assert.equal(R.expense, 35000); assert.equal(R.income, 70000); assert.equal(R.net, 35000); assert.equal(R.ytdExpense, 55000);
+  const edu = R.categories.find(c => c.category === '교육비'); assert.deepEqual([edu.budget, edu.month, edu.ytd, edu.remaining], [100000, 30000, 50000, 50000]); assert.ok(R.categories.some(c => c.category === '(항목 없음)'));
+  assert.deepEqual(R.receipts, { with: 1, without: 1, withoutAmount: 30000 });
+  const A = s.monthlyReport(null, 2026, 11); assert.equal(A.expense, 45000); assert.equal(A.categories.find(c => c.category === '교육비').budget, 150000); // 전체: 예산 합산
+  assert.equal(s.monthlyReport(1, 2026, 3).expense, 0); assert.equal(s.monthlyReport(1, 2026, 3).rows.length, 0);
+});
+
+test('[안내 문구] 날짜·시간 표기와 행사·예배·주간 안내 문구(개인정보 없음, 빈 항목은 줄 생략)', () => {
+  assert.equal(fmtDateKo('2026-12-20'), '12월 20일(일)'); assert.equal(fmtTimeKo('14:00'), '오후 2시'); assert.equal(fmtTimeKo('11:30'), '오전 11시 30분'); assert.equal(fmtTimeKo('12:00'), '오후 12시'); assert.equal(fmtTimeKo('00:00'), '오전 12시'); assert.equal(fmtTimeKo(''), '');
+  const e = eventNotice({ title: '성탄 발표회', start_date: '2026-12-20', end_date: '2026-12-20', place: '본당', owner: '', note: '' }, { supplies: ['의상', '대본'], church: '', dept: '아동부', contact: '' });
+  assert.equal(e, '[성탄 발표회 안내]\n\n일시: 12월 20일(일)\n장소: 본당\n준비물: 의상, 대본\n\n궁금하신 점은 편하게 문의해 주세요.\n- 아동부 -'); assert.ok(!e.includes('담당'));
+  const m = eventNotice({ title: '수련회', start_date: '2026-08-01', end_date: '2026-08-03', place: '', owner: '', note: '' }); assert.match(m, /8월 1일\(토\) ~ 8월 3일\(월\)/); assert.ok(!m.includes('undefined') && !m.includes('null'));
+  const s = serviceNotice({ title: '어린이 주일예배', date: '2026-11-29', time: '11:00', place: '', scripture: '시편 23:1-6', sermon_title: '' }, { label: '대림절 제1주', church: '(예시)교회', dept: '아동부', contact: '문의처' });
+  assert.match(s, /일시: 11월 29일\(일\) 오전 11시/); assert.match(s, /절기: 대림절 제1주/); assert.match(s, /문의: 문의처/); assert.match(s, /- \(예시\)교회 아동부 -/); assert.ok(!s.includes('장소')); assert.ok(!/\n\n\n/.test(s));
+  assert.match(weekNotice([], {}), /예정된 일정이 없습니다/); assert.match(weekNotice([{ date: '2026-11-29', time: '11:00', title: '주일예배', place: '교육관' }], { dept: '아동부' }), /• 11월 29일\(일\) 오전 11시 주일예배 \(교육관\)/);
+});
+
+test('[서버 저장 검사] 심방·비품 구조가 어긋난 데이터는 422로 거부된다', async () => {
+  const s = mk(); const p = s.addPerson({ name: '가', dept_id: 1 }); s.addVisit({ person_id: p, date: '2026-10-01', note: '안부' }); s.saveAsset({ dept_id: 1, name: '의자' });
+  const env = newEnv(); const a = await signup(env, 'a@church.kr', '1.1.1.1'); const put = j => call(env, 'PUT', '/api/state', { cookie: a, body: { baseVersion: 0, state: JSON.stringify(j) } });
+  const good = JSON.parse(s.exportJson()); const bad1 = JSON.parse(s.exportJson()); bad1.visits[0].person_id = 9999; const bad2 = JSON.parse(s.exportJson()); bad2.assets[0].dept_id = 77; const bad3 = JSON.parse(s.exportJson()); bad3.visits = 'x';
+  for (const b of [bad1, bad2, bad3]) assert.equal((await put(b)).status, 422); assert.equal((await put(good)).status, 200);
+});
