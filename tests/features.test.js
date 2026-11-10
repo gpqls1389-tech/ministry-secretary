@@ -365,3 +365,15 @@ test('가이드 준비 일정 → 준비 업무: 마감일 계산, 중복 건너
   const n = s.applyGuidePrep(id, xs); assert.equal(n, xs.length); assert.equal(s.applyGuidePrep(id, xs), 0);
   const t = s.get().tasks.filter(k => k.event_id === id); assert.ok(t.some(k => k.due === '2026-11-08')); assert.throws(() => s.applyGuidePrep(99999, xs));
 });
+test('목회 브리핑·행사 진행: 기한 지남/오늘/임박 우선순위, 완료·취소·부서 제외, 순서 미입력 예배, 돌봄 건수', () => {
+  const s = mk(); const d1 = s.depts()[0].id, d2 = s.depts()[1].id; const T = '2026-11-10';
+  const a = s.saveEvent({ dept_id: d1, title: '성탄 발표회', type: '절기행사', start_date: '2026-11-20' }); const b = s.saveEvent({ dept_id: d2, title: '청년 수련회', type: '수련회', start_date: '2026-12-30' }); const c = s.saveEvent({ dept_id: d1, title: '취소된 행사', start_date: '2026-11-12', status: 'cancelled' });
+  const mkTask = (ev, title, due, status = 'todo', assignee = '') => { s.get().tasks.push({ id: 9000 + s.get().tasks.length, event_id: ev, title, due, assignee, status }); };
+  mkTask(a, '음향 점검', '2026-11-09'); mkTask(a, '의상 준비', '2026-11-15', 'todo', '김교사'); mkTask(b, '장소 예약', '2026-11-10'); mkTask(c, '무관', '2026-11-01'); mkTask(a, '끝난 일', '2026-11-01', 'done');
+  const p = s.eventProgress(a, T); assert.equal(p.open, 2); assert.equal(p.overdue, 1); assert.equal(p.unassigned, 1); assert.equal(p.next.title, '음향 점검'); assert.equal(p.days, 10);
+  const all = s.briefing(0, T); assert.equal(all[0].title, '성탄 발표회'); assert.equal(all[0].pri, 1); assert.ok(all.find(x => x.title === '청년 수련회' && x.pri === 2)); assert.ok(!all.some(x => x.title === '취소된 행사'));
+  assert.deepEqual(s.briefing(d2, T).map(x => x.title), ['청년 수련회']); assert.ok(s.briefing(d1, T).every(x => x.title !== '청년 수련회'));
+  const k = s.get().tasks.find(x => x.title === '음향 점검'); s.setTaskStatus(k.id, 'done'); assert.ok(!s.briefing(0, T).some(x => x.pri === 1)); // 완료하면 빠진다
+  const sv = s.saveService({ dept_id: d1, title: '주일예배', date: '2026-11-15', kind: 'regular', order_text: '' }); assert.ok(s.briefing(d1, T).some(x => x.kind === 'service' && x.go === `service/${sv}`));
+  s.saveService({ id: sv, dept_id: d1, title: '주일예배', date: '2026-11-15', kind: 'regular', order_text: '1. 입례' }); assert.ok(!s.briefing(d1, T).some(x => x.kind === 'service'));
+});

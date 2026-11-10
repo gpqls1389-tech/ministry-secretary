@@ -127,6 +127,27 @@ export function createStore(storage, today = kstToday) {
       return { today: t, from, to, week: api.calendar(deptId, from, to), tasks, budget: S.depts.filter(d => !deptId || d.id === deptId).map(d => ({ dept: d, ...api.deptSummary(d.id, year) })) };
     },
 
+    // 행사 한 건의 준비 진행: 남은 업무·기한 지남·담당자 미배정 수, 다음 할 일(기한이 가장 이른 미완료 업무), 시작일까지 남은 날
+    eventProgress(eventId, t = today()) {
+      const e = ev(eventId); if (!e) return null; const open = S.tasks.filter(k => k.event_id === eventId && k.status !== 'done').sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999') || a.id - b.id);
+      return { open: open.length, overdue: open.filter(k => k.due && k.due < t).length, today: open.filter(k => k.due === t).length, unassigned: open.filter(k => !k.assignee).length, next: open[0] || null,
+        days: Math.round((Date.parse(e.start_date + 'T00:00:00Z') - Date.parse(t + 'T00:00:00Z')) / 864e5) };
+    },
+    // 홈의 ‘이번 주 목회 브리핑’: 지금 챙길 일을 이유(날짜·상태)와 함께 우선순위 순으로 돌려준다. 완료·취소된 행사와 완료된 업무는 제외하고 부서 선택을 적용한다.
+    briefing(deptId, t = today()) {
+      const cards = []; const plus = n => new Date(Date.parse(t + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10); const wk = plus(7);
+      for (const e of S.events) {
+        if (e.status !== 'planned' || (deptId && e.dept_id !== deptId)) continue; const p = api.eventProgress(e.id, t); if (!p.open) continue;
+        if (p.overdue) cards.push({ pri: 1, kind: 'event', id: e.id, title: e.title, reason: `기한 지난 업무 ${p.overdue}건`, detail: p.next ? `${p.next.title} · 기한 ${p.next.due}` : '', go: `event/${e.id}` });
+        else if (p.today) cards.push({ pri: 2, kind: 'event', id: e.id, title: e.title, reason: `오늘 마감 업무 ${p.today}건`, detail: p.next ? p.next.title : '', go: `event/${e.id}` });
+        else if (p.days >= 0 && p.days <= 14) cards.push({ pri: 3, kind: 'event', id: e.id, title: e.title, reason: `D-${p.days} · 남은 업무 ${p.open}건`, detail: p.next ? `다음: ${p.next.title}${p.next.due ? ' · ' + p.next.due : ''}` : '', go: `event/${e.id}` });
+      }
+      for (const s of S.services) if (s.date >= t && s.date <= wk && (!deptId || s.dept_id === deptId) && !String(s.order_text || '').trim()) cards.push({ pri: 3, kind: 'service', id: s.id, title: s.title, reason: `${s.date} 예배 순서 미입력`, detail: '', go: `service/${s.id}` });
+      const care = (S.visits || []).filter(v => v.follow_up && v.follow_up >= t && v.follow_up <= wk && (!deptId || (person(v.person_id) || {}).dept_id === deptId)).length;
+      if (care) cards.push({ pri: 4, kind: 'care', id: 0, title: '돌봄 연락 예정', reason: `이번 주 ${care}건`, detail: '', go: 'people' });
+      return cards.sort((a, b) => a.pri - b.pri || a.title.localeCompare(b.title, 'ko'));
+    },
+
     // ----- 행사 -----
     saveEvent(e) {
       const rec = { dept_id: Number(e.dept_id), title: reqText(e.title, '행사명'), type: e.type || '행사', start_date: reqDate(e.start_date, '시작일'), end_date: reqDate(e.end_date || e.start_date, '종료일'), place: e.place || '', owner: e.owner || '', target_count: Number(e.target_count || 0), expected_budget: reqMoney(Number(e.expected_budget || 0), '예상 예산', true), note: e.note || '', status: e.status || 'planned' };
