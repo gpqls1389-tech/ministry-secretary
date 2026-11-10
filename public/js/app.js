@@ -207,7 +207,7 @@ const gList = a => a && a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join(
 function guideHtml(key, evId) {
   const g = GUIDES[key] || GUIDES.general; const refs = g.refs.map(u => RESOURCES.find(r => r.url === u)).filter(Boolean);
   const sec = (t, body) => body ? `<h3>${t}</h3>${body}` : '';
-  return `<div class="guidebody">${evId ? `<label class="f noprint">다른 가이드 보기 <select data-guidesel="${evId}">${Object.entries(GUIDES).map(([k, x]) => `<option value="${k}"${k === key ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : ''}${evId ? `<div class="row noprint" style="margin:8px 0"><button class="sm pri" data-act="guidePrep" data-id="${evId}" data-key="${esc(key)}">준비 일정을 준비 업무로 추가</button><span class="mute small">행사 시작일 기준으로 마감일이 계산돼요. 같은 이름은 건너뛰어요.</span></div>` : ''}
+  return `<div class="guidebody">${evId ? `<label class="f noprint">다른 가이드 보기 <select data-guidesel="${evId}">${Object.entries(GUIDES).map(([k, x]) => `<option value="${k}"${k === key ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : ''}${evId ? `<div class="row noprint" style="margin:8px 0"><button class="sm pri" data-act="guidePrep" data-id="${evId}" data-key="${esc(key)}">준비 일정을 준비 업무로 추가</button><button class="sm" data-act="guideFlow" data-id="${evId}" data-key="${esc(key)}">진행 순서를 행사 메모에 넣기</button><button class="sm" data-guidepick="${esc(key)}">인쇄용으로 보기</button></div><p class="mute small noprint" style="margin:0 0 8px">마감일은 행사 시작일 기준으로 계산되고, 같은 이름은 건너뛰어요.</p>` : ''}
   <p>${esc(g.summary)}</p>${sec('준비 일정(예시)', gList(g.prep))}
   ${sec('진행 순서(예시)', `<table class="t"><tbody>${g.flow.map(([t, w]) => `<tr><td style="white-space:nowrap">${esc(t)}</td><td>${esc(w)}</td></tr>`).join('')}</tbody></table>`)}
   ${sec('역할 분담', gList(g.roles))}${sec('진행 팁', gList(g.tips))}${sec('안전·개인정보', gList(g.safety))}${sec('가정 연계', gList(g.family))}${sec('성경·신학 메모', gList(g.theology))}${sec('끝난 뒤 평가 질문', gList(g.review))}
@@ -216,7 +216,7 @@ function guideHtml(key, evId) {
 }
 function vGuides() {
   const key = GUIDES[UI.guide] ? UI.guide : 'christmas';
-  page('🧭', '행사 진행 가이드', '행사 종류마다 준비·진행·안전·가정 연계·평가를 참고하세요.', `<div class="row noprint" style="margin-bottom:12px">${Object.entries(GUIDES).map(([k, x]) => `<button class="${k === key ? 'pri' : ''}" data-guidepick="${k}">${x.ico} ${esc(x.name)}</button>`).join('')}</div>${guideHtml(key, false)}`);
+  page('🧭', '행사 진행 가이드', '행사 종류마다 준비·진행·안전·가정 연계·평가를 참고하세요.', `<div class="row noprint" style="margin-bottom:12px">${Object.entries(GUIDES).map(([k, x]) => `<button class="${k === key ? 'pri' : ''}" data-guidepick="${k}">${x.ico} ${esc(x.name)}</button>`).join('')}<span class="sp"></span><button data-act="printPage">🖨️ 인쇄</button></div>${guideHtml(key, false)}`);
 }
 // 대림절 첫 주일부터 성탄절(12/25)까지 한 화면에 모아 본다.
 function vSeason() {
@@ -538,6 +538,9 @@ const ACT = {
   newSchedule: () => scheduleForm(), editSchedule: d => scheduleForm(store.schedule(Number(d.id))),
   delSchedule: async d => { if (await ask('이 일정을 삭제할까요?', '삭제')) { store.deleteSchedule(Number(d.id)); location.hash = '#plan'; toast('삭제했어요.'); } },
   delSeries: async d => { const id = Number(d.id); const n = store.seriesCount(d.kind, id); if (await ask(`이 날짜부터 같은 반복으로 만든 ${n}개를 모두 삭제할까요?${d.kind === 'service' ? '\n해당 예배의 출석 기록도 함께 지워져요.' : ''}\n되돌릴 수 없어요.`, '삭제')) { store.deleteSeries(d.kind, id); location.hash = d.kind === 'service' ? '#services' : '#plan'; toast('삭제했어요.'); } },
+  printPage: () => window.print(),
+  guideFlow: d => { const e = store.ev(Number(d.id)); const g = GUIDES[d.key]; if (!e || !g) return; const mark = `[진행 순서 예시 · ${g.name}]`; if ((e.note || '').includes(mark)) { toast('이미 메모에 들어 있어요.'); return; }
+    const text = `${mark}\n${g.flow.map(([t, w]) => `${t} ${w}`).join('\n')}`; guard(() => store.saveEvent({ ...e, note: e.note ? `${e.note}\n\n${text}` : text }), '행사 메모에 넣었어요. ‘수정’에서 고칠 수 있어요.'); render(); },
   guidePrep: d => { const key = GUIDES[d.key] ? d.key : 'general'; guard(() => { const n = store.applyGuidePrep(Number(d.id), guideTasks(key)); toast(n ? `준비 업무 ${n}개를 추가했어요. 아래 ‘준비할 일’에서 확인하세요.` : '이미 모두 추가되어 있어요.'); }); render(); },
   newEvent: () => eventForm(), editEvent: d => eventForm(store.ev(Number(d.id))), newService: () => serviceForm(), editService: d => serviceForm(store.service(Number(d.id))), newTx: d => txForm(d.ev ? { event_id: d.ev, dept_id: store.ev(Number(d.ev)).dept_id } : {}),
   voidTx: async d => { if (await ask('이 거래를 취소할까요? 집계에서 제외됩니다.', '거래 취소')) { store.voidTransaction(Number(d.id)); render(); toast('취소했습니다.'); } },
