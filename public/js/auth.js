@@ -13,6 +13,7 @@ async function req(method, path, body) {
 }
 export const accountApi = {
   logout: async () => { try { await req('POST', '/api/logout', {}); } finally { /* 쿠키는 서버가 지움 */ } },
+  logoutAll: () => req('POST', '/api/logout-all', {}),
   changePassword: (current, next) => req('POST', '/api/password', { current, next }),
   deleteAccount: password => req('POST', '/api/delete-account', { password }),
 };
@@ -105,7 +106,7 @@ export async function initAuth() {
   let me; try { me = await req('GET', '/api/me'); } catch (e) { AUTH.reason = e.missing ? 'api-missing' : 'offline'; AUTH.storage = localStorageSafe(); return AUTH; }
   if (!me.configured) { AUTH.reason = 'not-configured'; AUTH.storage = localStorageSafe(); return AUTH; }
   if (!me.user) { await showLogin(me.signup); me = await req('GET', '/api/me'); }
-  AUTH.mode = 'account'; AUTH.user = me.user;
+  AUTH.mode = 'account'; AUTH.user = me.user; AUTH.signup = !!me.signup;
   const st = await req('GET', '/api/state'); AUTH.version = st.version;
   AUTH.storage = makeAdapter(st.state ?? JSON.stringify(emptyState())); // 새 계정은 가상 데이터 없이 빈 상태로 시작
   return AUTH;
