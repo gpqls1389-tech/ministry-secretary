@@ -1,0 +1,146 @@
+// 로그인·사용자별 저장 API (Cloudflare Pages Functions + D1). 웹 표준 API만 사용하므로 Node 테스트에서도 그대로 실행된다.
+import { validateState } from '../../public/js/store.js';
+
+const ITER = 100000;                       // Workers WebCrypto의 PBKDF2 반복 횟수 상한(확인된 값)
+const SESSION_MS = 30 * 24 * 3600e3;       // 세션 30일
+const MAX_STATE = 1_500_000;               // D1 한 줄 2MB 제한보다 작게
+const LOCK_MS = 15 * 60e3;
+const enc = new TextEncoder();
+
+const b64 = u8 => btoa(String.fromCharCode(...u8));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const b64url = u8 => b64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+export async function sha256Hex(s) { const d = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(s))); return [...d].map(x => x.toString(16).padStart(2, '0')).join(''); }
+function same(a, b) { // 상수 시간 비교(길이가 달라도 끝까지 비교)
+  const x = typeof a === 'string' ? enc.encode(a) : a, y = typeof b === 'string' ? enc.encode(b) : b; let r = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) r |= (x[i] || 0) ^ (y[i] || 0); return r === 0;
+}
+async function pbkdf2(pw, salt, iter) {
+  const k = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, k, 256));
+}
+export async function hashPassword(pw) { const salt = crypto.getRandomValues(new Uint8Array(16)); return `pbkdf2-sha256$${ITER}$${b64(salt)}$${b64(await pbkdf2(pw, salt, ITER))}`; }
+export async function verifyPassword(pw, stored) {
+  const [alg, it, salt, hash] = String(stored).split('$'); if (alg !== 'pbkdf2-sha256') return false;
+  return same(b64(await pbkdf2(pw, unb64(salt), Number(it))), hash);
+}
+const DUMMY = 'pbkdf2-sha256$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+
+class HttpError extends Error { constructor(status, msg, extra = {}) { super(msg); this.status = status; this.extra = extra; } }
+const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
+
+function cookieName(secure) { return secure ? '__Host-ms_session' : 'ms_session'; }
+function readCookie(request, name) { const m = (request.headers.get('Cookie') || '').split(/;\s*/).find(c => c.startsWith(name + '=')); return m ? m.slice(name.length + 1) : null; }
+const setCookie = (secure, value, maxAge) => `${cookieName(secure)}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+
+async function body(request, limit = 4096) {
+  const len = Number(request.headers.get('Content-Length') || 0); if (len > limit * 3) throw new HttpError(413, '요청이 너무 큽니다.'); // 한글은 글자당 최대 3바이트
+  const text = await request.text(); if (enc.encode(text).length > limit * 3) throw new HttpError(413, '요청이 너무 큽니다.');
+  try { const j = JSON.parse(text || '{}'); if (!j || typeof j !== 'object' || Array.isArray(j)) throw 0; return j; } catch { throw new HttpError(400, '요청 형식이 올바르지 않습니다.'); }
+}
+
+// ---- 시도 횟수 제한 ----
+async function limited(db, key, max, now) { const r = await db.prepare('SELECT n, reset_at FROM rate WHERE key=?').bind(key).first(); return !!(r && r.reset_at > now && r.n >= max); }
+async function fail(db, key, now, win = LOCK_MS) {
+  await db.prepare('INSERT INTO rate(key,n,reset_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET n = CASE WHEN reset_at <= ? THEN 1 ELSE n+1 END, reset_at = CASE WHEN reset_at <= ? THEN ? ELSE reset_at END').bind(key, now + win, now, now, now + win).run();
+}
+const clear = (db, key) => db.prepare('DELETE FROM rate WHERE key=?').bind(key).run();
+
+async function newSession(db, userId, now) {
+  const token = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  await db.prepare('INSERT INTO sessions(token_hash,user_id,created_at,expires_at) VALUES(?,?,?,?)').bind(await sha256Hex(token), userId, now, now + SESSION_MS).run();
+  await db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now).run(); // 만료된 세션 정리
+  return token;
+}
+async function currentUser(db, request, secure, now) {
+  const t = readCookie(request, cookieName(secure)); if (!t) return null;
+  return db.prepare('SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?').bind(await sha256Hex(t), now).first();
+}
+
+const emailOk = e => typeof e === 'string' && e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+function pwCheck(p) { if (typeof p !== 'string' || p.length < 10) throw new HttpError(400, '비밀번호는 10자 이상이어야 합니다.'); if (p.length > 128) throw new HttpError(400, '비밀번호는 128자 이하여야 합니다.'); }
+
+export async function handle(request, env, now = Date.now()) {
+  const url = new URL(request.url); const path = url.pathname.replace(/\/+$/, '') || '/'; const secure = url.protocol === 'https:'; const method = request.method.toUpperCase();
+  try {
+    if (!path.startsWith('/api/')) throw new HttpError(404, '찾을 수 없습니다.');
+    if (path === '/api/me' && method === 'GET' && !env.DB) return json({ ok: true, configured: false, signup: false, user: null }); // 서버 설정 전: 화면이 로컬 모드로 동작
+    if (!env.DB) throw new HttpError(503, '서버 설정이 끝나지 않았습니다(D1 연결 필요).');
+    const db = env.DB;
+    if (method !== 'GET') { // CSRF 방어: 같은 출처 + JSON 요청만 허용(쿠키는 SameSite=Strict)
+      const origin = request.headers.get('Origin'); if (origin && origin !== url.origin) throw new HttpError(403, '허용되지 않은 요청입니다.');
+      if (!(request.headers.get('Content-Type') || '').includes('application/json')) throw new HttpError(415, 'JSON 요청만 받을 수 있습니다.');
+    }
+    const ip = request.headers.get('CF-Connecting-IP') || 'local';
+
+    if (path === '/api/me' && method === 'GET') { const user = await currentUser(db, request, secure, now); return json({ ok: true, configured: true, signup: !!env.INVITE_CODE, user: user ? { email: user.email, name: user.name } : null }); }
+
+    if (path === '/api/register' && method === 'POST') {
+      if (!env.INVITE_CODE) throw new HttpError(403, '지금은 가입을 받지 않습니다(관리자가 초대 코드를 설정하지 않았습니다).');
+      if (await limited(db, `reg:${ip}`, 10, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
+      const b = await body(request); const email = String(b.email || '').trim().toLowerCase(); const name = String(b.name || '').trim().slice(0, 40);
+      await fail(db, `reg:${ip}`, now, 3600e3); // 가입 시도도 횟수에 포함(성공해도 1시간에 10번까지)
+      if (!same(String(b.invite || ''), env.INVITE_CODE)) throw new HttpError(403, '초대 코드가 맞지 않습니다.');
+      if (!emailOk(email)) throw new HttpError(400, '이메일 형식이 올바르지 않습니다.'); pwCheck(b.password);
+      if (await db.prepare('SELECT 1 x FROM users WHERE email=?').bind(email).first()) throw new HttpError(409, '이미 가입된 이메일입니다.');
+      const id = crypto.randomUUID(); await db.prepare('INSERT INTO users(id,email,name,pw_hash,created_at) VALUES(?,?,?,?,?)').bind(id, email, name, await hashPassword(b.password), now).run();
+      const token = await newSession(db, id, now);
+      return json({ ok: true, user: { email, name } }, 201, { 'Set-Cookie': setCookie(secure, token, SESSION_MS / 1000) });
+    }
+
+    if (path === '/api/login' && method === 'POST') {
+      const b = await body(request); const email = String(b.email || '').trim().toLowerCase().slice(0, 254);
+      if (await limited(db, `le:${email}`, 8, now) || await limited(db, `li:${ip}`, 30, now)) throw new HttpError(429, '로그인 시도가 너무 많습니다. 15분 뒤에 다시 해 주세요.');
+      const u = emailOk(email) ? await db.prepare('SELECT id, email, name, pw_hash FROM users WHERE email=?').bind(email).first() : null;
+      const ok = await verifyPassword(String(b.password || ''), u ? u.pw_hash : DUMMY); // 없는 계정도 같은 계산을 해서 응답 시간 차이를 줄임
+      if (!u || !ok) { await fail(db, `le:${email}`, now); await fail(db, `li:${ip}`, now); throw new HttpError(401, '이메일 또는 비밀번호가 맞지 않습니다.'); }
+      await clear(db, `le:${email}`); const token = await newSession(db, u.id, now);
+      return json({ ok: true, user: { email: u.email, name: u.name } }, 200, { 'Set-Cookie': setCookie(secure, token, SESSION_MS / 1000) });
+    }
+
+    const user = await currentUser(db, request, secure, now);
+    if (path === '/api/logout' && method === 'POST') {
+      const t = readCookie(request, cookieName(secure)); if (t) await db.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await sha256Hex(t)).run();
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
+    }
+    if (!user) throw new HttpError(401, '로그인이 필요합니다.', { code: 'login' });
+
+    if (path === '/api/state' && method === 'GET') { // 항상 '내' 줄만 조회: user_id는 세션에서만 얻는다
+      const r = await db.prepare('SELECT version, state FROM user_state WHERE user_id=?').bind(user.id).first();
+      return json({ ok: true, version: r ? r.version : 0, state: r ? r.state : null });
+    }
+    if (path === '/api/state' && method === 'PUT') {
+      const b = await body(request, MAX_STATE + 2000); if (typeof b.state !== 'string') throw new HttpError(400, '저장할 데이터가 없습니다.');
+      if (enc.encode(b.state).length > MAX_STATE) throw new HttpError(413, '데이터가 너무 커서 저장할 수 없습니다. 오래된 기록을 내보낸 뒤 정리하세요.');
+      let parsed; try { parsed = JSON.parse(b.state); } catch { throw new HttpError(422, '데이터 형식이 올바르지 않습니다.'); }
+      try { validateState(parsed); } catch (e) { throw new HttpError(422, e.message); }
+      const cur = await db.prepare('SELECT version FROM user_state WHERE user_id=?').bind(user.id).first();
+      const base = Number(b.baseVersion || 0);
+      if (!cur) { const r = await db.prepare('INSERT INTO user_state(user_id,version,state,updated_at) VALUES(?,1,?,?) ON CONFLICT(user_id) DO NOTHING').bind(user.id, b.state, now).run(); if (r.meta.changes === 1) return json({ ok: true, version: 1 }); }
+      const latest = await db.prepare('SELECT version FROM user_state WHERE user_id=?').bind(user.id).first();
+      if (!b.force && latest.version !== base) throw new HttpError(409, '다른 기기에서 먼저 저장했습니다.', { version: latest.version });
+      const r = await db.prepare('UPDATE user_state SET version=version+1, state=?, updated_at=? WHERE user_id=? AND version=?').bind(b.state, now, user.id, latest.version).run();
+      if (r.meta.changes !== 1) throw new HttpError(409, '다른 기기에서 먼저 저장했습니다.', { version: latest.version });
+      return json({ ok: true, version: latest.version + 1 });
+    }
+    if (path === '/api/password' && method === 'POST') {
+      const b = await body(request); pwCheck(b.next); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
+      if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
+      if (!(await verifyPassword(String(b.current || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '현재 비밀번호가 맞지 않습니다.'); }
+      await db.prepare('UPDATE users SET pw_hash=? WHERE id=?').bind(await hashPassword(b.next), user.id).run();
+      const keep = await sha256Hex(readCookie(request, cookieName(secure)) || ''); await db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').bind(user.id, keep).run(); // 다른 기기는 로그아웃
+      return json({ ok: true });
+    }
+    if (path === '/api/delete-account' && method === 'POST') {
+      const b = await body(request); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
+      if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
+      if (!(await verifyPassword(String(b.password || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '비밀번호가 맞지 않습니다.'); }
+      await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
+    }
+    throw new HttpError(404, '찾을 수 없습니다.');
+  } catch (e) {
+    if (e instanceof HttpError) return json({ ok: false, error: e.message, ...e.extra }, e.status);
+    return json({ ok: false, error: '서버 오류가 발생했습니다.' }, 500); // 내부 오류 내용은 응답에 싣지 않는다
+  }
+}

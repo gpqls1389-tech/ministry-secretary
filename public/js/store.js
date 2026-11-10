@@ -1,5 +1,6 @@
 // 목회 비서 데이터 로직. 브라우저(localStorage)와 Node 테스트 양쪽에서 동작하도록 저장소를 주입받는다.
 import { makeSeed } from './seed.js';
+import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES } from './templates.js';
 
 export const KEY = 'ministry-secretary:v1';
 export class ValidationError extends Error {}
@@ -19,13 +20,49 @@ export function reqMoney(n, l = '금액', allowZero = false) {
 }
 const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 
+const isId = n => Number.isSafeInteger(n) && n > 0;
+export function validateState(j) {
+  const bad = m => { throw new ValidationError(`이 앱의 백업 파일이 아니거나 내용이 손상되었습니다. (${m})`); };
+  if (!j || typeof j !== 'object' || j.version !== 1) bad('버전');
+  for (const k of ['depts', 'people', 'events', 'tasks', 'participants', 'services', 'attendance', 'budgets', 'transactions', 'seasons']) if (!Array.isArray(j[k])) bad(`${k} 목록 없음`);
+  if (!j.plans || typeof j.plans !== 'object' || Array.isArray(j.plans)) bad('plans');
+  if (j.supplies !== undefined && !Array.isArray(j.supplies)) bad('준비물');
+  if (!Number.isSafeInteger(j.nextId) || j.nextId < 1) bad('nextId');
+  const dids = new Set(); for (const d of j.depts) { if (!isId(d.id) || typeof d.name !== 'string') bad('부서'); dids.add(d.id); }
+  if (!dids.size) bad('부서 없음');
+  const pids = new Set(); for (const p of j.people) { if (!isId(p.id) || typeof p.name !== 'string' || (p.dept_id != null && !dids.has(p.dept_id))) bad('인원'); pids.add(p.id); }
+  const eids = new Set(); for (const e of j.events) { if (!isId(e.id) || typeof e.title !== 'string' || !dids.has(e.dept_id) || !isDate(e.start_date) || !isDate(e.end_date)) bad('행사'); eids.add(e.id); }
+  const sids = new Set(); for (const s of j.services) { if (!isId(s.id) || typeof s.title !== 'string' || !dids.has(s.dept_id) || !isDate(s.date)) bad('예배'); sids.add(s.id); }
+  for (const t of j.tasks) if (!isId(t.id) || !eids.has(t.event_id) || typeof t.title !== 'string') bad('준비 업무');
+  for (const p of j.participants) if (!eids.has(p.event_id) || !pids.has(p.person_id) || !['applied', 'attended', 'cancelled'].includes(p.status)) bad('참가');
+  for (const a of j.attendance) if (!sids.has(a.service_id) || !pids.has(a.person_id)) bad('출석');
+  for (const b of j.budgets) if (!dids.has(b.dept_id) || !Number.isSafeInteger(b.amount) || b.amount < 0) bad('예산');
+  for (const t of j.transactions) if (!isId(t.id) || !dids.has(t.dept_id) || !isDate(t.date) || !['income', 'expense'].includes(t.kind) || !Number.isSafeInteger(t.amount) || t.amount <= 0 || (t.event_id != null && !eids.has(t.event_id))) bad('거래');
+  for (const s of j.seasons) if (!dids.has(s.dept_id) || typeof s.name !== 'string') bad('절기');
+  return j;
+}
+
+// 비어 있는 새 데이터(부서만 있음). 새 계정과 ‘실제 데이터로 시작’에서 사용
+export function emptyState(todayStr = kstToday()) {
+  const base = makeSeed(todayStr);
+  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [] };
+}
+
 export function createStore(storage, today = kstToday) {
   let S = null;
-  const save = () => storage.setItem(KEY, JSON.stringify(S));
+  const save = () => { // 저장이 막히거나 공간이 부족하면 조용히 넘어가지 않고 알린다
+    try { storage.setItem(KEY, JSON.stringify(S)); }
+    catch { throw new ValidationError('저장 공간이 부족하거나 브라우저가 저장을 막아 저장하지 못했습니다. 지금 설정에서 ‘내보내기’로 백업해 두세요.'); }
+  };
   const nid = () => S.nextId++;
+  let recovered = false;
   function load() {
-    try { const raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); if (j && j.version === 1) { S = j; return S; } } } catch { /* 손상 시 새로 시작 */ }
-    S = makeSeed(today()); save(); return S;
+    let raw = null;
+    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); S = j; return S; } } catch {
+      // 저장된 값이 손상된 경우: 가상 데이터로 덮어쓰기 전에 원본을 따로 남겨 둔다(복구 가능)
+      if (raw) { try { storage.setItem(KEY + ':broken', raw); recovered = true; } catch { /* 무시 */ } }
+    }
+    S = makeSeed(today()); try { save(); } catch { /* 저장 불가 환경: 메모리만 사용 */ } return S;
   }
   load();
   const get = () => S;
@@ -34,15 +71,19 @@ export function createStore(storage, today = kstToday) {
   const ev = id => S.events.find(e => e.id === id);
 
   const api = {
-    get, save, KEY,
+    get, save, KEY, wasRecovered: () => recovered,
     resetDemo() { S = makeSeed(today()); save(); },
-    startEmpty() { const base = makeSeed(today()); S = { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [] }; save(); },
+    startEmpty() { S = emptyState(today()); save(); },
     exportJson() { return JSON.stringify(S, null, 1); },
+    // 가져오기: 구조가 하나라도 어긋나면 현재 데이터를 건드리지 않고 거부한다(일부만 반영되는 상황 방지)
     importJson(text) {
       let j; try { j = JSON.parse(text); } catch { throw new ValidationError('JSON 형식이 아닙니다.'); }
-      if (!j || j.version !== 1 || !Array.isArray(j.people) || !Array.isArray(j.events) || !Array.isArray(j.transactions) || !Array.isArray(j.depts)) throw new ValidationError('이 앱의 백업 파일이 아닙니다.');
-      S = j; save();
+      validateState(j);
+      const before = S; S = j;
+      try { save(); } catch (e) { S = before; throw e; }
     },
+    markExported() { S.lastExport = new Date().toISOString(); save(); },
+    daysSinceExport() { return S.lastExport ? Math.floor((Date.now() - Date.parse(S.lastExport)) / 864e5) : null; },
     depts: () => S.depts, dept, person, ev,
 
     // ----- 일정·홈 -----
@@ -70,10 +111,14 @@ export function createStore(storage, today = kstToday) {
     },
     deleteEvent(id) {
       if (S.transactions.some(t => t.event_id === id) || S.participants.some(p => p.event_id === id)) throw new ValidationError('참가자나 거래가 연결된 행사는 삭제할 수 없습니다. 상태를 ‘취소’로 바꾸세요.');
-      S.events = S.events.filter(e => e.id !== id); S.tasks = S.tasks.filter(t => t.event_id !== id); save();
+      S.events = S.events.filter(e => e.id !== id); S.tasks = S.tasks.filter(t => t.event_id !== id); S.supplies = (S.supplies || []).filter(x => x.event_id !== id); save();
     },
     addTask(eventId, title, due, assignee = '') { if (due) reqDate(due, '마감일'); const id = nid(); S.tasks.push({ id, event_id: eventId, title: reqText(title, '업무'), due: due || null, assignee, status: 'todo' }); save(); return id; },
     setTaskStatus(id, status) { S.tasks.find(t => t.id === id).status = status; save(); },
+    supplies: eventId => (S.supplies || []).filter(x => x.event_id === eventId),
+    addSupply(eventId, name) { S.supplies = S.supplies || []; const id = nid(); S.supplies.push({ id, event_id: eventId, name: reqText(name, '준비물'), done: false }); save(); return id; },
+    toggleSupply(id, done) { const x = (S.supplies || []).find(v => v.id === id); if (x) { x.done = !!done; save(); } },
+    deleteSupply(id) { S.supplies = (S.supplies || []).filter(x => x.id !== id); save(); },
     deleteTask(id) { S.tasks = S.tasks.filter(t => t.id !== id); save(); },
     // 참가: 같은 행사에 한 사람은 한 행(중복 없음)
     setParticipant(eventId, personId, status) {
@@ -176,6 +221,49 @@ export function createStore(storage, today = kstToday) {
       if (s.id) Object.assign(S.seasons.find(x => x.id === s.id), rec); else S.seasons.push({ id: nid(), ...rec }); save();
     },
     deleteSeason(id) { S.seasons = S.seasons.filter(s => s.id !== id); save(); },
+
+    // ----- 수정·삭제 보강 -----
+    updatePerson(id, p) {
+      const x = person(id); if (!x) throw new ValidationError('사람을 찾을 수 없습니다.');
+      x.name = reqText(p.name, '이름'); x.kind = ['child', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : x.kind;
+      x.birth_year = p.birth_year ? Number(p.birth_year) : null; x.class_name = p.class_name || ''; if (p.dept_id) x.dept_id = Number(p.dept_id); save();
+    },
+    deleteService(id) { S.attendance = S.attendance.filter(a => a.service_id !== id); S.services = S.services.filter(s => s.id !== id); save(); },
+    updateTransaction(id, t) {
+      const x = S.transactions.find(v => v.id === id); if (!x || x.voided) throw new ValidationError('수정할 수 없는 거래입니다.');
+      const old = { ...x }; const id0 = x.id;
+      S.transactions = S.transactions.filter(v => v.id !== id); // 검증을 새 거래 추가 로직에 맡기고, 실패하면 원래대로 되돌린다
+      try { const nid2 = api.addTransaction(t); const n = S.transactions.find(v => v.id === nid2); n.id = id0; S.nextId--; save(); }
+      catch (e) { S.transactions.push(old); throw e; }
+    },
+
+    // ----- 예시(템플릿) -----
+    // 행사 예시 적용: 준비 업무(마감일은 행사 시작일 기준)와 준비물을 추가. 같은 이름은 건너뛰어 중복되지 않는다.
+    applyEventTemplate(eventId, key) {
+      const tpl = EVENT_TEMPLATES[key]; const e = ev(eventId); if (!tpl || !e) throw new ValidationError('예시를 찾을 수 없습니다.');
+      let tasks = 0, supplies = 0;
+      for (const t of tpl.tasks) if (!S.tasks.some(x => x.event_id === eventId && x.title === t.title)) { S.tasks.push({ id: nid(), event_id: eventId, title: t.title, due: eventTaskDue(e.start_date, t.offset), assignee: t.assignee || '', status: 'todo' }); tasks++; }
+      S.supplies = S.supplies || [];
+      for (const n of tpl.supplies) if (!S.supplies.some(x => x.event_id === eventId && x.name === n)) { S.supplies.push({ id: nid(), event_id: eventId, name: n, done: false }); supplies++; }
+      save(); return { tasks, supplies };
+    },
+    loadSeasonTemplate(deptId, year) {
+      let n = 0; for (const s of seasonTemplates(year)) if (!S.seasons.some(x => x.dept_id === deptId && x.year === year && x.name === s.name)) { S.seasons.push({ id: nid(), dept_id: deptId, year, ...s }); n++; }
+      save(); return n;
+    },
+    loadMonthThemes(deptId, year) { // 비어 있는 달만 채운다
+      const p = api.plan(deptId, year); const themes = { ...p.themes }; let n = 0;
+      MONTH_THEMES.forEach((t, i) => { if (!themes[i + 1]) { themes[i + 1] = t; n++; } });
+      S.plans[`${deptId}-${year}`] = { goal: p.goal, themes }; save(); return n;
+    },
+    // 홈의 시작 체크리스트: 데이터에서 자동으로 완료 여부를 계산
+    guideProgress() {
+      const done = {
+        people: S.people.length > 0, plan: Object.values(S.plans).some(p => p.goal || Object.keys(p.themes || {}).length), event: S.events.length > 0, service: S.services.length > 0,
+        attendance: S.attendance.length > 0, budget: S.budgets.length > 0, backup: !!S.lastExport,
+      };
+      return done;
+    },
   };
   return api;
 }
