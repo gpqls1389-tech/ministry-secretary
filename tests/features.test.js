@@ -269,3 +269,45 @@ test('[PDF 도구·보안 설정] 도구 파일은 있고 라이선스 고지가
   assert.ok(/\/vendor\/\*\s+Cache-Control: public, max-age=31536000, immutable/.test(fs.readFileSync(new URL('_headers', root), 'utf8')));
   assert.ok(!/fetch\(['"]https?:/.test(fs.readFileSync(new URL('js/pdfimport.js', root), 'utf8'))); // PDF 읽기 코드는 외부로 요청하지 않는다
 });
+
+// ---------- 화면별 PDF 읽기 규칙(명단·예산·거래·비품·월별 주제·예배)과 일괄 등록 ----------
+import { amountsOf, parseBudgetLines, parseTxLines, parseThemeLines, parsePeopleLines, parseAssetLines, parseServiceLines, guessAssetCategory } from '../public/js/pdfparsers.js';
+
+test('[PDF·금액] 쉼표·원·만원·천원을 읽고, 작은 숫자와 연도는 금액으로 보지 않는다', () => {
+  assert.deepEqual(amountsOf('간식 45,000원 3천원 150만원').map(a => a.value), [45000, 3000, 1500000]); assert.deepEqual(amountsOf('45000').map(a => a.value), [45000]);
+  assert.deepEqual(amountsOf('2026년 12 3 999 2100'), []); assert.deepEqual(amountsOf('0원'), []);
+});
+
+test('[PDF·예산] 항목과 금액을 읽고 합계 줄·금액 없는 줄은 제외, 금액이 여러 개면 경고', () => {
+  const r = parseBudgetLines(['2026년 아동부 예산', '1. 교육비 | 800,000', '여름성경학교 1,500,000원 1,200,000원', '행사비 150만원', '합계 | 3,500,000', '간식 12', '기타 2026', '소계 100,000']);
+  assert.deepEqual(r.map(x => [x.category, x.amount]), [['교육비', 800000], ['여름성경학교', 1500000], ['행사비', 1500000]]); assert.equal(r[1].warn.length, 1); assert.equal(r[0].warn.length, 0);
+});
+
+test('[PDF·거래] 날짜+적요+금액 줄을 읽고 수입 단어로 구분, 표 머리글·합계 줄 제외, 금액이 여러 개면 경고', () => {
+  const r = parseTxLines(['날짜 | 적요 | 수입 | 지출', '2026.11.03 간식 구입 | 45,000', '11/10 참가비 입금 100,000원', '11월 합계 500,000', '2026-11-12 | 재료비 | 30,000 | 1,200,000', '2026-11-13 금액 없는 줄'], 2026);
+  assert.deepEqual(r.map(x => [x.date, x.memo, x.amount, x.kind]), [['2026-11-03', '간식 구입', 45000, 'expense'], ['2026-11-10', '참가비 입금', 100000, 'income'], ['2026-11-12', '재료비', 30000, 'expense']]); assert.equal(r[2].warn.length, 1);
+});
+
+test('[PDF·월별 주제·명단·비품·예배] 각 모양을 읽는다', () => {
+  assert.deepEqual(parseThemeLines(['1월 새해와 새 마음', '3월 | 고난과 부활', '5월: 가정과 어린이', '12월 25일 성탄 예배', '- 7월 여름성경학교', '13월 오류']).map(x => [x.month, x.theme]), [[1, '새해와 새 마음'], [3, '고난과 부활'], [5, '가정과 어린이'], [7, '여름성경학교']]);
+  assert.equal(parseThemeLines(['3월 가나다', '3월 라마바']).at(-1).warn.length, 1);
+  const p = parsePeopleLines(['이름 | 반 | 출생년도', '1 | 가온 | 해님반 | 2018', '나래 달님반 2016년생', '다온 | 별님반 | 16년생', '김교사 교사 해님반', '이 줄은 아주 긴 문장이라서 명단 줄이 아닙니다 정말로 그렇습니다 하하', '라온']);
+  assert.deepEqual(p.map(x => [x.name, x.class_name, x.birth_year, x.kind]), [['가온', '해님반', '2018', ''], ['나래', '달님반', '2016', ''], ['다온', '별님반', '2016', ''], ['김교사', '해님반', '', 'teacher'], ['라온', '', '', '']]); assert.equal(p[4].warn.length, 1);
+  const a = parseAssetLines(['품목 | 수량 | 장소', '이동식 스피커 | 1 | 교육관', '어린이 의자 30개 교육관 창고', '프로젝터 1대', '합계 | 32', '색연필']);
+  assert.deepEqual(a.map(x => [x.name, x.qty, x.place, x.category]), [['이동식 스피커', 1, '교육관', '악기·음향'], ['어린이 의자', 30, '교육관 창고', '비품·가구'], ['프로젝터', 1, '', '영상·전자기기'], ['색연필', 1, '', '교구·교재']]); assert.equal(a[3].warn.length, 1); assert.equal(guessAssetCategory('아무거나'), '기타');
+  const s = parseServiceLines(['2026년 어린이 예배', '11월', '1일(일) 선한 목자 요한복음 10:11-18', '8일(일) 작은 것의 소중함 마태복음 13:31-32 예배', '15일(일) 시편 23편 감사', '22일(일) 로마서 8장 말씀'], 2026);
+  assert.deepEqual(s.map(x => [x.date, x.title, x.scripture, x.time]), [['2026-11-01', '선한 목자', '요한복음 10:11-18', ''], ['2026-11-08', '작은 것의 소중함 예배', '마태복음 13:31-32', ''], ['2026-11-15', '감사', '시편 23편', ''], ['2026-11-22', '말씀', '로마서 8장', '']]); // 본문 10:11이 시각으로 읽히지 않는다
+});
+
+test('[PDF 일괄 등록] 거래·예산·비품·월별 주제: 중복 건너뛰기, 하나라도 틀리면 전체 취소', () => {
+  const s = mk(); const tx = [{ date: '2026-11-03', kind: 'expense', memo: '간식', amount: 45000, category: '간식·다과' }, { date: '2026-11-10', kind: 'income', memo: '참가비', amount: 100000 }];
+  assert.deepEqual(s.importTransactions(1, tx), { made: 2, skipped: 0 }); assert.deepEqual(s.importTransactions(1, tx), { made: 0, skipped: 2 }); assert.equal(s.transactions({ deptId: 1 }).length, 2); assert.equal(s.deptSummary(1, 2026).expense, 45000);
+  const before = s.exportJson(); for (const bad of [[{ date: 'zzz', kind: 'expense', amount: 1 }], [{ date: '2026-11-03', kind: 'x', amount: 1 }], [{ date: '2026-11-03', kind: 'expense', amount: 0 }], [], [{ date: '2026-11-04', kind: 'expense', amount: 5 }, { date: '2026-11-05', kind: 'expense', amount: -5 }]]) assert.throws(() => s.importTransactions(1, bad)); assert.equal(s.exportJson(), before); assert.throws(() => s.importTransactions(9, tx), /부서/);
+  assert.deepEqual(s.importBudgets(1, 2026, [{ category: '교육비', amount: 800000 }, { category: '행사비', amount: 1500000 }]), { added: 2, updated: 0 }); assert.deepEqual(s.importBudgets(1, 2026, [{ category: '교육비', amount: 900000 }]), { added: 0, updated: 1 }); assert.equal(s.deptSummary(1, 2026).budget, 2400000);
+  assert.throws(() => s.importBudgets(1, 1999, [{ category: 'a', amount: 1 }]), /연도/); assert.throws(() => s.importBudgets(1, 2026, [{ category: ' ', amount: 1 }]), /항목/); assert.throws(() => s.importBudgets(1, 2026, [{ category: 'a', amount: -1 }]), /예산액/);
+  assert.deepEqual(s.importAssets(1, [{ name: '스피커', qty: 1, place: '교육관', category: '악기·음향' }, { name: '의자', qty: '30', place: '창고', category: '엉뚱' }]), { made: 2, skipped: 0 }); assert.deepEqual(s.importAssets(1, [{ name: '스피커', qty: 1, place: '교육관' }]), { made: 0, skipped: 1 }); assert.equal(s.assets(1).find(a => a.name === '의자').category, '기타'); assert.throws(() => s.importAssets(1, [{ name: 'x', qty: -2 }]), /수량/);
+  assert.equal(s.importMonthThemes(1, 2026, { 1: '새해', 3: '고난과 부활' }), 2); assert.equal(s.plan(1, 2026).themes[3], '고난과 부활'); s.savePlan(1, 2026, '목표', { 3: '기존' }); s.importMonthThemes(1, 2026, { 5: '가정' }); assert.equal(s.plan(1, 2026).goal, '목표'); assert.equal(s.plan(1, 2026).themes[3], '기존'); // 목표·다른 달은 그대로
+  assert.throws(() => s.importMonthThemes(1, 2026, { 13: 'x' }), /1~12/); assert.throws(() => s.importMonthThemes(1, 2026, {}), /주제/);
+  const sv = s.importPlanItems([{ kind: 'service', dept_id: 1, title: '주일예배', date: '2026-11-29', time: '11:00', scripture: '요한복음 10:11-18' }]); assert.equal(sv.made.service, 1); assert.equal(s.services(1)[0].scripture, '요한복음 10:11-18');
+  const s2 = createStore(mem(), () => '2026-11-10'); s2.importJson(s.exportJson()); assert.equal(s2.transactions({ deptId: 1 }).length, 2); // 백업·복원 호환
+});
