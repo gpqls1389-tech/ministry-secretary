@@ -82,6 +82,9 @@ export const TIPS = {
   service: ['출석 체크 사용법', '이름을 누르면 바로 저장되며 같은 회차에서 한 사람은 한 번만 집계됩니다. 반 버튼으로 반별로 보고, ‘보이는 인원 전원 출석’ 후 결석자만 해제하면 빠릅니다.'],
   people: ['인원·출석 사용법', '출석부는 최근 정기예배 8회를 사람별로 보여 줍니다(○ 출석, × 결석, 점은 미기록). 졸업·이동한 사람은 ‘명단 제외’를 쓰면 과거 기록이 그대로 남습니다. 연락처·알레르기 같은 민감 정보는 이 앱에 입력하지 마세요. ‘명단’ 탭의 ‘등록 양식 내려받기’로 엑셀 양식을 받아 한꺼번에 등록할 수 있어요.'],
   money: ['회계 사용법', '예산 항목을 먼저 넣고 지출·수입을 등록합니다. 예산 잔액은 ‘예산 − 지출’, 수입·지출 차액은 ‘수입 − 지출’로 서로 다른 값입니다. 행사 지출은 연결한 행사의 결산에도 함께 보입니다. 거래를 등록할 때 영수증 사진을 붙일 수 있어요(개인정보는 가리고 찍으세요).'],
+  assets: ['비품 사용법', '교구·악기·음향 장비·의자처럼 부서에서 쓰는 물품을 적어 두는 곳이에요. 품목을 누르면 수리 내역을 남길 수 있고, 장소·상태로 걸러 볼 수 있어요. 엑셀(CSV)로 내려받거나 인쇄해 점검표로 쓰세요.'],
+  asset: ['비품 상세 사용법', '‘+ 추가’로 수리 내역(날짜·내용·수리비)을 남기세요. 수리비를 회계에도 남기려면 회계에서 지출로 따로 등록하세요.'],
+  report: ['월 결산 보고서 사용법', '월을 고르면 이달 수입·지출, 예산 항목별 집행, 거래 내역이 자동으로 계산돼요. 영수증이 없는 지출은 따로 알려 줘요. 인쇄하거나 ‘PDF로 저장’으로 보관하고, 서명란에 작성·검토·승인을 받으세요.'],
   settings: ['설정 사용법', '데이터는 이 브라우저(이 기기)에만 저장됩니다. 가끔 ‘내보내기’로 파일을 받아 두고, 기기를 바꿀 때 ‘가져오기’로 옮기세요.'],
 };
 
@@ -185,3 +188,30 @@ export function repeatDates(start, rule, until) {
 
 // ===== 일정(교사 기도회·회의 등) =====
 export const SCHEDULE_TYPES = ['교사 기도회', '교사 회의', '부서 회의', '교사 연수', '심방·돌봄', '준비 모임', '기타'];
+
+// ===== 심방·돌봄 기록, 비품 =====
+export const VISIT_TYPES = ['심방', '전화', '문자·메신저', '가정방문', '면담', '기타'];
+export const ASSET_CATEGORIES = ['교구·교재', '악기·음향', '영상·전자기기', '비품·가구', '행사 물품', '기타'];
+export const ASSET_STATUS = ['사용 중', '수리 중', '보관', '폐기'];
+
+// ===== 안내 문구(복사해서 단체방·문자에 붙여넣기) =====
+const WD = ['일', '월', '화', '수', '목', '금', '토'];
+export const fmtDateKo = ds => `${Number(ds.slice(5, 7))}월 ${Number(ds.slice(8, 10))}일(${WD[dow(ds)]})`;
+export function fmtTimeKo(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t || ''); if (!m) return ''; const h = Number(m[1]), mi = Number(m[2]);
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}시${mi ? ` ${mi}분` : ''}`;
+}
+const sign = o => `${o.church ? o.church + ' ' : ''}${o.dept || ''}`.trim();
+const tail = o => [o.contact ? `문의: ${o.contact}` : null, sign(o) ? `- ${sign(o)} -` : null];
+const join = lines => lines.filter(l => l !== null && l !== undefined && l !== false).join('\n').replace(/\n{3,}/g, '\n\n').trim(); // null은 빈 항목(줄 자체 생략), ''는 빈 줄
+export function eventNotice(e, o = {}) {
+  const when = e.end_date && e.end_date !== e.start_date ? `${fmtDateKo(e.start_date)} ~ ${fmtDateKo(e.end_date)}` : fmtDateKo(e.start_date);
+  return join([`[${e.title} 안내]`, '', `일시: ${when}`, e.place ? `장소: ${e.place}` : null, e.owner ? `담당: ${e.owner}` : null, o.supplies && o.supplies.length ? `준비물: ${o.supplies.join(', ')}` : null, e.note ? `안내: ${e.note}` : null, '', '궁금하신 점은 편하게 문의해 주세요.', ...tail(o)]);
+}
+export function serviceNotice(s, o = {}) {
+  return join([`[${s.title} 안내]`, '', `일시: ${fmtDateKo(s.date)}${s.time ? ' ' + fmtTimeKo(s.time) : ''}`, o.label ? `절기: ${o.label}` : null, s.place ? `장소: ${s.place}` : null, s.scripture ? `본문: ${s.scripture}` : null, s.sermon_title ? `말씀: ${s.sermon_title}` : null, '', '함께 예배하며 기쁨을 나누어요.', ...tail(o)]);
+}
+export function weekNotice(items, o = {}) {
+  const rows = items.map(i => `• ${fmtDateKo(i.date)}${i.time ? ' ' + fmtTimeKo(i.time) : ''} ${i.title}${i.place ? ` (${i.place})` : ''}`);
+  return join(['[이번 주 안내]', '', ...(rows.length ? rows : ['이번 주 예정된 일정이 없습니다.']), '', ...tail(o)]);
+}
