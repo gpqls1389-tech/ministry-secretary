@@ -202,3 +202,17 @@ test('[서버 저장 검사] 심방·비품 구조가 어긋난 데이터는 422
   const good = JSON.parse(s.exportJson()); const bad1 = JSON.parse(s.exportJson()); bad1.visits[0].person_id = 9999; const bad2 = JSON.parse(s.exportJson()); bad2.assets[0].dept_id = 77; const bad3 = JSON.parse(s.exportJson()); bad3.visits = 'x';
   for (const b of [bad1, bad2, bad3]) assert.equal((await put(b)).status, 422); assert.equal((await put(good)).status, 200);
 });
+
+test('[모든 기기 로그아웃] 내 세션만 모두 끊기고, 다른 사람 세션과 데이터는 그대로이며, 로그아웃 상태·다른 사이트 요청은 거부된다', async () => {
+  const env = newEnv(); const a1 = await signup(env, 'a@church.kr', '1.1.1.1'); const b = await signup(env, 'b@church.kr', '2.2.2.2');
+  const a2 = (await call(env, 'POST', '/api/login', { body: { email: 'a@church.kr', password: PW }, ip: '3.3.3.3' })).cookie; const a3 = (await call(env, 'POST', '/api/login', { body: { email: 'a@church.kr', password: PW }, ip: '4.4.4.4' })).cookie;
+  const uid = env.DB.raw.prepare("SELECT id FROM users WHERE email='a@church.kr'").get().id; assert.equal(env.DB.raw.prepare('SELECT COUNT(*) c FROM sessions WHERE user_id=?').get(uid).c, 3);
+  assert.equal((await call(env, 'POST', '/api/logout-all', { body: {} })).status, 401); // 로그아웃 상태
+  assert.equal((await call(env, 'POST', '/api/logout-all', { cookie: a1, body: {}, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403); // 다른 사이트에서 온 요청
+  assert.equal((await call(env, 'GET', '/api/me', { cookie: a2 })).json.user.email, 'a@church.kr'); // 거부된 요청은 세션을 끊지 않음
+  const r = await call(env, 'POST', '/api/logout-all', { cookie: a1, body: {} }); assert.equal(r.status, 200); assert.match(r.res.headers.get('Set-Cookie'), /Max-Age=0/);
+  for (const c of [a1, a2, a3]) assert.equal((await call(env, 'GET', '/api/me', { cookie: c })).json.user, null); // 세 기기 모두 로그아웃
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) c FROM sessions WHERE user_id=?').get(uid).c, 0);
+  assert.equal((await call(env, 'GET', '/api/me', { cookie: b })).json.user.email, 'b@church.kr'); // 다른 사람은 그대로
+  assert.equal((await call(env, 'POST', '/api/login', { body: { email: 'a@church.kr', password: PW }, ip: '5.5.5.5' })).status, 200); // 다시 로그인 가능
+});

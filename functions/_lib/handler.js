@@ -131,6 +131,10 @@ export async function handle(request, env, now = Date.now()) {
     }
     if (!user) throw new HttpError(401, '로그인이 필요합니다.', { code: 'login' });
 
+    if (path === '/api/logout-all' && method === 'POST') { // 모든 기기에서 로그아웃: 내 세션을 전부 지운다(이 기기 포함)
+      await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run();
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
+    }
     if (path === '/api/state' && method === 'GET') { // 항상 '내' 줄만 조회: user_id는 세션에서만 얻는다
       const r = await db.prepare('SELECT version, state FROM user_state WHERE user_id=?').bind(user.id).first();
       return json({ ok: true, version: r ? r.version : 0, state: r ? r.state : null });
