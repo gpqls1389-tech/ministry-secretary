@@ -10,6 +10,7 @@ import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
 import { parsePeopleLines, parseBudgetLines, parseTxLines, parseAssetLines, parseThemeLines, parseServiceLines } from './pdfparsers.js';
 import { imgSrc, emptyImgFor, bannerFor } from './images.js';
+import { GUIDES, GUIDE_CHECKED, guideKeyFor } from './guides.js';
 const A = await initAuth(); { const lg = document.getElementById('logo'); if (lg && imgSrc('logo')) lg.src = imgSrc('logo'); } // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
 let store;
 try { store = createStore(A.storage); }
@@ -108,14 +109,14 @@ function openHelp(tab = 'start') {
 // ----- 라우터 -----
 const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['money', '💰', '회계'], ['assets', '🧰', '비품'], ['resources', '📚', '자료실'], ['settings', '⚙️', '설정']];
 function render() {
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' ? 'events' : view === 'service' ? 'services' : view === 'schedule' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' ? 'events' : view === 'service' ? 'services' : view === 'schedule' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name]), ['all', '전체']].map(([v, l]) => `<button data-dept="${v}" class="${UI.dept === v ? 'on' : ''}">${l}</button>`).join('');
   paintAcct();
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : (did() === 1 ? 'kid' : did() === 2 ? 'youth' : 'all'); // 아동부 노랑 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, resources: vResources, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, resources: vResources, guides: vGuides, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -201,10 +202,26 @@ function eventForm(v = {}) {
         note.innerHTML = `<b>자동으로 만들어지는 준비 업무 ${t.tasks.length}개</b> (시작일 기준)<ul>${t.tasks.slice(0, 5).map(x => `<li>${x.offset < 0 ? Math.abs(x.offset) + '일 전' : x.offset + '일 후'} · ${esc(x.title)}</li>`).join('')}</ul>${t.tasks.length > 5 ? `<span class="mute">…외 ${t.tasks.length - 5}개</span>` : ''}<br><span class="mute">이 목록은 예시예요. 만든 뒤 우리 교회에 맞게 고치고 지우세요.</span>`; }; },
     onSubmit: o => { const key = o.tpl; const id = store.saveEvent({ ...v, ...o, dept_id: Number(o.dept_id) }); if (isNew && key) { const r = store.applyEventTemplate(id, key); toast(`준비 업무 ${r.tasks}개, 준비물 ${r.supplies}개를 만들었어요.`); } if (isNew) location.hash = `#event/${id}`; } });
 }
+// ----- 행사 진행 가이드 -----
+const gList = a => a && a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+function guideHtml(key, evId) {
+  const g = GUIDES[key] || GUIDES.general; const refs = g.refs.map(u => RESOURCES.find(r => r.url === u)).filter(Boolean);
+  const sec = (t, body) => body ? `<h3>${t}</h3>${body}` : '';
+  return `<div class="guidebody">${evId ? `<label class="f noprint">다른 가이드 보기 <select data-guidesel="${evId}">${Object.entries(GUIDES).map(([k, x]) => `<option value="${k}"${k === key ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : ''}
+  <p>${esc(g.summary)}</p>${sec('준비 일정(예시)', gList(g.prep))}
+  ${sec('진행 순서(예시)', `<table class="t"><tbody>${g.flow.map(([t, w]) => `<tr><td style="white-space:nowrap">${esc(t)}</td><td>${esc(w)}</td></tr>`).join('')}</tbody></table>`)}
+  ${sec('역할 분담', gList(g.roles))}${sec('진행 팁', gList(g.tips))}${sec('안전·개인정보', gList(g.safety))}${sec('가정 연계', gList(g.family))}${sec('성경·신학 메모', gList(g.theology))}${sec('끝난 뒤 평가 질문', gList(g.review))}
+  ${refs.length ? `<h3>참고 사이트(자료실에서 확인한 곳)</h3><ul>${refs.map(r => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a></li>`).join('')}</ul>` : ''}
+  <div class="callout">${sec('교사가 사용 전에 확인할 점', gList(g.teacherCheck))}<p class="mute small">이 가이드는 일반 원칙을 정리한 예시입니다(확인일 ${GUIDE_CHECKED}). 시간·인원 기준은 우리 교회 상황에 맞게 고치고, 성경 본문은 개역개정으로 직접 확인하세요.</p></div></div>`;
+}
+function vGuides() {
+  const key = GUIDES[UI.guide] ? UI.guide : 'christmas';
+  page('🧭', '행사 진행 가이드', '행사 종류마다 준비·진행·안전·가정 연계·평가를 참고하세요.', `<div class="row noprint" style="margin-bottom:12px">${Object.entries(GUIDES).map(([k, x]) => `<button class="${k === key ? 'pri' : ''}" data-guidepick="${k}">${x.ico} ${esc(x.name)}</button>`).join('')}</div>${guideHtml(key, false)}`);
+}
 function vEvents() {
   const list = store.get().events.filter(e => (!did() || e.dept_id === did()) && e.start_date.startsWith(String(UI.year))).sort((a, b) => a.start_date.localeCompare(b.start_date));
   const others = store.get().events.filter(e => !did() || e.dept_id === did()).length - list.length;
-  page('🎉', '행사', `${yearSel()} <span class="mute small">행사를 누르면 준비 업무·참가·결산을 볼 수 있습니다.</span>`, `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newEvent">+ 새 행사</button><button data-act="pdfEvents">PDF에서 가져오기</button></div>
+  page('🎉', '행사', `${yearSel()} <span class="mute small">행사를 누르면 준비 업무·참가·결산을 볼 수 있습니다.</span>`, `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newEvent">+ 새 행사</button><button data-act="pdfEvents">PDF에서 가져오기</button><button data-go="#guides">🧭 행사 진행 가이드</button></div>
   <div class="tablewrap"><table class="t"><thead><tr><th>일정</th><th>행사</th><th>부서</th><th class="num">목표</th><th class="num">신청</th><th class="num">참석</th><th class="num">지출</th><th>상태</th></tr></thead><tbody>${list.map(e => { const s = store.eventSummary(e.id); return `<tr class="link" data-open="event/${e.id}"><td>${esc(range(md(e.start_date), md(e.end_date)))}</td><td><b>${esc(e.title)}</b><br><span class="mute small">${esc(e.type)}</span></td><td>${deptTag(e.dept_id)}</td><td class="num">${e.target_count || '-'}</td><td class="num">${s.registered}</td><td class="num">${s.attended}</td><td class="num">${won(s.expense)}</td><td>${e.status === 'done' ? '<span class="tag ok">완료</span>' : e.status === 'cancelled' ? '<span class="tag bad">취소</span>' : '<span class="tag">예정</span>'}</td></tr>`; }).join('') || `<tr><td colspan="8">${emptyState(others > 0 ? '이 해에는 행사가 없어요' : '아직 행사가 없어요', others > 0 ? `다른 해에 행사가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예: 여름성경학교, 수련회, 성탄 발표회. ‘새 행사’에서 <b>예시로 시작</b>을 고르면 준비 업무와 마감일이 자동으로 만들어져요.', '<button class="sm pri" data-act="newEvent">+ 새 행사</button>')}</td></tr>`}</tbody></table></div>`);
 }
 function vEvent(id) {
@@ -212,6 +229,7 @@ function vEvent(id) {
   const s = store.eventSummary(id); const tasks = store.get().tasks.filter(t => t.event_id === id); const parts = store.participants(id).sort((a, b) => (a.person.class_name || '').localeCompare(b.person.class_name || '', 'ko')); const tx = store.transactions({ eventId: id });
   page('🎉', e.title, `${deptTag(e.dept_id)} ${esc(e.type)}`, `${(() => { const b = bannerFor(e.type, e.title, e.dept_id); return `<div class="banner${b.src ? ' has-img' : ''}" style="--bn1:${b.c1};--bn2:${b.c2}">${b.src ? `<img src="${b.src}" alt="">` : ''}<span class="em">${b.em}</span><div><b>${esc(e.title)}</b><span class="t">${esc(range(e.start_date, e.end_date))}</span></div></div>`; })()}<div class="row noprint"><button data-go="#events">◀ 목록</button><button data-act="editEvent" data-id="${id}">수정</button><button data-act="applyTpl" data-id="${id}">예시 준비 업무 추가</button><button data-act="notice" data-kind="event" data-id="${id}">안내 문구</button><select data-evstatus="${id}">${[['planned', '예정'], ['done', '완료'], ['cancelled', '취소']].map(([v, l]) => `<option value="${v}"${e.status === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="sp"></span><button class="dng" data-act="delEvent" data-id="${id}">삭제</button></div>
   <dl class="props" style="margin-top:14px"><dt>일정</dt><dd>${esc(range(e.start_date, e.end_date))}</dd><dt>장소</dt><dd>${esc(e.place) || '-'}</dd><dt>담당자</dt><dd>${esc(e.owner) || '-'}</dd><dt>목표 인원</dt><dd>${e.target_count || '-'}명</dd><dt>예상 예산</dt><dd>${won(e.expected_budget)}</dd>${e.note ? `<dt>메모</dt><dd>${esc(e.note)}</dd>` : ''}</dl>
+  ${(() => { const mine = UI.evGuide && UI.evGuide.id === id; const gk = mine ? UI.evGuide.key : guideKeyFor(e); return `<h2>진행 가이드 <span class="mute small">이 행사를 어떻게 진행하면 좋을지 참고하세요</span></h2><details class="guide" ${mine ? 'open' : ''}><summary>${esc(GUIDES[gk].ico)} ${esc(GUIDES[gk].name)} 가이드 펼치기</summary>${guideHtml(gk, id)}</details>`; })()}
   <h2>준비할 일 <button class="sm" data-act="newTask" data-id="${id}">+ 추가</button></h2>${tasks.map(k => `<div class="todo ${k.status === 'done' ? 'done' : ''}"><input type="checkbox" data-task="${k.id}" ${k.status === 'done' ? 'checked' : ''} aria-label="완료"><span class="tt sp">${esc(k.title)} <span class="mute small">${esc(k.assignee)}</span></span>${k.due ? `<span class="tag ${k.status !== 'done' && k.due < today() ? 'bad' : ''}">${md(k.due)}</span>` : ''}<button class="sm ghost" data-act="delTask" data-id="${k.id}" aria-label="삭제">✕</button></div>`).join('') || emptyState('준비 업무가 없어요', '‘+ 추가’로 직접 적거나, 위의 ‘예시 준비 업무 추가’로 이 행사에 맞는 예시를 불러오세요.', '')}
   <h2>준비물 <button class="sm" data-act="newSupply" data-id="${id}">+ 추가</button></h2>${store.supplies(id).map(x => `<div class="todo ${x.done ? 'done' : ''}"><input type="checkbox" data-supply="${x.id}" ${x.done ? 'checked' : ''} aria-label="준비 완료"><span class="tt sp">${esc(x.name)}</span><button class="sm ghost" data-act="delSupply" data-id="${x.id}" aria-label="삭제">✕</button></div>`).join('') || '<p class="mute small">준비물이 없어요. ‘+ 추가’로 적거나 행사 예시를 적용하면 채워져요.</p>'}
   <h2>참가 현황</h2><div class="cols3" style="margin-bottom:12px"><div class="card stat"><div class="v">${s.registered}<span class="mute small"> / 목표 ${e.target_count || '-'}</span></div><div class="l">신청 (취소 제외)</div></div><div class="card stat"><div class="v">${s.attended}</div><div class="l">실제 참석</div></div><div class="card stat"><div class="v">${s.first_time}</div><div class="l">처음 온 사람 · 취소 ${s.cancelled}</div></div></div>
@@ -584,6 +602,7 @@ document.addEventListener('click', e => {
   if ((el = t.closest('[data-pptab]'))) { UI.peopleTab = el.dataset.pptab; render(); return; }
   if ((el = t.closest('[data-month]'))) { UI.month = el.dataset.month; render(); return; }
   if ((el = t.closest('[data-rescat]'))) { UI.resCat = el.dataset.rescat; render(); return; }
+  if ((el = t.closest('[data-guidepick]'))) { if (GUIDES[el.dataset.guidepick]) { UI.guide = el.dataset.guidepick; render(); } return; }
   if ((el = t.closest('[data-cls]'))) { AT.cls = el.dataset.cls; render(); return; }
   if (t.closest('#menu-btn') || t.closest('#scrim')) document.body.classList.toggle('nav-open');
 });
@@ -591,6 +610,7 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.matches('[data-year]')) { UI.year = Number(t.value); render(); }
   else if (t.matches('[data-task]')) { guard(() => store.setTaskStatus(Number(t.dataset.task), t.checked ? 'done' : 'todo')); render(); }
+  else if (t.matches('[data-guidesel]')) { if (GUIDES[t.value]) { UI.evGuide = { id: Number(t.dataset.guidesel), key: t.value }; render(); } }
   else if (t.matches('[data-evstatus]')) { const ev = store.ev(Number(t.dataset.evstatus)); guard(() => store.saveEvent({ ...ev, status: t.value }), '저장했습니다.'); render(); }
   else if (t.matches('[data-pstat]')) { const [a, b] = t.dataset.pstat.split('/').map(Number); guard(() => store.setParticipant(a, b, t.value)); render(); }
   else if (t.matches('[data-att]')) { const [a, b] = t.dataset.att.split('/').map(Number); guard(() => store.setAttendance(a, b, t.checked)); t.closest('label').classList.toggle('on', t.checked); const c = store.attendanceCount(a); const h = $('#main h2 .tag.ok'); if (h) { h.textContent = `출석 ${c.present}명`; h.nextElementSibling.textContent = `기록 ${c.recorded}명`; } }

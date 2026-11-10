@@ -343,3 +343,17 @@ test('[자료실 기본 목록] 모든 주소는 안전한 https 전체 주소�
   assert.ok(RESOURCES.filter(r => r.audience === '아동부' || r.category === '교재·공과').length >= 5); // 아동부 교재 사이트
   assert.ok(RESOURCES.some(r => r.audience === '청년부')); assert.ok(RESOURCES.some(r => r.url.includes('lectionary.kmc.or.kr')));
 });
+test('행사 진행 가이드: 모든 가이드가 필수 항목을 갖고, 참고 주소는 자료실에 있는 것만 쓴다', async () => {
+  const { GUIDES, guideKeyFor, GUIDE_CHECKED } = await import('../public/js/guides.js'); const { RESOURCES } = await import('../public/js/resources.js'); const { EVENT_TEMPLATES } = await import('../public/js/templates.js');
+  assert.match(GUIDE_CHECKED, /^\d{4}-\d{2}-\d{2}$/); const urls = new Set(RESOURCES.map(r => r.url));
+  for (const [k, g] of Object.entries(GUIDES)) {
+    for (const f of ['name', 'ico', 'summary']) assert.ok(typeof g[f] === 'string' && g[f], `${k}.${f}`);
+    for (const f of ['prep', 'flow', 'roles', 'tips', 'safety', 'family', 'review', 'refs', 'teacherCheck']) assert.ok(Array.isArray(g[f]) && g[f].length, `${k}.${f}`);
+    assert.ok(Array.isArray(g.theology), `${k}.theology`); for (const [a, b] of g.flow) assert.ok(a && b, `${k}.flow`);
+    for (const u of g.refs) assert.ok(urls.has(u), `${k} 참고 주소가 자료실에 없음: ${u}`);
+  }
+  for (const k of Object.keys(EVENT_TEMPLATES)) assert.ok(GUIDES[k], `예시 ${k}에 맞는 가이드가 있어야 함`);
+  for (const k of ['christmas', 'advent']) assert.ok(GUIDES[k].theology.length, `${k}: 성경·신학 메모`);
+  assert.equal(guideKeyFor({ type: '절기행사', title: '2026 성탄 발표회' }), 'christmas'); assert.equal(guideKeyFor({ type: '절기행사', title: '대림절 예배' }), 'advent');
+  assert.equal(guideKeyFor({ type: '여름성경학교', title: 'x' }), 'vbs'); assert.equal(guideKeyFor({ type: '수련회', title: 'x' }), 'retreat'); assert.equal(guideKeyFor({ type: '기타', title: 'x' }), 'general');
+});

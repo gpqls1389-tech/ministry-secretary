@@ -121,6 +121,7 @@ table.t tr.link { cursor:pointer; } table.t tr.link:hover td, table.t tbody tr:h
 .tip { background:#fff; border:1px solid var(--line); border-left:3px solid var(--primary); border-radius:10px; padding:14px 18px; margin:0 0 20px; font-size:.92rem; } .tip-h { display:flex; align-items:center; gap:8px; margin-bottom:4px; } .tip p { margin:0 0 10px; color:var(--ink-2); } .tip-min { margin:-12px 0 12px; }
 .guide { margin:20px 0; }
 .empty { text-align:center; padding:28px 20px; background:var(--bg); border-radius:12px; color:var(--mute); } .empty-t { font-size:17px; font-weight:700; color:var(--ink); margin-bottom:6px; } .empty p { margin:0 0 14px; font-size:.93rem; } td > .empty { margin:6px; }
+.guide { background:var(--card,#fff); border:1px solid var(--line,#e5e5e5); border-radius:12px; padding:10px 14px; margin:8px 0 16px; } .guide summary { cursor:pointer; font-weight:600; } .guidebody h3 { margin:16px 0 4px; font-size:15px; } .guidebody ul { margin:4px 0; padding-left:20px; } .guidebody li { margin:2px 0; }
 .hint { display:block; margin-top:4px; font-size:12px; color:var(--faint); } .tplnote { background:var(--bg); border-radius:10px; padding:10px 14px; font-size:13px; color:var(--ink-2); margin:-4px 0 12px; } .tplnote ul { margin:6px 0 0; padding-left:18px; } .tplnote li { margin:1px 0; }
 ol.steps { padding-left:22px; margin:8px 0 0; } ol.steps li { margin-bottom:14px; } ol.steps li.done > b { color:var(--faint); text-decoration:line-through; }
 dl.gl dt { font-weight:700; margin-top:14px; } dl.gl dd { margin:2px 0 0; color:var(--ink-2); }
