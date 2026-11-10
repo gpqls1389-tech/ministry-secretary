@@ -285,7 +285,7 @@ export function createStore(storage, today = kstToday) {
         if (!dept(Number(it.dept_id))) throw new ValidationError(`${n}: 부서를 선택하세요.`);
         const title = reqText(it.title, `${n} 이름`); if (title.length > 80) throw new ValidationError(`${n}: 이름이 너무 길어요.`);
         const date = reqDate(it.date, `${n} 날짜`); const end = it.end ? reqDate(it.end, `${n} 끝 날짜`) : date; if (end < date) throw new ValidationError(`${n}: 끝 날짜가 시작보다 빨라요.`);
-        return { kind, dept_id: Number(it.dept_id), title, date, end, time: /^\d{2}:\d{2}$/.test(it.time || '') ? it.time : '', type: SCHEDULE_TYPES.includes(it.type) ? it.type : '기타' };
+        return { kind, dept_id: Number(it.dept_id), title, date, end, time: /^\d{2}:\d{2}$/.test(it.time || '') ? it.time : '', type: SCHEDULE_TYPES.includes(it.type) ? it.type : '기타', scripture: String(it.scripture || '').slice(0, 60) };
       });
       S.schedules = S.schedules || []; const snap = JSON.stringify(S); const made = { event: 0, schedule: 0, service: 0 }; let skipped = 0;
       try {
@@ -293,7 +293,7 @@ export function createStore(storage, today = kstToday) {
           const dup = r.kind === 'event' ? S.events.some(e => e.dept_id === r.dept_id && e.title === r.title && e.start_date === r.date) : r.kind === 'service' ? S.services.some(e => e.dept_id === r.dept_id && e.title === r.title && e.date === r.date) : S.schedules.some(e => e.dept_id === r.dept_id && e.title === r.title && e.date === r.date);
           if (dup) { skipped++; continue; }
           if (r.kind === 'event') S.events.push({ id: nid(), dept_id: r.dept_id, title: r.title, type: '행사', start_date: r.date, end_date: r.end, place: '', owner: '', target_count: 0, expected_budget: 0, note: '', status: 'planned' });
-          else if (r.kind === 'service') S.services.push({ id: nid(), dept_id: r.dept_id, title: r.title, date: r.date, time: r.time, place: '', scripture: '', sermon_title: '', leader: '', order_text: '', kind: 'regular' });
+          else if (r.kind === 'service') S.services.push({ id: nid(), dept_id: r.dept_id, title: r.title, date: r.date, time: r.time, place: '', scripture: r.scripture, sermon_title: '', leader: '', order_text: '', kind: 'regular' });
           else S.schedules.push({ id: nid(), dept_id: r.dept_id, title: r.title, type: r.type, date: r.date, time: r.time, place: '', note: '' });
           made[r.kind]++;
         }
@@ -301,7 +301,33 @@ export function createStore(storage, today = kstToday) {
       } catch (e) { S = JSON.parse(snap); throw e; }
       return { made, skipped };
     },
-    schedule: id => (S.schedules || []).find(s => s.id === id),
+    // ----- PDF 등에서 가져온 후보를 한 번에 등록하는 함수들(모두: 먼저 전부 검사 → 하나라도 틀리면 아무것도 저장하지 않음) -----
+    importTransactions(deptId, rows) {
+      if (!dept(Number(deptId))) throw new ValidationError('부서를 선택하세요.'); if (!Array.isArray(rows) || !rows.length) throw new ValidationError('등록할 거래가 없어요.'); if (rows.length > 500) throw new ValidationError('한 번에 500개까지 등록할 수 있어요.');
+      const recs = rows.map((r, i) => { const n = `${i + 1}번째 거래`; if (!['income', 'expense'].includes(r.kind)) throw new ValidationError(`${n}: 수입/지출을 고르세요.`); return { dept_id: Number(deptId), date: reqDate(r.date, `${n} 날짜`), kind: r.kind, amount: reqMoney(Number(r.amount), `${n} 금액`), category: String(r.category || '').slice(0, 40), memo: String(r.memo || '').slice(0, 80), event_id: null, receipt: null, voided: false }; });
+      const have = new Set(S.transactions.filter(t => !t.voided).map(t => `${t.dept_id}|${t.date}|${t.kind}|${t.amount}|${t.memo}`)); const snap = JSON.stringify(S); let made = 0, skipped = 0;
+      try { for (const r of recs) { const k = `${r.dept_id}|${r.date}|${r.kind}|${r.amount}|${r.memo}`; if (have.has(k)) { skipped++; continue; } have.add(k); S.transactions.push({ id: nid(), ...r }); made++; } save(); } catch (e) { S = JSON.parse(snap); throw e; }
+      return { made, skipped };
+    },
+    importBudgets(deptId, year, rows) {
+      if (!dept(Number(deptId))) throw new ValidationError('부서를 선택하세요.'); if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new ValidationError('연도가 올바르지 않아요.'); if (!Array.isArray(rows) || !rows.length) throw new ValidationError('등록할 예산 항목이 없어요.');
+      const recs = rows.map((r, i) => ({ category: reqText(r.category, `${i + 1}번째 항목 이름`).slice(0, 40), amount: reqMoney(Number(r.amount), `${i + 1}번째 예산액`, true) })); const snap = JSON.stringify(S); let added = 0, updated = 0;
+      try { for (const r of recs) { const b = S.budgets.find(x => x.dept_id === Number(deptId) && x.year === year && x.category === r.category); if (b) { b.amount = r.amount; updated++; } else { S.budgets.push({ id: nid(), dept_id: Number(deptId), year, category: r.category, amount: r.amount }); added++; } } save(); } catch (e) { S = JSON.parse(snap); throw e; }
+      return { added, updated };
+    },
+    importAssets(deptId, rows) {
+      if (!dept(Number(deptId))) throw new ValidationError('부서를 선택하세요.'); if (!Array.isArray(rows) || !rows.length) throw new ValidationError('등록할 비품이 없어요.'); if (rows.length > 500) throw new ValidationError('한 번에 500개까지 등록할 수 있어요.');
+      S.assets = S.assets || [];
+      const recs = rows.map((a, i) => { const qty = a.qty === '' || a.qty == null ? 1 : Number(a.qty); if (!Number.isInteger(qty) || qty < 0 || qty > 99999) throw new ValidationError(`${i + 1}번째 수량은 0 이상의 정수여야 해요.`); return { dept_id: Number(deptId), name: reqText(a.name, `${i + 1}번째 품목 이름`).slice(0, 40), category: ASSET_CATEGORIES.includes(a.category) ? a.category : '기타', place: String(a.place || '').slice(0, 40), qty, status: '사용 중', note: '' }; });
+      const have = new Set(S.assets.map(a => `${a.dept_id}|${a.name}|${a.place}`)); const snap = JSON.stringify(S); let made = 0, skipped = 0;
+      try { for (const r of recs) { const k = `${r.dept_id}|${r.name}|${r.place}`; if (have.has(k)) { skipped++; continue; } have.add(k); S.assets.push({ id: nid(), ...r, repairs: [] }); made++; } save(); } catch (e) { S = JSON.parse(snap); throw e; }
+      return { made, skipped };
+    },
+    importMonthThemes(deptId, year, themes) { // themes: { 1: '주제', ... } — 선택한 달의 주제를 덮어쓴다
+      if (!dept(Number(deptId))) throw new ValidationError('부서를 선택하세요.'); const ks = Object.keys(themes || {}); if (!ks.length) throw new ValidationError('등록할 주제가 없어요.');
+      const p = api.plan(Number(deptId), year); const next = { ...p.themes }; for (const k of ks) { const m = Number(k); if (!Number.isInteger(m) || m < 1 || m > 12) throw new ValidationError('달은 1~12여야 해요.'); next[m] = reqText(themes[k], `${m}월 주제`).slice(0, 60); }
+      S.plans[`${Number(deptId)}-${year}`] = { goal: p.goal, themes: next }; save(); return ks.length;
+    },    schedule: id => (S.schedules || []).find(s => s.id === id),
     schedules(deptId) { return (S.schedules || []).filter(s => !deptId || s.dept_id === deptId).sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')); },
     deleteSchedule(id) { S.schedules = (S.schedules || []).filter(s => s.id !== id); save(); },
     cloneService(id, newDate) { const s = S.services.find(x => x.id === id); return api.saveService({ ...s, id: undefined, date: newDate }); }, // 순서·담당만 복제, 출석은 복제 안 함
