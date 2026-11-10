@@ -219,3 +219,8 @@ table.t tr.picked td { background:var(--primary-bg); }
 .rc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
 .rc-grid figure { margin:0; border:1px solid var(--line); border-radius:8px; padding:8px; background:#fff; break-inside:avoid; } .rc-grid img { width:100%; height:auto; display:block; border-radius:4px; } .rc-grid figcaption { font-size:12px; color:var(--mute); margin-top:6px; }
 @media print { .pagebreak { break-before:page; } .sign { border-color:#999; } .sign > div { border-color:#999; } .tag { border:1px solid #999; background:none; color:#000; } }
+/* 자료실 */
+.res-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+.res-card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
+.res-name { font-weight:700; color:var(--primary-dk); text-decoration:none; } .res-name:hover { text-decoration:underline; }
+.res-host { margin:2px 0 6px; word-break:break-all; } .res-desc { margin:0 0 4px; font-size:.95rem; line-height:1.5; } .res-note { margin:0; }

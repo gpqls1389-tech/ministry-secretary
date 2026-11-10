@@ -82,6 +82,7 @@ export const TIPS = {
   service: ['출석 체크 사용법', '이름을 누르면 바로 저장되며 같은 회차에서 한 사람은 한 번만 집계됩니다. 반 버튼으로 반별로 보고, ‘보이는 인원 전원 출석’ 후 결석자만 해제하면 빠릅니다.'],
   people: ['인원·출석 사용법', '출석부는 최근 정기예배 8회를 사람별로 보여 줍니다(○ 출석, × 결석, 점은 미기록). 졸업·이동한 사람은 ‘명단 제외’를 쓰면 과거 기록이 그대로 남습니다. 연락처·알레르기 같은 민감 정보는 이 앱에 입력하지 마세요. ‘명단’ 탭의 ‘등록 양식 내려받기’로 엑셀 양식을 받아 한꺼번에 등록할 수 있어요.'],
   money: ['회계 사용법', '예산 항목을 먼저 넣고 지출·수입을 등록합니다. 예산 잔액은 ‘예산 − 지출’, 수입·지출 차액은 ‘수입 − 지출’로 서로 다른 값입니다. 행사 지출은 연결한 행사의 결산에도 함께 보입니다. 거래를 등록할 때 영수증 사진을 붙일 수 있어요(개인정보는 가리고 찍으세요).'],
+  resources: ['자료실 사용법', '부서에 맞는 교재·교단·성경·행정·저작권·안전 사이트를 구분별로 모았어요. 위의 부서 버튼에 따라 그 부서에 필요한 사이트가 보여요. 자주 쓰는 사이트는 ‘+ 내 사이트 추가’로 직접 넣을 수 있어요(이 계정에만 저장).'],
   assets: ['비품 사용법', '교구·악기·음향 장비·의자처럼 부서에서 쓰는 물품을 적어 두는 곳이에요. 품목을 누르면 수리 내역을 남길 수 있고, 장소·상태로 걸러 볼 수 있어요. 엑셀(CSV)로 내려받거나 인쇄해 점검표로 쓰세요.'],
   asset: ['비품 상세 사용법', '‘+ 추가’로 수리 내역(날짜·내용·수리비)을 남기세요. 수리비를 회계에도 남기려면 회계에서 지출로 따로 등록하세요.'],
   report: ['월 결산 보고서 사용법', '월을 고르면 이달 수입·지출, 예산 항목별 집행, 거래 내역이 자동으로 계산돼요. 영수증이 없는 지출은 따로 알려 줘요. 인쇄하거나 ‘PDF로 저장’으로 보관하고, 서명란에 작성·검토·승인을 받으세요.'],
@@ -118,52 +119,58 @@ export const LITURGICAL_COLORS = COLOR;
 export function churchInfo(ds) {
   const y = Number(ds.slice(0, 4)); const mm = ds.slice(5, 10);
   const mk = (season, label, color, week = 0) => ({ season, label, color, colorHex: COLOR[color], week });
+  // 성탄절기: 감리회 성서일과는 성탄절(12/24~25) 뒤의 주일을 ‘성탄 후 제N주’(성탄일 다음 첫 주일이 제1주)로 센다.
+  const xmasInfo = xmas => {
+    if (ds === xmas) return mk('성탄절', '성탄절(성탄일)', '흰색', 1);
+    const first = sundayAfter(xmas); if (ds < first) return mk('성탄절', '성탄절기', '흰색');
+    const w = Math.floor(dayDiff(ds, first) / 7) + 1; return mk('성탄절', `성탄 후 제${w}주`, '흰색', w);
+  };
   let info;
-  if (mm <= '01-05') { // 지난해 성탄절기에 속하는 1/1~1/5
-    const w = Math.floor(dayDiff(ds, sundayOnOrBefore(ymd(y - 1, 12, 25))) / 7) + 1; info = mk('성탄절', `성탄절 제${w}주`, '흰색', w);
-  } else {
+  if (mm <= '01-05') info = xmasInfo(ymd(y - 1, 12, 25)); // 지난해 성탄절기에 속하는 1/1~1/5
+  else {
     const E = easterDate(y), advent = adventStart(y), xmas = ymd(y, 12, 25), ash = addDaysStr(E, -46);
-    if (ds >= xmas) { const w = Math.floor(dayDiff(ds, sundayOnOrBefore(xmas)) / 7) + 1; info = ds === xmas ? mk('성탄절', '성탄절(성탄일)', '흰색', 1) : mk('성탄절', `성탄절 제${w}주`, '흰색', w); }
+    if (ds >= xmas) info = xmasInfo(xmas);
+    else if (ds === ymd(y, 12, 24) && dow(ds) !== 0) info = mk('성탄절', '성탄 전야(성탄절)', '흰색');
     else if (ds >= advent) { const w = Math.floor(dayDiff(ds, advent) / 7) + 1; info = mk('대림절', `대림절 제${w}주`, '보라', w); }
     else if (ds >= addDaysStr(E, 49)) { // 성령강림절 이후
       const trinity = addDaysStr(E, 56); const king = addDaysStr(advent, -7);
       if (ds === addDaysStr(E, 49)) info = mk('성령강림절', '성령강림절(성령강림주일)', '빨강');
       else if (ds < trinity) info = mk('성령강림절', '성령강림절', '빨강');
-      else if (ds >= king) info = mk('성령강림 후', '왕이신 그리스도 주일', '흰색', Math.floor(dayDiff(ds, trinity) / 7) + 1);
-      else { const w = Math.floor(dayDiff(ds, trinity) / 7) + 1; info = mk('성령강림 후', `성령강림 후 제${w}주${ds === trinity ? ' (삼위일체주일)' : ''}`, '초록', w); }
+      else if (ds >= king) info = mk('성령강림 후', '왕국주일(왕이신 그리스도 주일)', '흰색', Math.floor(dayDiff(ds, trinity) / 7) + 1);
+      else { const w = Math.floor(dayDiff(ds, trinity) / 7) + 1; info = mk('성령강림 후', `성령강림 후 제${w}주${ds === trinity ? ' (삼위일체주일)' : ''}`, ds === trinity ? '흰색' : '초록', w); }
     }
-    else if (ds >= E) { const w = Math.floor(dayDiff(ds, E) / 7) + 1; info = mk('부활절', ds === E ? '부활절(부활주일)' : `부활절 제${w}주`, '흰색', w); }
+    else if (ds >= E) { const w = Math.floor(dayDiff(ds, E) / 7) + 1; info = ds === addDaysStr(E, 39) ? mk('부활절', '주의 승천일', '흰색') : mk('부활절', ds === E ? '부활절(부활주일)' : `부활절 제${w}주`, '흰색', w); }
     else if (ds >= ash) {
       const first = addDaysStr(E, -42); const palm = addDaysStr(E, -7);
-      if (ds >= palm) info = mk('사순절', ds === palm ? '종려주일(고난주간 시작)' : ds === addDaysStr(E, -3) ? '고난주간(성목요일)' : ds === addDaysStr(E, -2) ? '고난주간(성금요일)' : '고난주간', '보라', 6);
-      else if (ds < first) info = mk('사순절', ds === ash ? '사순절 시작(재의 수요일)' : '사순절', '보라');
+      if (ds >= palm) info = mk('사순절', ds === palm ? '종려주일(고난주일)' : ds === addDaysStr(E, -3) ? '고난주간(성목요일)' : ds === addDaysStr(E, -2) ? '고난주간(성금요일)' : '고난주간', '보라', 6);
+      else if (ds < first) info = mk('사순절', ds === ash ? '사순절 시작(성회 수요일)' : '사순절', '보라');
       else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('사순절', `사순절 제${w}주`, '보라', w); }
-    } else { // 1/6 ~ 재의 수요일 전: 주현절
+    } else { // 1/6 ~ 성회 수요일 전: 주현절(주현 후 제N주, 마지막 주일은 변화주일)
       const first = sundayAfter('' + y + '-01-06'); const transfig = addDaysStr(E, -49);
       if (ds < first) info = mk('주현절', ds === ymd(y, 1, 6) ? '주현절(주현일)' : '주현절', '흰색');
-      else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('주현절', `주현절 제${w}주${ds === transfig ? ' (변모주일)' : ''}`, ds === transfig ? '흰색' : '초록', w); }
+      else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('주현절', `주현 후 제${w}주${w === 1 ? ' (세례주일)' : ''}${ds === transfig ? ' (변화주일)' : ''}`, w === 1 || ds === transfig ? '흰색' : '초록', w); }
     }
   }
-  // 한국 교회에서 널리 지키는 주일(교회마다 날짜·이름이 다를 수 있음)
+  // 감리회가 지키는 특별 주일. 날짜 규칙은 ‘감리회 2026년 성서일과 표’와 ‘weekly기독교타임즈 2002.12.11 기사(감리회 특별 절기)’가 서로 맞는 것만 넣었다.
+  // (교역자보건주일·청년주일·군선교주일 등은 기사의 규칙과 2026년 표가 달라 날짜 규칙을 확정하지 못해 넣지 않음)
   if (dow(ds) === 0) {
-    const nth = (m, n) => nthSunday(y, m, n);
-    const sp = ds === nth(5, 1) ? '어린이주일' : ds === nth(5, 2) ? '어버이주일' : ds === nth(7, 1) ? '맥추감사주일' : ds === nth(10, 1) ? '세계성찬주일' : ds === lastSunday(y, 10) ? '종교개혁주일' : ds === nth(11, 3) ? '추수감사주일' : '';
-    if (sp) info.special = sp;
-  }
+    const nth = (m, n) => nthSunday(y, m, n); const aug15 = ymd(y, 8, 15);
+    const sps = [[nth(1, 1), '신년주일'], [nth(2, 1), '은급주일'], [nth(3, 2), '학원선교교육주일'], [nth(5, 1), '어린이주일'], [nth(5, 2), '어버이주일'], [nth(6, 1), '평신도주일'], [nth(6, 2), '환경선교주일'], [nth(7, 1), '맥추감사주일'], [addDaysStr(aug15, -((dow(aug15) + 6) % 7 + 1)), '광복·통일주일'], [nth(9, 2), '교회연합주일'], [nth(9, 3), '기독교교육진흥주일'], [nth(10, 1), '세계성찬주일'], [lastSunday(y, 10), '종교개혁주일'], [nth(11, 3), '추수감사주일'], [nth(12, 2), '성서주일'], [ds > ymd(y, 12, 25) ? lastSunday(y, 12) : '', '송년주일']];
+    const hit = sps.filter(([d]) => d === ds).map(([, n]) => n); if (hit.length) info.special = hit.join('·');
+  }  if (mm === '12-31') info.special = info.special ? `${info.special}·송구영신` : '송구영신';
   return info;
-}
-export const churchLabel = ds => { const i = churchInfo(ds); return i.special ? `${i.label} · ${i.special}` : i.label; };
+}export const churchLabel = ds => { const i = churchInfo(ds); return i.special ? `${i.label} · ${i.special}` : i.label; };
 
 // 한 해의 교회력(표시용): 절기 이름과 기간
 export function churchYear(y) {
   const E = easterDate(y), advent = adventStart(y), trin = addDaysStr(E, 56);
   return [
-    { name: '성탄절기', color: '흰색', start: ymd(y - 1, 12, 25), end: ymd(y, 1, 5), note: '성탄일부터 1/5까지(성탄절 제1~3주)' },
-    { name: '주현절', color: '흰색·초록', start: ymd(y, 1, 6), end: addDaysStr(E, -47), note: '1/6 주현일 ~ 재의 수요일 전날' },
-    { name: '사순절', color: '보라', start: addDaysStr(E, -46), end: addDaysStr(E, -1), note: '재의 수요일 ~ 고난주간(종려주일 포함)' },
+    { name: '성탄절기', color: '흰색', start: ymd(y - 1, 12, 25), end: ymd(y, 1, 5), note: '성탄일부터 1/5까지(성탄 후 제1·2주 등)' },
+    { name: '주현절', color: '흰색·초록', start: ymd(y, 1, 6), end: addDaysStr(E, -47), note: '1/6 주현일 ~ 성회 수요일 전날(주현 후 제N주, 마지막 주일은 변화주일)' },
+    { name: '사순절', color: '보라', start: addDaysStr(E, -46), end: addDaysStr(E, -1), note: '성회 수요일(재의 수요일) ~ 고난주간(종려주일 포함)' },
     { name: '부활절', color: '흰색', start: E, end: addDaysStr(E, 48), note: '부활주일부터 50일(성령강림 전날까지)' },
     { name: '성령강림절', color: '빨강', start: addDaysStr(E, 49), end: addDaysStr(E, 55), note: '성령강림주일(부활 후 50일째)' },
-    { name: '성령강림 후 주일들', color: '초록', start: trin, end: addDaysStr(advent, -1), note: '삼위일체주일부터 왕이신 그리스도 주일까지' },
+    { name: '성령강림 후 주일들', color: '초록', start: trin, end: addDaysStr(advent, -1), note: '삼위일체주일(성령강림 후 제1주)부터 왕국주일(왕이신 그리스도 주일)까지' },
     { name: '대림절', color: '보라', start: advent, end: ymd(y, 12, 24), note: '성탄 전 네 주일(대림절 제1~4주)' },
     { name: '성탄절', color: '흰색', start: ymd(y, 12, 25), end: ymd(y, 12, 31), note: '12/25 성탄일부터' },
   ];

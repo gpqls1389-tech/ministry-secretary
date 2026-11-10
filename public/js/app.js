@@ -7,6 +7,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장�
 import { initAuth, accountApi, openLoginPreview, receiptApi } from './auth.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
+import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
 import { parsePeopleLines, parseBudgetLines, parseTxLines, parseAssetLines, parseThemeLines, parseServiceLines } from './pdfparsers.js';
 import { imgSrc, emptyImgFor, bannerFor } from './images.js';
 const A = await initAuth(); { const lg = document.getElementById('logo'); if (lg && imgSrc('logo')) lg.src = imgSrc('logo'); } // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
@@ -24,7 +25,7 @@ const today = () => kstToday();
 const KIND = { child: '아동', youth: '청년', teacher: '교사', volunteer: '봉사자' };
 const PST = { applied: '신청', attended: '참석', cancelled: '취소' };
 const TST = { todo: '대기', doing: '진행', done: '완료' };
-const UI = { dept: 'all', year: Number(today().slice(0, 4)), month: today().slice(0, 7), planTab: 'cal', peopleTab: 'att', calSvc: false, psel: new Set(), asset: { place: '', status: '' }, rep: { month: today().slice(0, 7), rc: false } };
+const UI = { dept: 'all', year: Number(today().slice(0, 4)), month: today().slice(0, 7), planTab: 'cal', peopleTab: 'att', calSvc: false, resCat: '', psel: new Set(), asset: { place: '', status: '' }, rep: { month: today().slice(0, 7), rc: false } };
 try { UI.dept = localStorage.getItem('ms:dept') || 'all'; } catch { /* 저장소 사용 불가 */ }
 const did = () => (UI.dept === 'all' ? null : Number(UI.dept));
 const workDept = () => did() || store.depts()[0].id;
@@ -105,7 +106,7 @@ function openHelp(tab = 'start') {
 }
 
 // ----- 라우터 -----
-const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['money', '💰', '회계'], ['assets', '🧰', '비품'], ['settings', '⚙️', '설정']];
+const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['money', '💰', '회계'], ['assets', '🧰', '비품'], ['resources', '📚', '자료실'], ['settings', '⚙️', '설정']];
 function render() {
   const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' ? 'events' : view === 'service' ? 'services' : view === 'schedule' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
@@ -114,7 +115,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : (did() === 1 ? 'kid' : did() === 2 ? 'youth' : 'all'); // 아동부 노랑 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, resources: vResources, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -379,6 +380,28 @@ function noticeModal(kind, id) {
   $('[data-copy]', m).onclick = async () => { try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); } toast('복사했어요. 대화방에 붙여넣으세요.'); };
 }
 
+// ----- 자료실(부서별 추천 사이트) -----
+// 기본 목록(public/js/resources.js)은 공식 기관·출판사 위주로 직접 열어 확인한 것이고, 내가 추가한 사이트는 이 계정에만 저장된다.
+function linkForm(v = {}) {
+  const cats = [...new Set([...RESOURCE_CATEGORIES, '내 사이트'])];
+  form({ title: v.id ? '사이트 수정' : '내 사이트 추가', intro: '<p class="mute small">주소는 https://로 시작하는 전체 주소를 넣어 주세요. 로그인 정보나 개인정보가 들어간 주소는 넣지 마세요.</p>', values: { category: '내 사이트', ...v, dept_id: v.dept_id ? v.dept_id : '' },
+    fields: [{ k: 'name', label: '사이트 이름', req: true }, { k: 'url', label: '주소', req: true, ph: 'https://' }, { k: 'category', label: '구분', type: 'select', options: cats.map(x => [x, x]) }, { k: 'dept_id', label: '보여 줄 부서', type: 'select', options: [['', '공통(모든 부서)'], ...deptOpts()] }, { k: 'note', label: '메모 (선택)', ph: '무엇에 쓰는 사이트인지' }],
+    onSubmit: o => { store.saveLink({ ...v, ...o, dept_id: o.dept_id === '' ? 0 : Number(o.dept_id) }); toast('저장했습니다.'); } });
+}
+function vResources() {
+  const dn = did() ? (store.dept(did()) || {}).name : null; const scope = dn || '아동부·청년부 전체';
+  const builtin = RESOURCES.filter(r => !dn || r.audience === '공통' || r.audience === dn).map(r => ({ ...r, mineId: 0 }));
+  const mine = store.links(did()).map(l => ({ name: l.name, url: l.url, category: l.category, desc: l.note, note: '', audience: l.dept_id ? (store.dept(l.dept_id) || {}).name || '' : '공통', mineId: l.id }));
+  const all = [...builtin, ...mine]; const order = [...RESOURCE_CATEGORIES, ...new Set(mine.map(m => m.category).filter(c => !RESOURCE_CATEGORIES.includes(c)))];
+  const cats = order.filter(c => all.some(r => r.category === c)); const sel = cats.includes(UI.resCat) ? UI.resCat : '';
+  const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+  const aud = a => `<span class="tag ${a === '아동부' ? 'kid' : a === '청년부' ? 'yth' : ''}">${esc(a || '공통')}</span>`;
+  const card = r => `<div class="res-card"><div class="row" style="gap:6px"><a class="res-name" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)} <span aria-hidden="true">↗</span></a><span class="sp"></span>${aud(r.audience)}</div><div class="mute small res-host">${esc(host(r.url))}</div>${r.desc ? `<p class="res-desc">${esc(r.desc)}</p>` : ''}${r.note ? `<p class="mute small res-note">${esc(r.note)}</p>` : ''}${r.mineId ? `<div class="row noprint" style="margin-top:6px"><span class="tag">내가 추가</span><span class="sp"></span><button class="sm" data-act="editLink" data-id="${r.mineId}">수정</button><button class="sm ghost dng" data-act="delLink" data-id="${r.mineId}">삭제</button></div>` : ''}</div>`;
+  page('📚', '자료실', `${esc(scope)}에 필요한 사이트를 구분별로 모았어요`, `<div class="callout" style="margin-bottom:14px"><span>🔎</span><div class="sp small">공식 기관·출판사 위주로 <b>${esc(RESOURCES_CHECKED)}</b>에 직접 열어 확인한 목록이에요. 광고가 아니며, 주소·이용 조건(유료 여부 등)은 바뀔 수 있으니 사이트에서 확인하세요. 교재·찬양·이미지는 <b>저작권 이용 조건</b>을 꼭 확인하고 쓰세요.</div></div>
+  <div class="row noprint" style="margin-bottom:12px"><button class="${!sel ? 'pri' : ''}" data-rescat="">전체 ${all.length}</button>${cats.map(c => `<button class="${sel === c ? 'pri' : ''}" data-rescat="${esc(c)}">${esc(c)} ${all.filter(r => r.category === c).length}</button>`).join('')}<span class="sp"></span><button data-act="newLink">+ 내 사이트 추가</button></div>
+  ${cats.filter(c => !sel || c === sel).map(c => `<h2>${esc(c)}</h2><div class="res-grid">${all.filter(r => r.category === c).map(card).join('')}</div>`).join('') || emptyState('표시할 사이트가 없어요', '위의 ‘+ 내 사이트 추가’로 자주 쓰는 사이트를 넣어 보세요.', '<button class="sm pri" data-act="newLink">+ 내 사이트 추가</button>')}`);
+}
+
 // ----- 설정 -----
 function vSettings() {
   const S = store.get(); const acct = A.mode === 'account'; const ds = store.daysSinceExport();
@@ -462,6 +485,8 @@ const ACT = {
     columns: [{ k: 'month', label: '달', type: 'select', options: Array.from({ length: 12 }, (_, i) => [String(i + 1), `${i + 1}월`]) }, { k: 'theme', label: '교육 주제', type: 'text' }],
     parse: (lines, o) => { const cur = store.plan(o.dept, o.year).themes || {}; return parseThemeLines(lines).map(r => ({ ...r, month: String(r.month), warn: [...r.warn, ...(cur[r.month] && cur[r.month] !== r.theme ? [`지금 적힌 주제 ‘${cur[r.month]}’을(를) 바꿔요.`] : [])] })); },
     commit: (rows, o) => { const th = {}; for (const r of rows) th[r.month] = r.theme; const n = store.importMonthThemes(o.dept, o.year, th); return `${n}개 달의 주제를 저장했어요.`; } }),  notice: d => noticeModal(d.kind, Number(d.id)),
+  newLink: () => linkForm(), editLink: d => linkForm(store.link(Number(d.id))),
+  delLink: async d => { if (await ask('이 사이트를 목록에서 지울까요?', '삭제')) { store.deleteLink(Number(d.id)); render(); toast('지웠어요.'); } },
   newVisit: () => visitForm(), editVisit: d => { closeDialogs(); visitForm(store.visit(Number(d.id))); },
   delVisit: async d => { if (await ask('이 기록을 삭제할까요? 되돌릴 수 없어요.', '삭제')) { closeDialogs(); store.deleteVisit(Number(d.id)); render(); toast('삭제했어요.'); } },
   personVisits: d => {
@@ -558,6 +583,7 @@ document.addEventListener('click', e => {
   if ((el = t.closest('[data-ptab]'))) { UI.planTab = el.dataset.ptab; render(); return; }
   if ((el = t.closest('[data-pptab]'))) { UI.peopleTab = el.dataset.pptab; render(); return; }
   if ((el = t.closest('[data-month]'))) { UI.month = el.dataset.month; render(); return; }
+  if ((el = t.closest('[data-rescat]'))) { UI.resCat = el.dataset.rescat; render(); return; }
   if ((el = t.closest('[data-cls]'))) { AT.cls = el.dataset.cls; render(); return; }
   if (t.closest('#menu-btn') || t.closest('#scrim')) document.body.classList.toggle('nav-open');
 });
