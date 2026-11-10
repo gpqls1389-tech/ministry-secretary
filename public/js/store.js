@@ -431,6 +431,13 @@ export function createStore(storage, today = kstToday) {
       for (const n of tpl.supplies) if (!S.supplies.some(x => x.event_id === eventId && x.name === n)) { S.supplies.push({ id: nid(), event_id: eventId, name: n, done: false }); supplies++; }
       save(); return { tasks, supplies };
     },
+    // 진행 가이드의 준비 일정을 준비 업무로 추가(같은 이름은 건너뜀). items: [{title, offset|null}]
+    applyGuidePrep(eventId, items) {
+      const e = ev(eventId); if (!e || !Array.isArray(items)) throw new ValidationError('행사를 찾을 수 없습니다.');
+      let n = 0; for (const it of items.slice(0, 30)) { const title = String((it && it.title) || '').trim().slice(0, 120); if (!title || S.tasks.some(x => x.event_id === eventId && x.title === title)) continue;
+        S.tasks.push({ id: nid(), event_id: eventId, title, due: Number.isInteger(it.offset) ? eventTaskDue(e.start_date, it.offset) : '', assignee: '', status: 'todo' }); n++; }
+      save(); return n;
+    },
     loadSeasonTemplate(deptId, year) {
       let n = 0; for (const s of seasonTemplates(year)) if (!S.seasons.some(x => x.dept_id === deptId && x.year === year && x.name === s.name)) { S.seasons.push({ id: nid(), dept_id: deptId, year, ...s }); n++; }
       save(); return n;
