@@ -127,6 +127,18 @@ export const GUIDES = {
   },
 };
 
+// 가이드의 ‘준비 일정’ 문장을 준비 업무 {title, offset(일, 행사 시작일 기준)}로 바꾼다.
+// “6~8주 전: …”은 앞의 숫자(6주 전)를 쓰고, “3개월 전”은 30일씩, “당일·후”는 당일, “후:”는 7일 뒤로 본다. 시점을 읽을 수 없으면 offset 은 null(기한 없음).
+export function guideTasks(key) {
+  const g = GUIDES[key]; if (!g) return [];
+  return g.prep.map(line => {
+    const m = /^([^:]{1,24}):\s*(.+)$/.exec(line); const head = m ? m[1] : ''; const title = (m ? m[2] : line).slice(0, 120); let offset = null, x;
+    if ((x = /^(\d+)(?:\.\d+)?(?:~\d+)?\s*(주|개월|일)\s*전/.exec(head))) offset = -Math.round(Number(x[1]) * (x[2] === '주' ? 7 : x[2] === '개월' ? 30 : 1));
+    else if (/^3일 전/.test(head)) offset = -3; else if (/^후$/.test(head)) offset = 7; else if (/^당일/.test(head)) offset = 0;
+    return { title, offset };
+  });
+}
+
 // 행사 유형·제목으로 알맞은 가이드를 고른다(사용자가 화면에서 바꿀 수 있다).
 export function guideKeyFor(e) {
   const t = `${e.type || ''} ${e.title || ''}`;

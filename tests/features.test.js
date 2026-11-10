@@ -357,3 +357,11 @@ test('행사 진행 가이드: 모든 가이드가 필수 항목을 갖고, 참�
   assert.equal(guideKeyFor({ type: '절기행사', title: '2026 성탄 발표회' }), 'christmas'); assert.equal(guideKeyFor({ type: '절기행사', title: '대림절 예배' }), 'advent');
   assert.equal(guideKeyFor({ type: '여름성경학교', title: 'x' }), 'vbs'); assert.equal(guideKeyFor({ type: '수련회', title: 'x' }), 'retreat'); assert.equal(guideKeyFor({ type: '기타', title: 'x' }), 'general');
 });
+test('가이드 준비 일정 → 준비 업무: 마감일 계산, 중복 건너뜀, 없는 행사 거부', async () => {
+  const { guideTasks, GUIDES } = await import('../public/js/guides.js'); const xs = guideTasks('christmas'); assert.equal(xs.length, GUIDES.christmas.prep.length);
+  assert.equal(xs[1].offset, -42); assert.equal(xs[0].offset, -42); assert.ok(xs[1].title.startsWith('주보'));
+  assert.equal(xs.at(-1).offset, 0); assert.equal(guideTasks('vbs')[0].offset, -90); assert.equal(guideTasks('nope').length, 0);
+  const s = mk(); const dept = s.depts()[0].id; const id = s.saveEvent({ dept_id: dept, title: '성탄 발표회', type: '절기행사', start_date: '2026-12-20' });
+  const n = s.applyGuidePrep(id, xs); assert.equal(n, xs.length); assert.equal(s.applyGuidePrep(id, xs), 0);
+  const t = s.get().tasks.filter(k => k.event_id === id); assert.ok(t.some(k => k.due === '2026-11-08')); assert.throws(() => s.applyGuidePrep(99999, xs));
+});
