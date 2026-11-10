@@ -11,20 +11,21 @@ import { parseTable } from '../public/js/csv.js';
 const mem = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) }; };
 const mk = () => { const s = createStore(mem(), () => '2026-11-10'); s.startEmpty(); return s; };
 
-test('[교회력] 2026년 절기·주차가 자동으로 계산된다 (대림절 11/29 시작)', () => {
-  const L = churchLabel;
-  assert.equal(L('2026-11-29'), '대림절 제1주'); assert.equal(L('2026-12-06'), '대림절 제2주'); assert.equal(L('2026-12-20'), '대림절 제4주');
-  assert.equal(L('2026-12-25'), '성탄절(성탄일)'); assert.equal(L('2026-12-27'), '성탄절 제2주'); assert.equal(L('2027-01-03'), '성탄절 제3주');
-  assert.equal(L('2027-01-10'), '주현절 제1주');
-  assert.equal(L('2026-02-22'), '사순절 제1주'); assert.equal(L('2026-03-29'), '종려주일(고난주간 시작)');
-  assert.equal(L('2026-04-05'), '부활절(부활주일)'); assert.equal(L('2026-04-12'), '부활절 제2주');
-  assert.equal(L('2026-05-24'), '성령강림절(성령강림주일)'); assert.equal(L('2026-05-31'), '성령강림 후 제1주 (삼위일체주일)');
-  assert.equal(L('2026-11-22'), '왕이신 그리스도 주일'); assert.match(L('2026-05-03'), /어린이주일/); assert.match(L('2026-11-15'), /추수감사주일/);
-  assert.equal(churchInfo('2026-11-29').color, '보라'); assert.equal(churchInfo('2026-12-25').color, '흰색');
-  const yr = churchYear(2026); assert.equal(yr.find(x => x.name === '대림절').start, '2026-11-29'); assert.equal(yr.find(x => x.name === '사순절').start, '2026-02-18');
-  for (let i = 0; i < 366; i++) { const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10); assert.ok(churchLabel(d), d); } // 어떤 날짜도 비지 않는다
+test('[교회력] 감리회 성서일과 2026년 표(lectionary.kmc.or.kr, ebible66.com/86)와 날짜·이름·주차가 일치한다', () => {
+  const kmc = { '2026-01-04': '성탄 후 제2주', '2026-01-06': '주현절', '2026-01-11': '주현 후 제1주 (세례주일)', '2026-01-18': '주현 후 제2주', '2026-02-01': '주현 후 제4주', '2026-02-08': '주현 후 제5주', '2026-02-15': '주현 후 제6주 (변화주일)',
+    '2026-02-18': '성회 수요일', '2026-02-22': '사순절 제1주', '2026-03-01': '사순절 제2주', '2026-03-22': '사순절 제5주', '2026-03-29': '종려주일(고난주일)', '2026-04-05': '부활절(부활주일)', '2026-04-12': '부활절 제2주', '2026-05-03': '부활절 제5주', '2026-05-17': '부활절 제7주', '2026-05-14': '주의 승천일',
+    '2026-05-24': '성령강림절(성령강림주일)', '2026-05-31': '성령강림 후 제1주 (삼위일체주일)', '2026-06-07': '성령강림 후 제2주', '2026-08-30': '성령강림 후 제14주', '2026-10-04': '성령강림 후 제19주', '2026-11-15': '성령강림 후 제25주', '2026-11-22': '왕국주일(왕이신 그리스도 주일)',
+    '2026-11-29': '대림절 제1주', '2026-12-06': '대림절 제2주', '2026-12-13': '대림절 제3주', '2026-12-20': '대림절 제4주', '2026-12-24': '성탄 전야(성탄절)', '2026-12-25': '성탄절(성탄일)', '2026-12-27': '성탄 후 제1주' };
+  for (const [d, want] of Object.entries(kmc)) assert.ok(churchLabel(d).includes(want), `${d}: ${churchLabel(d)} (기대: ${want})`);
+  const special = { '2026-01-04': '신년주일', '2026-05-03': '어린이주일', '2026-05-10': '어버이주일', '2026-07-05': '맥추감사주일', '2026-10-04': '세계성찬주일', '2026-10-25': '종교개혁주일', '2026-11-15': '추수감사주일', '2026-12-27': '송년주일', '2026-12-31': '송구영신' };
+  for (const [d, want] of Object.entries(special)) assert.ok((churchInfo(d).special || '').includes(want), `${d}: ${churchInfo(d).special}`);
+  let n = 2; for (let t = Date.UTC(2026, 5, 7); t <= Date.UTC(2026, 10, 15); t += 7 * 864e5) assert.ok(churchLabel(new Date(t).toISOString().slice(0, 10)).includes(`성령강림 후 제${n++}주`)); // 성령강림 후 제2~25주가 6/7~11/15에 이어짐
+  assert.equal(churchInfo('2026-11-29').color, '보라'); assert.equal(churchInfo('2026-12-25').color, '흰색'); assert.equal(churchInfo('2026-05-24').color, '빨강'); assert.equal(churchInfo('2026-06-07').color, '초록');
+  assert.equal(churchLabel('2027-01-03'), '성탄 후 제2주 · 신년주일'); assert.equal(churchLabel('2027-01-10'), '주현 후 제1주 (세례주일)'); // 다음 해로 이어지는 성탄절기
+  assert.equal(churchLabel('2022-12-25'), '성탄절(성탄일)'); assert.equal(churchLabel('2023-01-01'), '성탄 후 제1주 · 신년주일'); assert.equal(churchLabel('2023-12-24'), '대림절 제4주'); // 성탄일이 주일이거나 12/24가 주일인 해
+  const yr = churchYear(2026); assert.equal(yr.find(x => x.name === '대림절').start, '2026-11-29'); assert.equal(yr.find(x => x.name === '사순절').start, '2026-02-18'); assert.equal(yr.find(x => x.name === '주현절').end, '2026-02-17');
+  for (let i = 0; i < 366 * 3; i++) { const d = new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10); assert.ok(churchLabel(d), d); } // 3년 동안 비는 날짜가 없다
 });
-
 test('[반복] 매주·격주·매월(같은 날짜/같은 요일·주차) 날짜 계산, 상한과 없는 날짜 건너뛰기', () => {
   assert.deepEqual(repeatDates('2026-11-29', 'weekly', '2026-12-27'), ['2026-11-29', '2026-12-06', '2026-12-13', '2026-12-20', '2026-12-27']);
   assert.deepEqual(repeatDates('2026-11-29', 'biweekly', '2026-12-27'), ['2026-11-29', '2026-12-13', '2026-12-27']);

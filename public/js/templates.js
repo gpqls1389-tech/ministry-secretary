@@ -118,52 +118,58 @@ export const LITURGICAL_COLORS = COLOR;
 export function churchInfo(ds) {
   const y = Number(ds.slice(0, 4)); const mm = ds.slice(5, 10);
   const mk = (season, label, color, week = 0) => ({ season, label, color, colorHex: COLOR[color], week });
+  // 성탄절기: 감리회 성서일과는 성탄절(12/24~25) 뒤의 주일을 ‘성탄 후 제N주’(성탄일 다음 첫 주일이 제1주)로 센다.
+  const xmasInfo = xmas => {
+    if (ds === xmas) return mk('성탄절', '성탄절(성탄일)', '흰색', 1);
+    const first = sundayAfter(xmas); if (ds < first) return mk('성탄절', '성탄절기', '흰색');
+    const w = Math.floor(dayDiff(ds, first) / 7) + 1; return mk('성탄절', `성탄 후 제${w}주`, '흰색', w);
+  };
   let info;
-  if (mm <= '01-05') { // 지난해 성탄절기에 속하는 1/1~1/5
-    const w = Math.floor(dayDiff(ds, sundayOnOrBefore(ymd(y - 1, 12, 25))) / 7) + 1; info = mk('성탄절', `성탄절 제${w}주`, '흰색', w);
-  } else {
+  if (mm <= '01-05') info = xmasInfo(ymd(y - 1, 12, 25)); // 지난해 성탄절기에 속하는 1/1~1/5
+  else {
     const E = easterDate(y), advent = adventStart(y), xmas = ymd(y, 12, 25), ash = addDaysStr(E, -46);
-    if (ds >= xmas) { const w = Math.floor(dayDiff(ds, sundayOnOrBefore(xmas)) / 7) + 1; info = ds === xmas ? mk('성탄절', '성탄절(성탄일)', '흰색', 1) : mk('성탄절', `성탄절 제${w}주`, '흰색', w); }
+    if (ds >= xmas) info = xmasInfo(xmas);
+    else if (ds === ymd(y, 12, 24) && dow(ds) !== 0) info = mk('성탄절', '성탄 전야(성탄절)', '흰색');
     else if (ds >= advent) { const w = Math.floor(dayDiff(ds, advent) / 7) + 1; info = mk('대림절', `대림절 제${w}주`, '보라', w); }
     else if (ds >= addDaysStr(E, 49)) { // 성령강림절 이후
       const trinity = addDaysStr(E, 56); const king = addDaysStr(advent, -7);
       if (ds === addDaysStr(E, 49)) info = mk('성령강림절', '성령강림절(성령강림주일)', '빨강');
       else if (ds < trinity) info = mk('성령강림절', '성령강림절', '빨강');
-      else if (ds >= king) info = mk('성령강림 후', '왕이신 그리스도 주일', '흰색', Math.floor(dayDiff(ds, trinity) / 7) + 1);
-      else { const w = Math.floor(dayDiff(ds, trinity) / 7) + 1; info = mk('성령강림 후', `성령강림 후 제${w}주${ds === trinity ? ' (삼위일체주일)' : ''}`, '초록', w); }
+      else if (ds >= king) info = mk('성령강림 후', '왕국주일(왕이신 그리스도 주일)', '흰색', Math.floor(dayDiff(ds, trinity) / 7) + 1);
+      else { const w = Math.floor(dayDiff(ds, trinity) / 7) + 1; info = mk('성령강림 후', `성령강림 후 제${w}주${ds === trinity ? ' (삼위일체주일)' : ''}`, ds === trinity ? '흰색' : '초록', w); }
     }
-    else if (ds >= E) { const w = Math.floor(dayDiff(ds, E) / 7) + 1; info = mk('부활절', ds === E ? '부활절(부활주일)' : `부활절 제${w}주`, '흰색', w); }
+    else if (ds >= E) { const w = Math.floor(dayDiff(ds, E) / 7) + 1; info = ds === addDaysStr(E, 39) ? mk('부활절', '주의 승천일', '흰색') : mk('부활절', ds === E ? '부활절(부활주일)' : `부활절 제${w}주`, '흰색', w); }
     else if (ds >= ash) {
       const first = addDaysStr(E, -42); const palm = addDaysStr(E, -7);
-      if (ds >= palm) info = mk('사순절', ds === palm ? '종려주일(고난주간 시작)' : ds === addDaysStr(E, -3) ? '고난주간(성목요일)' : ds === addDaysStr(E, -2) ? '고난주간(성금요일)' : '고난주간', '보라', 6);
-      else if (ds < first) info = mk('사순절', ds === ash ? '사순절 시작(재의 수요일)' : '사순절', '보라');
+      if (ds >= palm) info = mk('사순절', ds === palm ? '종려주일(고난주일)' : ds === addDaysStr(E, -3) ? '고난주간(성목요일)' : ds === addDaysStr(E, -2) ? '고난주간(성금요일)' : '고난주간', '보라', 6);
+      else if (ds < first) info = mk('사순절', ds === ash ? '사순절 시작(성회 수요일)' : '사순절', '보라');
       else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('사순절', `사순절 제${w}주`, '보라', w); }
-    } else { // 1/6 ~ 재의 수요일 전: 주현절
+    } else { // 1/6 ~ 성회 수요일 전: 주현절(주현 후 제N주, 마지막 주일은 변화주일)
       const first = sundayAfter('' + y + '-01-06'); const transfig = addDaysStr(E, -49);
       if (ds < first) info = mk('주현절', ds === ymd(y, 1, 6) ? '주현절(주현일)' : '주현절', '흰색');
-      else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('주현절', `주현절 제${w}주${ds === transfig ? ' (변모주일)' : ''}`, ds === transfig ? '흰색' : '초록', w); }
+      else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('주현절', `주현 후 제${w}주${w === 1 ? ' (세례주일)' : ''}${ds === transfig ? ' (변화주일)' : ''}`, w === 1 || ds === transfig ? '흰색' : '초록', w); }
     }
   }
-  // 한국 교회에서 널리 지키는 주일(교회마다 날짜·이름이 다를 수 있음)
+  // 한국 교회에서 널리 지키는 주일(감리회 2026년 성서일과 표의 날짜 규칙과 맞춰 계산. 교회·교단 지침마다 다를 수 있음)
   if (dow(ds) === 0) {
     const nth = (m, n) => nthSunday(y, m, n);
-    const sp = ds === nth(5, 1) ? '어린이주일' : ds === nth(5, 2) ? '어버이주일' : ds === nth(7, 1) ? '맥추감사주일' : ds === nth(10, 1) ? '세계성찬주일' : ds === lastSunday(y, 10) ? '종교개혁주일' : ds === nth(11, 3) ? '추수감사주일' : '';
+    const sp = ds === nth(5, 1) ? '어린이주일' : ds === nth(5, 2) ? '어버이주일' : ds === nth(7, 1) ? '맥추감사주일' : ds === nth(10, 1) ? '세계성찬주일' : ds === lastSunday(y, 10) ? '종교개혁주일' : ds === nth(11, 3) ? '추수감사주일' : ds === nth(1, 1) ? '신년주일' : ds === lastSunday(y, 12) && ds > ymd(y, 12, 25) ? '송년주일' : '';
     if (sp) info.special = sp;
   }
+  if (mm === '12-31') info.special = info.special ? `${info.special}·송구영신` : '송구영신';
   return info;
-}
-export const churchLabel = ds => { const i = churchInfo(ds); return i.special ? `${i.label} · ${i.special}` : i.label; };
+}export const churchLabel = ds => { const i = churchInfo(ds); return i.special ? `${i.label} · ${i.special}` : i.label; };
 
 // 한 해의 교회력(표시용): 절기 이름과 기간
 export function churchYear(y) {
   const E = easterDate(y), advent = adventStart(y), trin = addDaysStr(E, 56);
   return [
-    { name: '성탄절기', color: '흰색', start: ymd(y - 1, 12, 25), end: ymd(y, 1, 5), note: '성탄일부터 1/5까지(성탄절 제1~3주)' },
-    { name: '주현절', color: '흰색·초록', start: ymd(y, 1, 6), end: addDaysStr(E, -47), note: '1/6 주현일 ~ 재의 수요일 전날' },
-    { name: '사순절', color: '보라', start: addDaysStr(E, -46), end: addDaysStr(E, -1), note: '재의 수요일 ~ 고난주간(종려주일 포함)' },
+    { name: '성탄절기', color: '흰색', start: ymd(y - 1, 12, 25), end: ymd(y, 1, 5), note: '성탄일부터 1/5까지(성탄 후 제1·2주 등)' },
+    { name: '주현절', color: '흰색·초록', start: ymd(y, 1, 6), end: addDaysStr(E, -47), note: '1/6 주현일 ~ 성회 수요일 전날(주현 후 제N주, 마지막 주일은 변화주일)' },
+    { name: '사순절', color: '보라', start: addDaysStr(E, -46), end: addDaysStr(E, -1), note: '성회 수요일(재의 수요일) ~ 고난주간(종려주일 포함)' },
     { name: '부활절', color: '흰색', start: E, end: addDaysStr(E, 48), note: '부활주일부터 50일(성령강림 전날까지)' },
     { name: '성령강림절', color: '빨강', start: addDaysStr(E, 49), end: addDaysStr(E, 55), note: '성령강림주일(부활 후 50일째)' },
-    { name: '성령강림 후 주일들', color: '초록', start: trin, end: addDaysStr(advent, -1), note: '삼위일체주일부터 왕이신 그리스도 주일까지' },
+    { name: '성령강림 후 주일들', color: '초록', start: trin, end: addDaysStr(advent, -1), note: '삼위일체주일(성령강림 후 제1주)부터 왕국주일(왕이신 그리스도 주일)까지' },
     { name: '대림절', color: '보라', start: advent, end: ymd(y, 12, 24), note: '성탄 전 네 주일(대림절 제1~4주)' },
     { name: '성탄절', color: '흰색', start: ymd(y, 12, 25), end: ymd(y, 12, 31), note: '12/25 성탄일부터' },
   ];
