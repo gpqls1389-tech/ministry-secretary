@@ -64,24 +64,24 @@ export const BUDGET_SUGGESTIONS = ['교육비(교재)', '행사비', '간식·�
 
 // 홈의 '처음 시작' 체크리스트
 export const GUIDE_STEPS = [
-  { key: 'people', title: '인원 명단 등록', hint: '아동·청년·교사를 반(조)과 함께 등록합니다. 출생년도를 넣으면 같은 이름도 구분됩니다.', go: '#people', btn: '인원 등록하기' },
+  { key: 'people', title: '인원 명단 등록', hint: '아동·청년·교사를 반(조)과 함께 등록합니다. 여러 명이면 ‘양식으로 한꺼번에 등록’(엑셀 양식)이 빨라요.', go: '#people', btn: '인원 등록하기' },
   { key: 'plan', title: '올해 목표와 월별 주제 적기', hint: '‘예시 넣기’로 월별 주제와 절기를 한 번에 채운 뒤 고쳐 쓰세요.', go: '#plan', btn: '연간 계획 열기' },
   { key: 'event', title: '행사 1개 등록하기', hint: '‘예시로 시작’을 고르면 준비 업무와 마감일이 자동으로 만들어집니다.', go: '#events', btn: '행사 만들기' },
-  { key: 'service', title: '예배 회차 만들기', hint: '예배를 만들고 ‘다음 예배로 복제’하면 순서·담당만 복사됩니다.', go: '#services', btn: '예배 만들기' },
+  { key: 'service', title: '예배 회차 만들기', hint: '‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요. 절기(대림절 제1주 등)는 자동으로 붙어요.', go: '#services', btn: '예배 만들기' },
   { key: 'attendance', title: '출석 한 번 기록하기', hint: '이름을 누르면 바로 저장됩니다. 출석부에서 최근 8회가 한눈에 보입니다.', go: '#services', btn: '출석 기록하기' },
   { key: 'budget', title: '예산 항목 입력하기', hint: '항목별 예산을 넣으면 홈과 회계에서 예산 잔액이 계산됩니다.', go: '#money', btn: '회계 열기' },
-  { key: 'backup', title: '백업 파일 내려받기', hint: '데이터는 이 브라우저에만 저장됩니다. 설정에서 내보내기를 눌러 안전한 곳에 보관하세요.', go: '#settings', btn: '설정 열기' },
+  { key: 'backup', title: '백업 파일 내려받기', hint: '설정에서 내보내기를 눌러 안전한 곳에 보관하세요. (영수증 사진은 백업 파일에 들어가지 않아요.)', go: '#settings', btn: '설정 열기' },
 ];
 
 export const TIPS = {
   home: ['홈 사용법', '이번 주 예배·행사, 기한이 다가오는 준비 업무, 예산 현황이 모입니다. 준비 업무는 체크하면 완료되고, 위의 부서 버튼으로 아동부 / 청년부 / 전체를 바꿔 볼 수 있습니다.'],
-  plan: ['일정·계획 사용법', '‘월 달력’에서는 예배와 행사를 한눈에, ‘연간·절기 계획’에서는 사역 목표, 월별 교육 주제, 절기 계획을 적습니다. 처음이라면 ‘예시 넣기’ 버튼으로 시작하세요(날짜는 해마다 달라서 직접 확인해 수정하세요).'],
+  plan: ['일정·계획 사용법', '‘월 달력’과 ‘일정 목록’에는 교사 기도회·회의 같은 일정과 행사를 모아요(주일예배는 ‘예배’ 메뉴에서 관리하고, 달력에서 함께 볼 수도 있어요). 주일에는 교회력(대림절 제1주 등)이 자동으로 표시돼요. ‘연간·절기 계획’에서는 사역 목표, 월별 교육 주제, 절기 계획을 적습니다.'],
   events: ['행사 사용법', '행사를 만들면 일정표·연간 계획·회계에 같은 정보가 함께 쓰입니다. ‘새 행사’에서 ‘예시로 시작’을 고르면 준비 업무와 마감일이 자동으로 채워집니다. 행사를 눌러 준비·참가·결산을 관리하세요.'],
   event: ['행사 화면 사용법', '위에서부터 준비할 일 → 참가 현황 → 결산 순서로 사용합니다. 신청과 실제 참석은 따로 집계되고, 지출을 등록할 때 이 행사를 연결하면 행사 결산과 부서 합계에 한 번씩만 반영됩니다.'],
-  services: ['예배 사용법', '예배를 만들고 눌러서 출석을 체크합니다. ‘다음 예배로 복제’는 순서·담당만 복사하고 출석은 비워 둡니다. 정기예배 출석은 ‘인원·출석’의 출석부에 모입니다.'],
+  services: ['예배 사용법', '예배는 일정과 따로 관리해요. ‘+ 새 예배’에서 ‘반복’을 매주로 하고 종료일을 정하면 주일예배를 한 번에 만들 수 있고, 교회력(절기·주차)은 날짜로 자동 표시돼요. 예배를 눌러 출석을 체크하면 정기예배 출석은 ‘인원·출석’의 출석부에 모입니다.'],
   service: ['출석 체크 사용법', '이름을 누르면 바로 저장되며 같은 회차에서 한 사람은 한 번만 집계됩니다. 반 버튼으로 반별로 보고, ‘보이는 인원 전원 출석’ 후 결석자만 해제하면 빠릅니다.'],
-  people: ['인원·출석 사용법', '출석부는 최근 정기예배 8회를 사람별로 보여 줍니다(○ 출석, × 결석, 점은 미기록). 졸업·이동한 사람은 ‘명단 제외’를 쓰면 과거 기록이 그대로 남습니다. 연락처·알레르기 같은 민감 정보는 이 앱에 입력하지 마세요.'],
-  money: ['회계 사용법', '예산 항목을 먼저 넣고 지출·수입을 등록합니다. 예산 잔액은 ‘예산 − 지출’, 수입·지출 차액은 ‘수입 − 지출’로 서로 다른 값입니다. 행사 지출은 연결한 행사의 결산에도 함께 보입니다.'],
+  people: ['인원·출석 사용법', '출석부는 최근 정기예배 8회를 사람별로 보여 줍니다(○ 출석, × 결석, 점은 미기록). 졸업·이동한 사람은 ‘명단 제외’를 쓰면 과거 기록이 그대로 남습니다. 연락처·알레르기 같은 민감 정보는 이 앱에 입력하지 마세요. ‘명단’ 탭의 ‘등록 양식 내려받기’로 엑셀 양식을 받아 한꺼번에 등록할 수 있어요.'],
+  money: ['회계 사용법', '예산 항목을 먼저 넣고 지출·수입을 등록합니다. 예산 잔액은 ‘예산 − 지출’, 수입·지출 차액은 ‘수입 − 지출’로 서로 다른 값입니다. 행사 지출은 연결한 행사의 결산에도 함께 보입니다. 거래를 등록할 때 영수증 사진을 붙일 수 있어요(개인정보는 가리고 찍으세요).'],
   settings: ['설정 사용법', '데이터는 이 브라우저(이 기기)에만 저장됩니다. 가끔 ‘내보내기’로 파일을 받아 두고, 기기를 바꿀 때 ‘가져오기’로 옮기세요.'],
 };
 
@@ -101,3 +101,87 @@ export const FAQ = [
   ['성경 본문은 앱이 알려 주나요?', '아니요. 본문은 직접 입력하는 칸이며, 예시의 장·절은 참고용입니다. 개역개정 본문을 꼭 확인하세요.'],
   ['휴대폰에서도 쓸 수 있나요?', '네. 화면이 작으면 ‘메뉴’ 버튼으로 메뉴가 펼쳐집니다. 표는 좌우로 밀어서 볼 수 있습니다.'],
 ];
+
+
+// ===== 교회력(절기) 자동 계산 =====
+// 서구 교회력(그레고리력) 일반 규칙으로 계산한 값입니다. 교단·교회마다 절기 이름이나 주차 세는 방법이 조금 다를 수 있으니 사용 전에 확인하세요.
+const dayDiff = (a, b) => Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 864e5);
+const sundayOnOrBefore = d => addDaysStr(d, -dow(d));
+const sundayAfter = d => addDaysStr(d, 7 - dow(d)); // d 다음에 오는 첫 주일(d가 주일이면 일주일 뒤)
+const lastSunday = (y, m) => { const last = ymd(y, m, new Date(Date.UTC(y, m, 0)).getUTCDate()); return addDaysStr(last, -dow(last)); };
+const COLOR = { 보라: '#6b4fa0', 흰색: '#ffffff', 초록: '#2f8f4e', 빨강: '#c0392b' };
+export const LITURGICAL_COLORS = COLOR;
+
+export function churchInfo(ds) {
+  const y = Number(ds.slice(0, 4)); const mm = ds.slice(5, 10);
+  const mk = (season, label, color, week = 0) => ({ season, label, color, colorHex: COLOR[color], week });
+  let info;
+  if (mm <= '01-05') { // 지난해 성탄절기에 속하는 1/1~1/5
+    const w = Math.floor(dayDiff(ds, sundayOnOrBefore(ymd(y - 1, 12, 25))) / 7) + 1; info = mk('성탄절', `성탄절 제${w}주`, '흰색', w);
+  } else {
+    const E = easterDate(y), advent = adventStart(y), xmas = ymd(y, 12, 25), ash = addDaysStr(E, -46);
+    if (ds >= xmas) { const w = Math.floor(dayDiff(ds, sundayOnOrBefore(xmas)) / 7) + 1; info = ds === xmas ? mk('성탄절', '성탄절(성탄일)', '흰색', 1) : mk('성탄절', `성탄절 제${w}주`, '흰색', w); }
+    else if (ds >= advent) { const w = Math.floor(dayDiff(ds, advent) / 7) + 1; info = mk('대림절', `대림절 제${w}주`, '보라', w); }
+    else if (ds >= addDaysStr(E, 49)) { // 성령강림절 이후
+      const trinity = addDaysStr(E, 56); const king = addDaysStr(advent, -7);
+      if (ds === addDaysStr(E, 49)) info = mk('성령강림절', '성령강림절(성령강림주일)', '빨강');
+      else if (ds < trinity) info = mk('성령강림절', '성령강림절', '빨강');
+      else if (ds >= king) info = mk('성령강림 후', '왕이신 그리스도 주일', '흰색', Math.floor(dayDiff(ds, trinity) / 7) + 1);
+      else { const w = Math.floor(dayDiff(ds, trinity) / 7) + 1; info = mk('성령강림 후', `성령강림 후 제${w}주${ds === trinity ? ' (삼위일체주일)' : ''}`, '초록', w); }
+    }
+    else if (ds >= E) { const w = Math.floor(dayDiff(ds, E) / 7) + 1; info = mk('부활절', ds === E ? '부활절(부활주일)' : `부활절 제${w}주`, '흰색', w); }
+    else if (ds >= ash) {
+      const first = addDaysStr(E, -42); const palm = addDaysStr(E, -7);
+      if (ds >= palm) info = mk('사순절', ds === palm ? '종려주일(고난주간 시작)' : ds === addDaysStr(E, -3) ? '고난주간(성목요일)' : ds === addDaysStr(E, -2) ? '고난주간(성금요일)' : '고난주간', '보라', 6);
+      else if (ds < first) info = mk('사순절', ds === ash ? '사순절 시작(재의 수요일)' : '사순절', '보라');
+      else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('사순절', `사순절 제${w}주`, '보라', w); }
+    } else { // 1/6 ~ 재의 수요일 전: 주현절
+      const first = sundayAfter('' + y + '-01-06'); const transfig = addDaysStr(E, -49);
+      if (ds < first) info = mk('주현절', ds === ymd(y, 1, 6) ? '주현절(주현일)' : '주현절', '흰색');
+      else { const w = Math.floor(dayDiff(ds, first) / 7) + 1; info = mk('주현절', `주현절 제${w}주${ds === transfig ? ' (변모주일)' : ''}`, ds === transfig ? '흰색' : '초록', w); }
+    }
+  }
+  // 한국 교회에서 널리 지키는 주일(교회마다 날짜·이름이 다를 수 있음)
+  if (dow(ds) === 0) {
+    const nth = (m, n) => nthSunday(y, m, n);
+    const sp = ds === nth(5, 1) ? '어린이주일' : ds === nth(5, 2) ? '어버이주일' : ds === nth(7, 1) ? '맥추감사주일' : ds === nth(10, 1) ? '세계성찬주일' : ds === lastSunday(y, 10) ? '종교개혁주일' : ds === nth(11, 3) ? '추수감사주일' : '';
+    if (sp) info.special = sp;
+  }
+  return info;
+}
+export const churchLabel = ds => { const i = churchInfo(ds); return i.special ? `${i.label} · ${i.special}` : i.label; };
+
+// 한 해의 교회력(표시용): 절기 이름과 기간
+export function churchYear(y) {
+  const E = easterDate(y), advent = adventStart(y), trin = addDaysStr(E, 56);
+  return [
+    { name: '성탄절기', color: '흰색', start: ymd(y - 1, 12, 25), end: ymd(y, 1, 5), note: '성탄일부터 1/5까지(성탄절 제1~3주)' },
+    { name: '주현절', color: '흰색·초록', start: ymd(y, 1, 6), end: addDaysStr(E, -47), note: '1/6 주현일 ~ 재의 수요일 전날' },
+    { name: '사순절', color: '보라', start: addDaysStr(E, -46), end: addDaysStr(E, -1), note: '재의 수요일 ~ 고난주간(종려주일 포함)' },
+    { name: '부활절', color: '흰색', start: E, end: addDaysStr(E, 48), note: '부활주일부터 50일(성령강림 전날까지)' },
+    { name: '성령강림절', color: '빨강', start: addDaysStr(E, 49), end: addDaysStr(E, 55), note: '성령강림주일(부활 후 50일째)' },
+    { name: '성령강림 후 주일들', color: '초록', start: trin, end: addDaysStr(advent, -1), note: '삼위일체주일부터 왕이신 그리스도 주일까지' },
+    { name: '대림절', color: '보라', start: advent, end: ymd(y, 12, 24), note: '성탄 전 네 주일(대림절 제1~4주)' },
+    { name: '성탄절', color: '흰색', start: ymd(y, 12, 25), end: ymd(y, 12, 31), note: '12/25 성탄일부터' },
+  ];
+}
+
+// ===== 반복 입력 =====
+export const REPEAT_RULES = [['none', '한 번만'], ['weekly', '매주(같은 요일)'], ['biweekly', '격주'], ['monthly', '매월(같은 날짜)'], ['monthly-nth', '매월(같은 요일·같은 주차, 예: 둘째 주 화요일)']];
+export const MAX_REPEAT = 104; // 한 번에 만들 수 있는 최대 횟수(매주 2년치)
+export function repeatDates(start, rule, until) {
+  if (!rule || rule === 'none') return [start];
+  if (!until || until < start) return [start];
+  const out = []; const [y0, m0, d0] = start.split('-').map(Number); const nthIdx = Math.floor((d0 - 1) / 7); const wd = dow(start);
+  if (rule === 'weekly' || rule === 'biweekly') { const step = rule === 'weekly' ? 7 : 14; for (let d = start; d <= until && out.length < MAX_REPEAT; d = addDaysStr(d, step)) out.push(d); return out; }
+  for (let i = 0; out.length < MAX_REPEAT; i++) {
+    const mi = m0 - 1 + i; const y = y0 + Math.floor(mi / 12); const m = (mi % 12) + 1; let d;
+    if (rule === 'monthly') { const dim = new Date(Date.UTC(y, m, 0)).getUTCDate(); if (d0 > dim) continue; d = ymd(y, m, d0); }
+    else { const first = ymd(y, m, 1); const cand = addDaysStr(first, ((wd - dow(first) + 7) % 7) + 7 * nthIdx); if (cand.slice(0, 7) !== first.slice(0, 7)) continue; d = cand; }
+    if (d > until) break; if (d >= start) out.push(d);
+  }
+  return out;
+}
+
+// ===== 일정(교사 기도회·회의 등) =====
+export const SCHEDULE_TYPES = ['교사 기도회', '교사 회의', '부서 회의', '교사 연수', '심방·돌봄', '준비 모임', '기타'];

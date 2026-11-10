@@ -4,7 +4,7 @@ const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t
 export function makeSeed(today) {
   const year = Number(today.slice(0, 4));
   const dow = new Date(today + 'T00:00:00Z').getUTCDay(); const sunday = addDays(today, (7 - dow) % 7); // 이번 주 일요일(오늘이 일요일이면 오늘)
-  const S = { version: 1, demo: true, nextId: 1000, depts: [{ id: 1, name: '아동부' }, { id: 2, name: '청년부' }], people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [] };
+  const S = { version: 1, demo: true, nextId: 1000, depts: [{ id: 1, name: '아동부' }, { id: 2, name: '청년부' }], people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], schedules: [] };
   let pid = 1; const P = (name, kind, dept, cls, by) => { S.people.push({ id: pid, name, kind, dept_id: dept, class_name: cls, birth_year: by || null, status: 'active' }); return pid++; };
   const kids = [P('가온', 'child', 1, '해님반', 2018), P('나래', 'child', 1, '해님반', 2018), P('다온', 'child', 1, '달님반', 2016), P('라온', 'child', 1, '달님반', 2016), P('마루', 'child', 1, '별님반', 2014), P('하늬', 'child', 1, '별님반', 2014), P('하늬', 'child', 1, '별님반', 2015)];
   P('김교사(가상)', 'teacher', 1, '해님반');
@@ -40,6 +40,10 @@ export function makeSeed(today) {
   X(1, `${year}-03-10`, 'expense', 80000, '교육비', '[가상] 공과 교재'); X(1, `${year}-05-05`, 'expense', 120000, '교육비', '[가상] 어린이날 선물');
   X(1, addDays(sunday, -1), 'expense', 210000, '절기행사', '[가상] 소풍 간식·음료', e1); X(1, addDays(sunday, -1), 'expense', 150000, '절기행사', '[가상] 버스 대절 계약금', e1); X(1, addDays(sunday, -1), 'income', 100000, '절기행사', '[가상] 참가비', e1);
   X(2, `${year}-02-14`, 'expense', 60000, '교육비', '[가상] 교재'); X(2, `${year}-05-20`, 'income', 300000, '수련회', '[가상] 수련회 적립'); X(2, `${year}-06-30`, 'expense', 400000, '수련회', '[가상] 숙소 계약금', e2);
+  // 일정(교사 기도회·회의): 예배·행사와 별도로 관리
+  let scid = 1; const SC = (dept_id, title, type, date, time, place) => S.schedules.push({ id: scid++, dept_id, title, type, date, time, place, note: '' });
+  for (let i = 0; i < 6; i++) SC(1, '교사 기도회', '교사 기도회', addDays(sunday, -4 + 7 * i), '10:30', '교육관');
+  SC(1, '[가상] 아동부 교사 회의', '교사 회의', addDays(sunday, 9), '13:00', '교육관'); SC(2, '[가상] 청년부 임원 회의', '부서 회의', addDays(sunday, 11), '20:00', '온라인');
   // 계획
   S.plans[`1-${year}`] = { goal: '[가상] 말씀 안에서 함께 자라는 어린이', themes: { 1: '새해와 새 마음', 3: '고난과 부활', 5: '가정', 7: '여름성경학교', 10: '감사', 12: '임마누엘(성탄)' } };
   S.plans[`2-${year}`] = { goal: '[가상] 삶으로 예배하는 청년 공동체', themes: { 1: '새해 비전', 8: '수련회', 11: '감사' } };

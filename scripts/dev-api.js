@@ -21,7 +21,7 @@ http.createServer(async (req, res) => {
     const chunks = []; for await (const c of req) chunks.push(c); const body = Buffer.concat(chunks);
     const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v); headers.set('CF-Connecting-IP', req.socket.remoteAddress || 'local');
     const r = await handle(new Request(u.href, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body }), env);
-    const out = {}; r.headers.forEach((v, k) => { out[k] = v; }); res.writeHead(r.status, out); res.end(await r.text()); return;
+    const out = {}; r.headers.forEach((v, k) => { out[k] = v; }); res.writeHead(r.status, out); res.end(Buffer.from(await r.arrayBuffer())); return; // 사진(바이너리)도 깨지지 않게 바이트 그대로 전달
   }
   let p = decodeURIComponent(u.pathname); if (p.endsWith('/')) p += 'index.html'; const f = path.normalize(path.join(pub, p));
   if (!f.startsWith(pub) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Not found'); return; }

@@ -1,6 +1,6 @@
 // 목회 비서 데이터 로직. 브라우저(localStorage)와 Node 테스트 양쪽에서 동작하도록 저장소를 주입받는다.
 import { makeSeed } from './seed.js';
-import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES } from './templates.js';
+import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES } from './templates.js';
 
 export const KEY = 'ministry-secretary:v1';
 export class ValidationError extends Error {}
@@ -21,23 +21,26 @@ export function reqMoney(n, l = '금액', allowZero = false) {
 const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 
 const isId = n => Number.isSafeInteger(n) && n > 0;
+export const RECEIPT_ID = /^[A-Za-z0-9_-]{1,64}$/; // 영수증 사진 번호(서버: 32자리 16진수, 이 브라우저: l로 시작)
 export function validateState(j) {
   const bad = m => { throw new ValidationError(`이 앱의 백업 파일이 아니거나 내용이 손상되었습니다. (${m})`); };
   if (!j || typeof j !== 'object' || j.version !== 1) bad('버전');
   for (const k of ['depts', 'people', 'events', 'tasks', 'participants', 'services', 'attendance', 'budgets', 'transactions', 'seasons']) if (!Array.isArray(j[k])) bad(`${k} 목록 없음`);
   if (!j.plans || typeof j.plans !== 'object' || Array.isArray(j.plans)) bad('plans');
   if (j.supplies !== undefined && !Array.isArray(j.supplies)) bad('준비물');
+  if (j.schedules !== undefined && !Array.isArray(j.schedules)) bad('일정');
   if (!Number.isSafeInteger(j.nextId) || j.nextId < 1) bad('nextId');
   const dids = new Set(); for (const d of j.depts) { if (!isId(d.id) || typeof d.name !== 'string') bad('부서'); dids.add(d.id); }
   if (!dids.size) bad('부서 없음');
   const pids = new Set(); for (const p of j.people) { if (!isId(p.id) || typeof p.name !== 'string' || (p.dept_id != null && !dids.has(p.dept_id))) bad('인원'); pids.add(p.id); }
   const eids = new Set(); for (const e of j.events) { if (!isId(e.id) || typeof e.title !== 'string' || !dids.has(e.dept_id) || !isDate(e.start_date) || !isDate(e.end_date)) bad('행사'); eids.add(e.id); }
   const sids = new Set(); for (const s of j.services) { if (!isId(s.id) || typeof s.title !== 'string' || !dids.has(s.dept_id) || !isDate(s.date)) bad('예배'); sids.add(s.id); }
+  for (const s of (j.schedules || [])) if (!isId(s.id) || typeof s.title !== 'string' || !dids.has(s.dept_id) || !isDate(s.date)) bad('일정');
   for (const t of j.tasks) if (!isId(t.id) || !eids.has(t.event_id) || typeof t.title !== 'string') bad('준비 업무');
   for (const p of j.participants) if (!eids.has(p.event_id) || !pids.has(p.person_id) || !['applied', 'attended', 'cancelled'].includes(p.status)) bad('참가');
   for (const a of j.attendance) if (!sids.has(a.service_id) || !pids.has(a.person_id)) bad('출석');
   for (const b of j.budgets) if (!dids.has(b.dept_id) || !Number.isSafeInteger(b.amount) || b.amount < 0) bad('예산');
-  for (const t of j.transactions) if (!isId(t.id) || !dids.has(t.dept_id) || !isDate(t.date) || !['income', 'expense'].includes(t.kind) || !Number.isSafeInteger(t.amount) || t.amount <= 0 || (t.event_id != null && !eids.has(t.event_id))) bad('거래');
+  for (const t of j.transactions) if (!isId(t.id) || !dids.has(t.dept_id) || !isDate(t.date) || !['income', 'expense'].includes(t.kind) || !Number.isSafeInteger(t.amount) || t.amount <= 0 || (t.event_id != null && !eids.has(t.event_id)) || (t.receipt != null && !RECEIPT_ID.test(String(t.receipt)))) bad('거래');
   for (const s of j.seasons) if (!dids.has(s.dept_id) || typeof s.name !== 'string') bad('절기');
   return j;
 }
@@ -45,7 +48,7 @@ export function validateState(j) {
 // 비어 있는 새 데이터(부서만 있음). 새 계정과 ‘실제 데이터로 시작’에서 사용
 export function emptyState(todayStr = kstToday()) {
   const base = makeSeed(todayStr);
-  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [] };
+  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [] };
 }
 
 export function createStore(storage, today = kstToday) {
@@ -58,7 +61,7 @@ export function createStore(storage, today = kstToday) {
   let recovered = false;
   function load() {
     let raw = null;
-    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); S = j; return S; } } catch {
+    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; S = j; return S; } } catch {
       // 저장된 값이 손상된 경우: 가상 데이터로 덮어쓰기 전에 원본을 따로 남겨 둔다(복구 가능)
       if (raw) { try { storage.setItem(KEY + ':broken', raw); recovered = true; } catch { /* 무시 */ } }
     }
@@ -66,12 +69,24 @@ export function createStore(storage, today = kstToday) {
   }
   load();
   const get = () => S;
-  const dept = id => S.depts.find(d => d.id === id);
+  let lastSeries = { made: 1, skipped: 0 };
+  // 반복 규칙(s.repeat, s.until)대로 같은 내용을 여러 날짜에 만든다. 반복일 때만 같은 부서·이름·날짜가 이미 있으면 건너뛴다.
+  const addSeries = (list, rec, s) => {
+    const rule = s.repeat && s.repeat !== 'none' ? s.repeat : 'none';
+    if (rule !== 'none') { if (!s.until) throw new ValidationError('반복할 때는 ‘반복 종료일’을 입력하세요.'); reqDate(s.until, '반복 종료일'); if (s.until < rec.date) throw new ValidationError('반복 종료일이 시작 날짜보다 앞서요.'); }
+    const dates = repeatDates(rec.date, rule, s.until);
+    const have = new Set(rule === 'none' ? [] : list.filter(x => x.dept_id === rec.dept_id && x.title === rec.title).map(x => x.date));
+    const todo = dates.filter(d => !have.has(d)); if (!todo.length) throw new ValidationError('같은 이름의 항목이 그 날짜들에 이미 있어요.');
+    const series = todo.length > 1 ? nid() : undefined; let first = null;
+    for (const d of todo) { const id = nid(); list.push({ id, ...rec, date: d, ...(series ? { series } : {}) }); if (first === null) first = id; }
+    lastSeries = { made: todo.length, skipped: dates.length - todo.length, capped: dates.length >= MAX_REPEAT && s.until > dates[dates.length - 1] };
+    save(); return first;
+  };  const dept = id => S.depts.find(d => d.id === id);
   const person = id => S.people.find(p => p.id === id);
   const ev = id => S.events.find(e => e.id === id);
 
   const api = {
-    get, save, KEY, wasRecovered: () => recovered,
+    get, save, KEY, wasRecovered: () => recovered, lastSeries: () => lastSeries,
     resetDemo() { S = makeSeed(today()); save(); },
     startEmpty() { S = emptyState(today()); save(); },
     exportJson() { return JSON.stringify(S, null, 1); },
@@ -79,7 +94,7 @@ export function createStore(storage, today = kstToday) {
     importJson(text) {
       let j; try { j = JSON.parse(text); } catch { throw new ValidationError('JSON 형식이 아닙니다.'); }
       validateState(j);
-      const before = S; S = j;
+      j.schedules = j.schedules || []; const before = S; S = j;
       try { save(); } catch (e) { S = before; throw e; }
     },
     markExported() { S.lastExport = new Date().toISOString(); save(); },
@@ -87,9 +102,10 @@ export function createStore(storage, today = kstToday) {
     depts: () => S.depts, dept, person, ev,
 
     // ----- 일정·홈 -----
-    calendar(deptId, from, to) {
+    calendar(deptId, from, to, { services = true } = {}) {
       const out = [];
-      for (const s of S.services) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to) out.push({ type: 'service', id: s.id, date: s.date, end: s.date, title: s.title, time: s.time, dept_id: s.dept_id });
+      for (const s of (S.schedules || [])) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to) out.push({ type: 'schedule', id: s.id, date: s.date, end: s.date, title: s.title, time: s.time, dept_id: s.dept_id, kind: s.type });
+      if (services) for (const s of S.services) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to) out.push({ type: 'service', id: s.id, date: s.date, end: s.date, title: s.title, time: s.time, dept_id: s.dept_id });
       for (const e of S.events) if ((!deptId || e.dept_id === deptId) && e.end_date >= from && e.start_date <= to && e.status !== 'cancelled') out.push({ type: 'event', id: e.id, date: e.start_date, end: e.end_date, title: e.title, dept_id: e.dept_id });
       return out.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
     },
@@ -144,6 +160,25 @@ export function createStore(storage, today = kstToday) {
       const id = nid();
       S.people.push({ id, name: reqText(p.name, '이름'), kind: ['child', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : 'child', dept_id: Number(p.dept_id) || null, class_name: p.class_name || '', birth_year: p.birth_year ? Number(p.birth_year) : null, status: 'active' }); save(); return id;
     },
+    // 명단 한꺼번에 등록: 먼저 검사만 하고(planPeopleImport) 사용자가 확인한 뒤 한 번에 저장한다(addPeopleBulk).
+    // rows: [{ name, kind, dept, class_name, birth_year }] (kind는 아동/청년/교사/봉사자, dept는 부서 이름. 비우면 기본값)
+    planPeopleImport(rows, defaultDeptId) {
+      if (rows.length > 500) throw new ValidationError('한 번에 500명까지 등록할 수 있어요. 파일을 나눠서 올려 주세요.');
+      const KINDS = { 아동: 'child', 청년: 'youth', 교사: 'teacher', 봉사자: 'volunteer', child: 'child', youth: 'youth', teacher: 'teacher', volunteer: 'volunteer' };
+      const key = p => `${p.name}|${p.dept_id}|${p.birth_year || ''}|${p.class_name || ''}`; const have = new Set(S.people.filter(p => p.status !== 'inactive').map(key)); const seen = new Set();
+      const ok = [], dup = [], errors = [];
+      rows.forEach((r, i) => {
+        const line = r.line || i + 2; const name = String(r.name || '').trim(); if (!name) { errors.push({ line, msg: '이름이 비어 있어요.' }); return; }
+        if (name.length > 40) { errors.push({ line, msg: `이름이 너무 길어요(${name.slice(0, 8)}…).` }); return; }
+        const kindTxt = String(r.kind || '').trim(); const kind = kindTxt ? KINDS[kindTxt] : (defaultDeptId === 2 ? 'youth' : 'child'); if (!kind) { errors.push({ line, msg: `‘${kindTxt}’은(는) 알 수 없는 구분이에요(아동/청년/교사/봉사자).` }); return; }
+        const dtxt = String(r.dept || '').trim(); const d = dtxt ? S.depts.find(x => x.name === dtxt) : dept(defaultDeptId); if (!d) { errors.push({ line, msg: `‘${dtxt}’ 부서를 찾을 수 없어요(${S.depts.map(x => x.name).join('/')}).` }); return; }
+        const byTxt = String(r.birth_year || '').trim(); const by = byTxt ? Number(byTxt) : null; if (byTxt && (!Number.isInteger(by) || by < 1900 || by > 2100)) { errors.push({ line, msg: `출생년도 ‘${byTxt}’이(가) 올바르지 않아요(예: 2016).` }); return; }
+        const p = { name, kind, dept_id: d.id, class_name: String(r.class_name || '').trim().slice(0, 30), birth_year: by };
+        if (have.has(key(p)) || seen.has(key(p))) { dup.push({ line, name }); return; } seen.add(key(p)); ok.push(p);
+      });
+      return { ok, dup, errors };
+    },
+    addPeopleBulk(list) { for (const p of list) S.people.push({ id: nid(), name: reqText(p.name, '이름'), kind: p.kind, dept_id: p.dept_id, class_name: p.class_name || '', birth_year: p.birth_year || null, status: 'active' }); save(); return list.length; },
     movePerson(id, deptId, className) { const p = person(id); p.dept_id = deptId; p.class_name = className || ''; save(); },
     setPersonStatus(id, status) { person(id).status = status; save(); }, // 명단 제외 ≠ 기록 삭제
     people({ deptId, status = 'active', className } = {}) {
@@ -162,8 +197,27 @@ export function createStore(storage, today = kstToday) {
       const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '예배명'), date: reqDate(s.date), time: s.time || '', place: s.place || '', scripture: s.scripture || '', sermon_title: s.sermon_title || '', leader: s.leader || '', order_text: s.order_text || '', kind: s.kind === 'special' ? 'special' : 'regular' };
       if (!dept(rec.dept_id)) throw new ValidationError('부서를 선택하세요.');
       if (s.id) { Object.assign(S.services.find(x => x.id === s.id), rec); save(); return s.id; }
-      const id = nid(); S.services.push({ id, ...rec }); save(); return id;
+      return addSeries(S.services, rec, s);
     },
+    // 반복해서 만든 예배·일정을 묶음(series)으로 지운다: fromDate 이후(포함)만. 출석 기록이 있어도 함께 지워지므로 화면에서 먼저 확인한다.
+    seriesCount(kind, id) { const list = kind === 'service' ? S.services : S.schedules; const x = list.find(v => v.id === id); return x && x.series ? list.filter(v => v.series === x.series && v.date >= x.date).length : 1; },
+    deleteSeries(kind, id) {
+      const list = kind === 'service' ? S.services : S.schedules; const x = list.find(v => v.id === id); if (!x) return 0;
+      const gone = new Set(list.filter(v => v.id === id || (x.series && v.series === x.series && v.date >= x.date)).map(v => v.id));
+      if (kind === 'service') { S.attendance = S.attendance.filter(a => !gone.has(a.service_id)); S.services = S.services.filter(v => !gone.has(v.id)); } else S.schedules = S.schedules.filter(v => !gone.has(v.id));
+      save(); return gone.size;
+    },
+    // ----- 일정(교사 기도회·회의 등. 예배·행사와 별도) -----
+    saveSchedule(s) {
+      const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '일정 이름'), type: SCHEDULE_TYPES.includes(s.type) ? s.type : '기타', date: reqDate(s.date), time: s.time || '', place: s.place || '', note: s.note || '' };
+      if (!dept(rec.dept_id)) throw new ValidationError('부서를 선택하세요.');
+      S.schedules = S.schedules || [];
+      if (s.id) { Object.assign(S.schedules.find(x => x.id === s.id), rec); save(); return s.id; }
+      return addSeries(S.schedules, rec, s);
+    },
+    schedule: id => (S.schedules || []).find(s => s.id === id),
+    schedules(deptId) { return (S.schedules || []).filter(s => !deptId || s.dept_id === deptId).sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')); },
+    deleteSchedule(id) { S.schedules = (S.schedules || []).filter(s => s.id !== id); save(); },
     cloneService(id, newDate) { const s = S.services.find(x => x.id === id); return api.saveService({ ...s, id: undefined, date: newDate }); }, // 순서·담당만 복제, 출석은 복제 안 함
     service: id => S.services.find(s => s.id === id),
     services(deptId) { return S.services.filter(s => !deptId || s.dept_id === deptId).sort((a, b) => b.date.localeCompare(a.date)); },
@@ -190,7 +244,8 @@ export function createStore(storage, today = kstToday) {
       if (b) b.amount = amount; else S.budgets.push({ id: nid(), dept_id: deptId, year, category: reqText(category, '항목'), amount }); save();
     },
     addTransaction(t) {
-      const rec = { dept_id: Number(t.dept_id), date: reqDate(t.date), kind: t.kind, amount: reqMoney(t.amount), category: t.category || '', memo: t.memo || '', event_id: t.event_id ? Number(t.event_id) : null };
+      const rec = { dept_id: Number(t.dept_id), date: reqDate(t.date), kind: t.kind, amount: reqMoney(t.amount), category: t.category || '', memo: t.memo || '', event_id: t.event_id ? Number(t.event_id) : null, receipt: t.receipt ? String(t.receipt) : null };
+      if (rec.receipt && !RECEIPT_ID.test(rec.receipt)) throw new ValidationError('영수증 사진 번호가 올바르지 않습니다.');
       if (!['income', 'expense'].includes(rec.kind)) throw new ValidationError('수입/지출 구분이 필요합니다.');
       if (!dept(rec.dept_id)) throw new ValidationError('부서를 선택하세요.');
       if (rec.event_id) { const e = ev(rec.event_id); if (!e) throw new ValidationError('연결할 행사를 찾을 수 없습니다.'); if (e.dept_id !== rec.dept_id) throw new ValidationError('행사와 부서가 다릅니다.'); }

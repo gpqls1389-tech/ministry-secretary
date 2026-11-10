@@ -69,6 +69,18 @@ function pwCheck(p, email = '') {
 }
 const inviteReady = env => typeof env.INVITE_CODE === 'string' && env.INVITE_CODE.length >= MIN_INVITE;
 
+// ---- 영수증 사진: 계정마다 따로 저장(D1). 표는 처음 쓸 때 자동으로 만든다(관리자가 따로 SQL을 실행할 필요 없음). ----
+const MAX_RECEIPT_BYTES = 400_000;         // 사진 한 장(브라우저가 줄여서 올린 JPEG)
+const MAX_RECEIPTS = 300;                  // 계정당 장수
+const MAX_RECEIPT_TOTAL = 60_000_000;      // 계정당 전체 용량(60MB)
+const RECEIPT_URL = /^\/api\/receipts\/([a-f0-9]{32})$/;
+const receiptReady = new WeakSet();
+async function ensureReceipts(db) {
+  if (receiptReady.has(db)) return;
+  await db.prepare('CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, size INTEGER NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL)').bind().run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_receipts_user ON receipts(user_id)').bind().run();
+  receiptReady.add(db);
+}
 export async function handle(request, env, now = Date.now()) {
   const url = new URL(request.url); const path = url.pathname.replace(/\/+$/, '') || '/'; const secure = url.protocol === 'https:'; const method = request.method.toUpperCase();
   try {
@@ -149,8 +161,35 @@ export async function handle(request, env, now = Date.now()) {
       const b = await body(request); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
       if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
       if (!(await verifyPassword(String(b.password || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '비밀번호가 맞지 않습니다.'); }
-      await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
+      await ensureReceipts(db); await db.prepare('DELETE FROM receipts WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
+    }
+    // ---- 영수증 사진 (항상 '내' 사진만: user_id는 세션에서만 얻는다) ----
+    if (path === '/api/receipts' && method === 'POST') {
+      await ensureReceipts(db);
+      if (await limited(db, `rc:${user.id}`, 60, now)) throw new HttpError(429, '사진을 너무 많이 올렸어요. 1시간 뒤에 다시 해 주세요.');
+      const b = await body(request, 600_000); const m = typeof b.data === 'string' ? b.data.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/) : null;
+      if (!m) throw new HttpError(400, '사진 형식이 올바르지 않습니다(JPEG만 받을 수 있어요).');
+      let bytes; try { bytes = unb64(m[1]); } catch { throw new HttpError(400, '사진 형식이 올바르지 않습니다.'); }
+      if (bytes.length > MAX_RECEIPT_BYTES) throw new HttpError(413, '사진이 너무 커요. 더 작게 줄여서 올려 주세요.');
+      if (bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8 || bytes[2] !== 0xFF) throw new HttpError(400, 'JPEG 사진이 아닙니다.');
+      const used = await db.prepare('SELECT COUNT(*) c, COALESCE(SUM(size),0) s FROM receipts WHERE user_id=?').bind(user.id).first();
+      if (used.c >= MAX_RECEIPTS || used.s + bytes.length > MAX_RECEIPT_TOTAL) throw new HttpError(413, '영수증 사진을 더 올릴 수 없어요(장수·용량 한도). 오래된 사진을 지워 주세요.');
+      await fail(db, `rc:${user.id}`, now, 3600e3);
+      const id = [...crypto.getRandomValues(new Uint8Array(16))].map(x => x.toString(16).padStart(2, '0')).join('');
+      await db.prepare('INSERT INTO receipts(id,user_id,size,data,created_at) VALUES(?,?,?,?,?)').bind(id, user.id, bytes.length, m[1], now).run();
+      return json({ ok: true, id }, 201);
+    }
+    const rm = path.match(RECEIPT_URL);
+    if (rm && method === 'GET') {
+      await ensureReceipts(db); const r = await db.prepare('SELECT data FROM receipts WHERE id=? AND user_id=?').bind(rm[1], user.id).first();
+      if (!r) throw new HttpError(404, '사진을 찾을 수 없습니다.');
+      return new Response(unb64(r.data), { status: 200, headers: { 'Content-Type': 'image/jpeg', ...SEC_HEADERS, 'Cache-Control': 'private, no-store', 'Content-Security-Policy': "default-src 'none'; sandbox" } });
+    }
+    if (rm && method === 'DELETE') {
+      await ensureReceipts(db); const r = await db.prepare('DELETE FROM receipts WHERE id=? AND user_id=?').bind(rm[1], user.id).run();
+      if (!r.meta.changes) throw new HttpError(404, '사진을 찾을 수 없습니다.');
+      return json({ ok: true });
     }
     throw new HttpError(404, '찾을 수 없습니다.');
   } catch (e) {

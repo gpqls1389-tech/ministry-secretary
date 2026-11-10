@@ -16,6 +16,10 @@ export const accountApi = {
   changePassword: (current, next) => req('POST', '/api/password', { current, next }),
   deleteAccount: password => req('POST', '/api/delete-account', { password }),
 };
+export const receiptApi = {
+  put: data => req('POST', '/api/receipts', { data }),
+  remove: id => req('DELETE', '/api/receipts/' + encodeURIComponent(id), {}),
+};
 
 function localStorageSafe() {
   try { const t = '__t'; window.localStorage.setItem(t, '1'); window.localStorage.removeItem(t); return window.localStorage; }
