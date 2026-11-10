@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const port = Number(process.env.PORT) || 8788;
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.mjs': 'text/javascript; charset=utf-8', '.bcmap': 'application/octet-stream' };
 // 글꼴 불러오기 실패 시 대체 글꼴 확인용: BLOCK_FONTS=1 npm start → /fonts/ 요청에 404
 const blockFonts = process.env.BLOCK_FONTS === '1';
 http.createServer((req, res) => {

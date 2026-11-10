@@ -216,3 +216,55 @@ test('[모든 기기 로그아웃] 내 세션만 모두 끊기고, 다른 사람
   assert.equal((await call(env, 'GET', '/api/me', { cookie: b })).json.user.email, 'b@church.kr'); // 다른 사람은 그대로
   assert.equal((await call(env, 'POST', '/api/login', { body: { email: 'a@church.kr', password: PW }, ip: '5.5.5.5' })).status, 200); // 다시 로그인 가능
 });
+
+// ---------- PDF에서 계획·일정 가져오기 ----------
+import { parsePlanLines, guessKind, guessScheduleType } from '../public/js/planparse.js';
+import { itemsToLines } from '../public/js/pdfimport.js';
+
+test('[PDF 읽기 규칙] 날짜 모양(월/일, 점, 한글, 기간, 요일, 시간)을 찾고, 날짜가 아닌 숫자는 무시하고, 의심스러운 줄엔 경고를 붙인다', () => {
+  const r = parsePlanLines(['2026년 아동부 교육계획', '12월', '6(일) 대림절 제2주 어린이 예배 11:00', '20일(일) 성탄 발표회 오후 2시', '2026.12.24 성탄 전야 기도회 | 교사', '7/24~26 여름성경학교', '교사회의 12월 8일(화) 오후 8시', '배율 1.5배 설명', '시간 10:30 만 있는 줄', '1월', '3일(일) 신년 감사예배', '10(수) 요일 틀린 모임'], 2025);
+  const by = t => r.find(x => x.title.includes(t));
+  assert.deepEqual([by('대림절').date, by('대림절').time, by('대림절').kind], ['2026-12-06', '11:00', 'service']); // 제목의 2026년이 기본 연도
+  assert.deepEqual([by('성탄 발표회').date, by('성탄 발표회').time, by('성탄 발표회').kind], ['2026-12-20', '14:00', 'event']);
+  assert.equal(by('전야').date, '2026-12-24'); assert.equal(by('전야').title, '성탄 전야 기도회 교사');
+  assert.deepEqual([by('여름성경학교').date, by('여름성경학교').end], ['2026-07-24', '2026-07-26']);
+  assert.deepEqual([by('교사회의').date, by('교사회의').time, by('교사회의').kind], ['2026-12-08', '20:00', 'schedule']);
+  assert.equal(r.length, 7); // 1.5배, 10:30만 있는 줄은 날짜가 아니다
+  assert.equal(by('신년').date, '2027-01-03'); assert.deepEqual(by('신년').warn, []); // 12월 다음 1월 → 해가 바뀜(2027-01-03은 일요일)
+  assert.match(by('요일 틀린').warn.join(' '), /요일이 맞지 않아요/);
+  const w = parsePlanLines(['2027.1.5 ~ 2027.1.7 겨울성경학교', '2026년 12월 31일 송구영신 예배', '2/30 없는 날짜 행사', '8월 2일 ~ 8월 4일 수련회'], 2026);
+  assert.deepEqual(w.map(x => [x.date, x.end]), [['2027-01-05', '2027-01-07'], ['2026-12-31', '2026-12-31'], ['2027-08-02', '2027-08-04']]); // 없는 날짜(2/30)는 건너뜀, 명시한 연도 뒤에는 그 연도 유지
+  assert.deepEqual(parsePlanLines(['12월 25일'], 2026), []); // 이름이 없으면 후보로 만들지 않음
+  assert.match(parsePlanLines(['12월 25일', '성탄절 예배'], 2026)[0].warn.join(' '), /다음 줄/);
+  assert.ok(parsePlanLines(['12/25 ' + '가'.repeat(100)], 2026)[0].title.length <= 60);
+  assert.equal(guessKind('주일학교 예배'), 'service'); assert.equal(guessKind('성탄 발표회'), 'event'); assert.equal(guessKind('교사 기도회'), 'schedule'); assert.equal(guessKind('알 수 없음'), 'schedule');
+  assert.equal(guessScheduleType('교사 기도회'), '교사 기도회'); assert.equal(guessScheduleType('교사 연수'), '교사 연수'); assert.equal(guessScheduleType('임원 회의'), '부서 회의'); assert.equal(guessScheduleType('그냥'), '기타');
+  assert.deepEqual(parsePlanLines(['<script>alert(1)</script> 12/25 성탄 <b>예배</b>'], 2026)[0].title, '<script>alert(1)</script> 성탄 <b>예배</b>'); // 글자는 그대로(화면에서 이스케이프)
+});
+
+test('[PDF 줄 만들기] 같은 높이의 글자를 한 줄로 묶고 표 칸 사이는 | 로 구분한다', () => {
+  const it = (s, x, y, w = 40) => ({ str: s, transform: [10, 0, 0, 10, x, y], width: w });
+  const lines = itemsToLines([it('성탄', 100, 700), it('발표회', 142, 700), it('12/20', 20, 700), it('두번째 줄', 20, 650), it('', 5, 5), { str: 'x' }, it('칸1', 20, 600), it('칸2', 220, 600)]);
+  assert.deepEqual(lines, ['12/20 | 성탄 발표회', '두번째 줄', '칸1 | 칸2']);
+});
+
+test('[PDF 일괄 등록] 한 번에 등록하고, 중복은 건너뛰고, 하나라도 틀리면 아무것도 등록하지 않는다', () => {
+  const s = mk(); const items = [{ kind: 'event', dept_id: 1, title: '성탄 발표회', date: '2026-12-20', end: '2026-12-20' }, { kind: 'service', dept_id: 1, title: '성탄절 예배', date: '2026-12-25', time: '11:00' }, { kind: 'schedule', dept_id: 1, title: '교사회의', date: '2026-12-08', time: '20:00', type: '교사 회의' }];
+  const r = s.importPlanItems(items); assert.deepEqual(r, { made: { event: 1, service: 1, schedule: 1 }, skipped: 0 });
+  assert.equal(s.get().events.length, 1); assert.equal(s.get().events[0].status, 'planned'); assert.equal(s.services(1)[0].time, '11:00'); assert.equal(s.schedules(1)[0].type, '교사 회의');
+  assert.deepEqual(s.importPlanItems(items), { made: { event: 0, service: 0, schedule: 0 }, skipped: 3 }); assert.equal(s.get().events.length, 1);
+  const before = s.exportJson();
+  for (const bad of [[{ kind: 'x', dept_id: 1, title: 'a', date: '2026-12-01' }], [{ kind: 'event', dept_id: 9, title: 'a', date: '2026-12-01' }], [{ kind: 'event', dept_id: 1, title: ' ', date: '2026-12-01' }], [{ kind: 'event', dept_id: 1, title: 'a', date: '2026-02-31' }], [{ kind: 'event', dept_id: 1, title: 'a', date: '2026-12-05', end: '2026-12-01' }], [{ kind: 'event', dept_id: 1, title: 'a'.repeat(81), date: '2026-12-01' }], [], null]) assert.throws(() => s.importPlanItems(bad));
+  assert.throws(() => s.importPlanItems([{ kind: 'event', dept_id: 1, title: '정상', date: '2026-12-01' }, { kind: 'event', dept_id: 1, title: '틀림', date: 'zzz' }]), /날짜/); assert.equal(s.exportJson(), before); // 일부만 등록되지 않음
+  assert.throws(() => s.importPlanItems(Array.from({ length: 301 }, (_, i) => ({ kind: 'event', dept_id: 1, title: 't' + i, date: '2026-12-01' }))), /300개/);
+});
+
+test('[PDF 도구·보안 설정] 도구 파일은 있고 라이선스 고지가 함께 있으며, 스크립트 제한은 풀지 않고 작업자는 같은 사이트 것만 허용한다', () => {
+  const root = new URL('../public/', import.meta.url); const exists = p => fs.existsSync(new URL(p, root));
+  for (const f of ['vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'vendor/pdfjs/LICENSE.txt', 'vendor/pdfjs/README.txt', 'vendor/pdfjs/cmaps/UniKS-UTF16-H.bcmap']) assert.ok(exists(f), f);
+  assert.match(fs.readFileSync(new URL('vendor/pdfjs/LICENSE.txt', root), 'utf8'), /Apache License/);
+  const csp = /Content-Security-Policy: (.*)/.exec(fs.readFileSync(new URL('_headers', root), 'utf8'))[1]; const dir = n => (new RegExp(`(?:^|; )${n} ([^;]*)`).exec(csp) || [])[1];
+  assert.equal(dir('script-src'), "'self'"); assert.equal(dir('worker-src'), "'self'"); assert.equal(dir('connect-src'), "'self'"); assert.equal(dir('object-src'), "'none'"); assert.ok(!/unsafe-eval|wasm-unsafe-eval|https?:|\*/.test(csp), csp);
+  assert.ok(/\/vendor\/\*\s+Cache-Control: public, max-age=31536000, immutable/.test(fs.readFileSync(new URL('_headers', root), 'utf8')));
+  assert.ok(!/fetch\(['"]https?:/.test(fs.readFileSync(new URL('js/pdfimport.js', root), 'utf8'))); // PDF 읽기 코드는 외부로 요청하지 않는다
+});

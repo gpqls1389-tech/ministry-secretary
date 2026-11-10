@@ -6,6 +6,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장�
 
 import { initAuth, accountApi, openLoginPreview, receiptApi } from './auth.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
+import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { imgSrc, emptyImgFor, bannerFor } from './images.js';
 const A = await initAuth(); { const lg = document.getElementById('logo'); if (lg && imgSrc('logo')) lg.src = imgSrc('logo'); } // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
 let store;
@@ -164,7 +165,7 @@ function vPlan() {
     for (let i = 0; i < lead; i++) cells.push('<div class="out"></div>');
     for (let d = 1; d <= dim; d++) { const ds = `${UI.month}-${pad(d)}`; cells.push(`<div class="${ds === today() ? 'today' : ''}"><b>${d}</b>${dow(ds) === '일' ? `<small class="cs" title="교회력(자동 계산)"><i style="background:${churchInfo(ds).colorHex}"></i>${esc(churchInfo(ds).special || churchInfo(ds).label)}</small>` : ''}${items.filter(i => i.date <= ds && i.end >= ds).map(i => `<a class="d${i.dept_id}" data-open="${i.type}/${i.id}" title="${esc(i.title)}">${typeIco(i)} ${esc(i.title)}</a>`).join('')}</div>`); }
     const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7), next = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
-    page('🗓️', '일정·계획', '일정(교사 기도회·회의)과 행사를 모아 보는 달력이에요. 주일예배는 ‘예배’ 메뉴에서 관리하고, 필요하면 아래에서 함께 볼 수 있어요.', `${tabs}<div class="row" style="margin-bottom:10px"><button data-month="${prev}">◀</button><b>${y}년 ${m}월</b><button data-month="${next}">▶</button><button data-month="${today().slice(0, 7)}">오늘</button><label class="small noprint" style="margin-left:8px"><input type="checkbox" data-calsvc${UI.calSvc ? ' checked' : ''}> 예배도 함께 보기</label><span class="sp"></span><button class="pri sm noprint" data-act="newSchedule">+ 일정</button></div><div class="cal">${['월', '화', '수', '목', '금', '토', '일'].map(w => `<div class="h">${w}</div>`).join('')}${cells.join('')}</div>`);
+    page('🗓️', '일정·계획', '일정(교사 기도회·회의)과 행사를 모아 보는 달력이에요. 주일예배는 ‘예배’ 메뉴에서 관리하고, 필요하면 아래에서 함께 볼 수 있어요.', `${tabs}<div class="row" style="margin-bottom:10px"><button data-month="${prev}">◀</button><b>${y}년 ${m}월</b><button data-month="${next}">▶</button><button data-month="${today().slice(0, 7)}">오늘</button><label class="small noprint" style="margin-left:8px"><input type="checkbox" data-calsvc${UI.calSvc ? ' checked' : ''}> 예배도 함께 보기</label><span class="sp"></span><button class="sm noprint" data-act="pdfImport">PDF에서 가져오기</button><button class="pri sm noprint" data-act="newSchedule">+ 일정</button></div><div class="cal">${['월', '화', '수', '목', '금', '토', '일'].map(w => `<div class="h">${w}</div>`).join('')}${cells.join('')}</div>`);
   } else {
     if (UI.planTab === 'list') return vScheduleList(tabs);
     const d = workDept(); const P = store.plan(d, UI.year); const autoSeasons = !store.seasons(d, UI.year).length ? guard(() => store.loadSeasonTemplate(d, UI.year)) : 0; const seasons = store.seasons(d, UI.year);
@@ -267,7 +268,7 @@ function vSchedule(id) {
 }
 function vScheduleList(tabs) {
   const t = today(); const all = store.schedules(did()); const rows = [...all.filter(s => s.date < t).slice(-5), ...all.filter(s => s.date >= t)];
-  page('🗓️', '일정·계획', '교사 기도회·회의 같은 모임을 등록해요. ‘반복’을 쓰면 여러 주를 한 번에 만들 수 있어요.', `${tabs}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newSchedule">+ 새 일정</button></div><div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>일정</th><th>구분</th><th>부서</th><th>장소</th></tr></thead><tbody>${rows.map(s => `<tr class="link${s.date < t ? ' former' : ''}" data-open="schedule/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b></td><td>${esc(s.type)}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.place)}</td></tr>`).join('') || `<tr><td colspan="5">${emptyState('등록된 일정이 없어요', '교사 기도회·교사 회의 같은 모임을 넣어 보세요. 매주 하는 모임은 ‘반복’을 매주로 하면 한 번에 만들어져요.', '<button class="sm pri" data-act="newSchedule">+ 일정 만들기</button>')}</td></tr>`}</tbody></table></div><p class="mute small">지난 일정은 최근 5개만 보여요.</p>`);
+  page('🗓️', '일정·계획', '교사 기도회·회의 같은 모임을 등록해요. ‘반복’을 쓰면 여러 주를 한 번에 만들 수 있어요.', `${tabs}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newSchedule">+ 새 일정</button><button data-act="pdfImport">PDF에서 가져오기</button></div><div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>일정</th><th>구분</th><th>부서</th><th>장소</th></tr></thead><tbody>${rows.map(s => `<tr class="link${s.date < t ? ' former' : ''}" data-open="schedule/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b></td><td>${esc(s.type)}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.place)}</td></tr>`).join('') || `<tr><td colspan="5">${emptyState('등록된 일정이 없어요', '교사 기도회·교사 회의 같은 모임을 넣어 보세요. 매주 하는 모임은 ‘반복’을 매주로 하면 한 번에 만들어져요.', '<button class="sm pri" data-act="newSchedule">+ 일정 만들기</button>')}</td></tr>`}</tbody></table></div><p class="mute small">지난 일정은 최근 5개만 보여요.</p>`);
 }
 
 // ----- 인원·출석 -----
@@ -388,7 +389,7 @@ function vSettings() {
   <h2>백업·복원 (JSON 파일)</h2><div class="row"><button data-act="export">내보내기(.json 다운로드)</button><button data-act="import">파일에서 가져오기</button><input type="file" id="file" accept="application/json,.json" hidden></div>
   <p class="mute small">내보낸 파일에는 이름 등 개인정보가 들어 있을 수 있으니 안전한 곳에만 보관하세요. 가져오면 현재 데이터가 파일 내용으로 바뀝니다(바꾸기 전에 확인합니다).</p>
   <h2>화면 미리보기</h2><div class="row"><button data-act="loginPreview">로그인 화면 미리보기</button><span class="mute small">서버 없이 모양만 보여 줘요(실제 로그인 아님).</span></div>
-  <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a></p>
+  <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>PDF 글자 읽기에는 <b>pdf.js</b> 6.5.438(Mozilla, Apache License 2.0)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/pdfjs/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a></p>
   <h2>개인정보 안내</h2><ul class="small"><li>이 앱은 보호자 연락처·알레르기·계좌·주민번호를 입력받지 않습니다.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
   <h2>정보</h2><dl class="props"><dt>버전</dt><dd>0.2.0</dd><dt>저장 방식</dt><dd>${acct ? '계정별 서버 저장(Cloudflare D1)' : `localStorage (${window.__memOnly ? '사용 불가 → 임시 메모리' : '사용 중'})`}</dd><dt>통화·시간대</dt><dd>원화(정수) · Asia/Seoul</dd></dl>`);
 }
@@ -396,6 +397,36 @@ function vSettings() {
 // ----- 이벤트 -----
 const closeDialogs = () => $$('dialog').forEach(x => x.close());
 const ACT = {
+  pdfImport: () => {
+    const KINDS = [['event', '행사'], ['schedule', '일정(모임)'], ['service', '예배']]; let cands = [];
+    const d = modal(`<div class="dlg" style="max-width:760px"><h3>PDF에서 계획·일정 가져오기</h3>
+      <ul class="small"><li>PDF는 <b>이 브라우저 안에서만</b> 읽어요. 서버나 외부로 올라가지 않아요.</li><li>글자가 드래그로 선택되는 PDF(워드·한글에서 ‘PDF로 저장’)만 읽을 수 있어요. <b>스캔본(그림 PDF)은 읽지 못해요.</b></li><li>날짜가 적힌 줄을 규칙으로 찾아내는 방식이라 <b>틀릴 수 있어요.</b> 아래 목록을 확인·수정한 뒤 등록하세요. 이름·연락처가 든 문서는 올리지 마세요.</li></ul>
+      <div data-step1><div class="row"><label class="f" style="flex:1;min-width:130px">부서<select data-dept>${deptOpts().map(([v, l]) => `<option value="${v}"${Number(v) === workDept() ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label><label class="f" style="width:120px">기본 연도<input type="number" data-year value="${UI.year}" min="2000" max="2100"></label></div><label class="f">PDF 파일 (15MB 이하, 50쪽까지)<input type="file" accept="application/pdf,.pdf" data-file></label></div>
+      <div data-msg class="callout warn" style="margin:8px 0" hidden></div><div data-list></div>
+      <div class="dlg-foot"><button data-x>닫기</button><button data-read>읽기</button><button class="pri" data-run hidden>선택한 항목 등록</button></div></div>`);
+    d.style.width = 'min(880px, 94vw)'; d.style.maxWidth = 'min(880px, 94vw)';
+    const q = s => $(s, d); const msg = (t, bad = true) => { const m = q('[data-msg]'); m.hidden = !t; m.className = 'callout ' + (bad ? 'warn' : ''); m.style.margin = '8px 0'; m.textContent = t || ''; };
+    q('[data-x]').onclick = () => d.close();
+    const draw = () => {
+      q('[data-list]').innerHTML = `<p class="small"><b>${cands.length}개</b>를 찾았어요. 맞는 것만 체크하고, 날짜·이름·구분을 고친 뒤 등록하세요. ⚠️ 표시는 확인이 필요한 줄이에요.</p><div class="tablewrap" style="max-height:46vh;overflow:auto"><table class="t"><thead><tr><th></th><th>날짜</th><th>이름</th><th>구분</th><th>원문</th></tr></thead><tbody>${cands.map((c, i) => `<tr><td><input type="checkbox" data-c="${i}" ${c.warn.length ? '' : 'checked'} aria-label="가져오기"></td><td><input type="date" data-d="${i}" value="${c.date}" style="width:140px"><div class="mute small">${c.end !== c.date ? '~ ' + c.end : ''} ${c.time || ''}</div></td><td><input data-t="${i}" value="${esc(c.title)}" maxlength="80" style="width:100%;min-width:140px">${c.warn.length ? `<div class="small" style="color:var(--orange)">⚠️ ${esc(c.warn.join(' '))}</div>` : ''}</td><td><select data-k="${i}">${KINDS.map(([v, l]) => `<option value="${v}"${c.kind === v ? ' selected' : ''}>${l}</option>`).join('')}</select></td><td class="mute small">${c.line}번째 줄</td></tr>`).join('')}</tbody></table></div>`;
+      q('[data-run]').hidden = false;
+    };
+    q('[data-read]').onclick = async () => {
+      const f = q('[data-file]').files[0]; if (!f) return msg('PDF 파일을 먼저 고르세요.'); const btn = q('[data-read]'); btn.disabled = true; msg('읽는 중…', false); q('[data-list]').innerHTML = ''; q('[data-run]').hidden = true;
+      try {
+        const { extractPdfLines } = await import('./pdfimport.js'); const r = await extractPdfLines(f, (p, n) => msg(`읽는 중… ${p}/${n}쪽`, false));
+        cands = parsePlanLines(r.lines, Number(q('[data-year]').value) || UI.year);
+        msg(r.truncated ? `${r.pages}쪽 중 앞의 50쪽만 읽었어요.` : '', false);
+        if (!cands.length) { q('[data-list]').innerHTML = `<p>날짜가 적힌 줄을 찾지 못했어요. 날짜가 ‘12월 20일’, ‘12/20’, ‘2026.12.20’ 같은 모양인지 확인하세요.</p><details><summary class="small">읽은 글자 앞부분 보기</summary><pre class="small" style="white-space:pre-wrap">${esc(r.lines.slice(0, 40).join('\n'))}</pre></details>`; }
+        else draw();
+      } catch (e) { msg(e.message || 'PDF를 읽지 못했어요.'); } finally { btn.disabled = false; }
+    };
+    q('[data-run]').onclick = () => {
+      const picked = []; $$('[data-c]:checked', d).forEach(cb => { const i = Number(cb.dataset.c); const c = cands[i]; const date = q(`[data-d="${i}"]`).value; const kind = q(`[data-k="${i}"]`).value; const title = q(`[data-t="${i}"]`).value.trim(); picked.push({ kind, dept_id: Number(q('[data-dept]').value), title, date, end: date === c.date ? c.end : date, time: c.time, type: guessScheduleType(title) }); });
+      if (!picked.length) return msg('가져올 항목을 체크하세요.');
+      try { const r = store.importPlanItems(picked); const parts = [r.made.event && `행사 ${r.made.event}`, r.made.schedule && `일정 ${r.made.schedule}`, r.made.service && `예배 ${r.made.service}`].filter(Boolean); d.close(); render(); toast(`${parts.join(' · ') || '0'}개를 등록했어요.${r.skipped ? ` (이미 있는 ${r.skipped}개는 건너뜀)` : ''}`); } catch (e) { msg(e.message); }
+    };
+  },
   notice: d => noticeModal(d.kind, Number(d.id)),
   newVisit: () => visitForm(), editVisit: d => { closeDialogs(); visitForm(store.visit(Number(d.id))); },
   delVisit: async d => { if (await ask('이 기록을 삭제할까요? 되돌릴 수 없어요.', '삭제')) { closeDialogs(); store.deleteVisit(Number(d.id)); render(); toast('삭제했어요.'); } },
