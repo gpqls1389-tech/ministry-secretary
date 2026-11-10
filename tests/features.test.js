@@ -17,7 +17,7 @@ test('[교회력] 감리회 성서일과 2026년 표(lectionary.kmc.or.kr, ebibl
     '2026-05-24': '성령강림절(성령강림주일)', '2026-05-31': '성령강림 후 제1주 (삼위일체주일)', '2026-06-07': '성령강림 후 제2주', '2026-08-30': '성령강림 후 제14주', '2026-10-04': '성령강림 후 제19주', '2026-11-15': '성령강림 후 제25주', '2026-11-22': '왕국주일(왕이신 그리스도 주일)',
     '2026-11-29': '대림절 제1주', '2026-12-06': '대림절 제2주', '2026-12-13': '대림절 제3주', '2026-12-20': '대림절 제4주', '2026-12-24': '성탄 전야(성탄절)', '2026-12-25': '성탄절(성탄일)', '2026-12-27': '성탄 후 제1주' };
   for (const [d, want] of Object.entries(kmc)) assert.ok(churchLabel(d).includes(want), `${d}: ${churchLabel(d)} (기대: ${want})`);
-  const special = { '2026-01-04': '신년주일', '2026-05-03': '어린이주일', '2026-05-10': '어버이주일', '2026-07-05': '맥추감사주일', '2026-10-04': '세계성찬주일', '2026-10-25': '종교개혁주일', '2026-11-15': '추수감사주일', '2026-12-27': '송년주일', '2026-12-31': '송구영신' };
+  const special = { '2026-01-04': '신년주일', '2026-05-03': '어린이주일', '2026-05-10': '어버이주일', '2026-07-05': '맥추감사주일', '2026-10-04': '세계성찬주일', '2026-10-25': '종교개혁주일', '2026-11-15': '추수감사주일', '2026-12-27': '송년주일', '2026-12-31': '송구영신', '2026-02-01': '은급주일', '2026-03-08': '학원선교교육주일', '2026-06-07': '평신도주일', '2026-06-14': '환경선교주일', '2026-08-09': '광복·통일주일', '2026-09-13': '교회연합주일', '2026-09-20': '기독교교육진흥주일', '2026-12-13': '성서주일' }; // 2026년 표와 2002년 기사(감리회 특별 절기)의 규칙이 서로 맞는 것
   for (const [d, want] of Object.entries(special)) assert.ok((churchInfo(d).special || '').includes(want), `${d}: ${churchInfo(d).special}`);
   let n = 2; for (let t = Date.UTC(2026, 5, 7); t <= Date.UTC(2026, 10, 15); t += 7 * 864e5) assert.ok(churchLabel(new Date(t).toISOString().slice(0, 10)).includes(`성령강림 후 제${n++}주`)); // 성령강림 후 제2~25주가 6/7~11/15에 이어짐
   assert.equal(churchInfo('2026-11-29').color, '보라'); assert.equal(churchInfo('2026-12-25').color, '흰색'); assert.equal(churchInfo('2026-05-24').color, '빨강'); assert.equal(churchInfo('2026-06-07').color, '초록');
@@ -310,4 +310,36 @@ test('[PDF 일괄 등록] 거래·예산·비품·월별 주제: 중복 건너�
   assert.throws(() => s.importMonthThemes(1, 2026, { 13: 'x' }), /1~12/); assert.throws(() => s.importMonthThemes(1, 2026, {}), /주제/);
   const sv = s.importPlanItems([{ kind: 'service', dept_id: 1, title: '주일예배', date: '2026-11-29', time: '11:00', scripture: '요한복음 10:11-18' }]); assert.equal(sv.made.service, 1); assert.equal(s.services(1)[0].scripture, '요한복음 10:11-18');
   const s2 = createStore(mem(), () => '2026-11-10'); s2.importJson(s.exportJson()); assert.equal(s2.transactions({ deptId: 1 }).length, 2); // 백업·복원 호환
+});
+
+// ---------- 자료실: 내가 추가한 사이트 ----------
+import { safeUrl } from '../public/js/store.js';
+
+test('[자료실] 외부 사이트 주소는 http/https 전체 주소만 받고, 위험한 모양은 거부한다', () => {
+  assert.equal(safeUrl('https://www.kmc.or.kr/'), 'https://www.kmc.or.kr/'); assert.equal(safeUrl('  https://lectionary.kmc.or.kr  '), 'https://lectionary.kmc.or.kr/'); assert.equal(safeUrl('http://example.co.kr/a?b=1'), 'http://example.co.kr/a?b=1');
+  for (const bad of ['javascript:alert(1)', 'data:text/html,<script>', 'file:///C:/x', 'ftp://a.kr/x', 'https://user:pw@a.kr/', 'https://localhost/', 'a.kr', '', null, 'https://' + 'a'.repeat(300) + '.kr']) assert.throws(() => safeUrl(bad), /주소/);
+});
+
+test('[자료실] 내 사이트 저장·수정·삭제, 부서별 보이기, 백업·복원, 서버 저장 검사', async () => {
+  const s = mk(); const a = s.saveLink({ name: '감리회', url: 'https://kmc.or.kr', category: '교단', dept_id: 0 }); const b = s.saveLink({ name: '어린이 교재', url: 'https://example.co.kr/x', dept_id: 1, note: '메모' }); s.saveLink({ name: '청년', url: 'https://example.kr', dept_id: 2 });
+  assert.equal(s.link(b).category, '내 사이트'); assert.deepEqual(s.links(1).map(l => l.name).sort(), ['감리회', '어린이 교재']); assert.equal(s.links(2).length, 2); assert.equal(s.links().length, 3); // 아동부는 공통+아동부, 전체는 모두
+  s.saveLink({ id: a, name: '감리회 본부', url: 'https://www.kmc.or.kr', dept_id: 0 }); assert.equal(s.link(a).name, '감리회 본부');
+  assert.throws(() => s.saveLink({ name: '나쁨', url: 'javascript:alert(1)' }), /주소/); assert.throws(() => s.saveLink({ name: ' ', url: 'https://a.kr' }), /이름/); assert.throws(() => s.saveLink({ name: 'x', url: 'https://a.kr', dept_id: 9 }), /부서/); assert.throws(() => s.saveLink({ id: 999, name: 'x', url: 'https://a.kr' }), /찾을 수/);
+  const s2 = createStore(mem(), () => '2026-11-10'); s2.importJson(s.exportJson()); assert.equal(s2.links().length, 3);
+  s.deleteLink(b); assert.equal(s.links().length, 2);
+  const env = newEnv(); const c = await signup(env, 'a@church.kr', '1.1.1.1'); const put = j => call(env, 'PUT', '/api/state', { cookie: c, body: { baseVersion: 0, state: JSON.stringify(j) } });
+  const bad1 = JSON.parse(s.exportJson()); bad1.links[0].url = 'javascript:alert(1)'; const bad2 = JSON.parse(s.exportJson()); bad2.links[0].dept_id = 77; const bad3 = JSON.parse(s.exportJson()); bad3.links = 'x';
+  for (const bad of [bad1, bad2, bad3]) assert.equal((await put(bad)).status, 422); assert.equal((await put(JSON.parse(s.exportJson()))).status, 200);
+});
+
+test('[자료실 기본 목록] 모든 주소는 안전한 https 전체 주소이고, 중복·빈 항목이 없으며, 구분·대상이 정해진 값이다', async () => {
+  const { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } = await import('../public/js/resources.js'); const { safeUrl } = await import('../public/js/store.js');
+  assert.match(RESOURCES_CHECKED, /^\d{4}-\d{2}-\d{2}$/); assert.ok(RESOURCES.length >= 30); const seen = new Set();
+  for (const r of RESOURCES) {
+    assert.ok(r.name && r.desc && r.note, r.name); assert.ok(RESOURCE_CATEGORIES.includes(r.category), `${r.name}: ${r.category}`); assert.ok(['공통', '아동부', '청년부'].includes(r.audience), r.name);
+    assert.ok(r.url.startsWith('https://') && safeUrl(r.url), r.url); assert.ok(!seen.has(r.url), `중복 주소: ${r.url}`); seen.add(r.url);
+  }
+  for (const c of RESOURCE_CATEGORIES) assert.ok(RESOURCES.some(r => r.category === c), `빈 구분: ${c}`);
+  assert.ok(RESOURCES.filter(r => r.audience === '아동부' || r.category === '교재·공과').length >= 5); // 아동부 교재 사이트
+  assert.ok(RESOURCES.some(r => r.audience === '청년부')); assert.ok(RESOURCES.some(r => r.url.includes('lectionary.kmc.or.kr')));
 });
