@@ -4,8 +4,9 @@ import { toCsv } from './csv.js';
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장소 사용 불가 */ } };
 
-import { initAuth, accountApi } from './auth.js';
-const A = await initAuth(); // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
+import { initAuth, accountApi, openLoginPreview } from './auth.js';
+import { imgSrc, emptyImgFor, bannerFor } from './images.js';
+const A = await initAuth(); { const lg = document.getElementById('logo'); if (lg && imgSrc('logo')) lg.src = imgSrc('logo'); } // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
 let store;
 try { store = createStore(A.storage); }
 catch { // 저장소를 쓸 수 없는 환경(사생활 보호 모드 등): 이번 방문 동안만 메모리에 보관
@@ -68,6 +69,13 @@ A.onConflict = serverVersion => {
   $('[data-b]', d).onclick = async () => { d.close(); await A.forceSave(serverVersion); toast('내 변경으로 저장했어요.'); };
 };
 
+// 공용 PC 대비: 로그인 모드에서 30분 동안 아무 조작이 없으면 자동 로그아웃(저장 중이거나 저장 실패 상태면 보류)
+if (A.mode === 'account') {
+  let last = Date.now(); const touch = () => { last = Date.now(); };
+  ['click', 'keydown', 'pointerdown', 'touchstart', 'scroll'].forEach(ev => window.addEventListener(ev, touch, { passive: true }));
+  setInterval(async () => { if (Date.now() - last < 30 * 60e3 || A.status !== 'saved') return; await accountApi.logout().catch(() => {}); location.reload(); }, 30e3);
+}
+
 // ----- 도움 장치: 화면별 사용법, 빈 화면 안내, 도움말 창, 파일 내려받기 -----
 function tipHtml() {
   const key = (location.hash || '#home').slice(1).split('/')[0]; let t = TIPS[key]; if (!t) return '';
@@ -75,7 +83,7 @@ function tipHtml() {
   if (lsGet('ms:tip:' + key) === '1') return `<div class="tip-min noprint"><button class="sm ghost" data-act="tipShow" data-k="${key}">💡 이 화면 사용법</button></div>`;
   return `<aside class="tip noprint"><div class="tip-h"><b>💡 ${esc(t[0])}</b><span class="sp"></span><button class="sm ghost" data-act="tipHide" data-k="${key}">닫기</button></div><p>${esc(t[1])}</p><button class="sm" data-act="help">도움말 전체 보기</button></aside>`;
 }
-const emptyState = (title, desc, buttons = '') => `<div class="empty"><div class="empty-t">${esc(title)}</div><p>${desc}</p><div class="row" style="justify-content:center">${buttons}</div></div>`;
+const emptyState = (title, desc, buttons = '') => `<div class="empty">${emptyImgFor(title) ? `<img class="empty-img" src="${emptyImgFor(title)}" alt="">` : ''}<div class="empty-t">${esc(title)}</div><p>${desc}</p><div class="row" style="justify-content:center">${buttons}</div></div>`;
 function download(name, text, mime = 'text/csv;charset=utf-8') { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: mime })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
 function openHelp(tab = 'start') {
   const prog = store.guideProgress(); const done = GUIDE_STEPS.filter(s => prog[s.key]).length;
@@ -97,9 +105,10 @@ function render() {
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name]), ['all', '전체']].map(([v, l]) => `<button data-dept="${v}" class="${UI.dept === v ? 'on' : ''}">${l}</button>`).join('');
   paintAcct();
+  document.body.dataset.theme = UI.dept === 'all' ? 'all' : (did() === 1 ? 'kid' : did() === 2 ? 'youth' : 'all'); // 아동부 초록 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, people: vPeople, money: vMoney, settings: vSettings }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -107,6 +116,9 @@ window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); }
 const page = (ico, title, sub, body, actions = '') => { $('#main').innerHTML = `<div class="pagehead"><div><h1 class="title"><span class="ico">${ico}</span>${esc(title)}</h1><p class="sub">${sub}</p></div>${actions ? `<div class="actions noprint">${actions}</div>` : ''}</div>${tipHtml()}${body}`; };
 const barHtml = (spent, budget) => { const p = budget ? Math.min(100, Math.round(spent / budget * 100)) : 0; return `<div class="bar ${budget && spent > budget ? 'over' : p >= 85 ? 'warn' : ''}"><i style="width:${p}%"></i></div>`; };
 const yearSel = () => `<select data-year>${[UI.year - 1, UI.year, UI.year + 1].map(y => `<option${y === UI.year ? ' selected' : ''} value="${y}">${y}년</option>`).join('')}</select>`;
+
+// 로그인 화면 모양 확인용(서버 없이): 홈 위에 로그인 화면을 겹쳐 보여 주고, 닫으면 홈으로 돌아간다
+function vLoginPreview() { vHome(); openLoginPreview().then(() => { location.hash = '#home'; }); }
 
 // ----- 홈 -----
 function vHome() {
@@ -189,7 +201,7 @@ function vEvents() {
 function vEvent(id) {
   const e = store.ev(id); if (!e) { page('🎉', '행사', '', '<div class="callout bad">행사를 찾을 수 없습니다.</div>'); return; }
   const s = store.eventSummary(id); const tasks = store.get().tasks.filter(t => t.event_id === id); const parts = store.participants(id).sort((a, b) => (a.person.class_name || '').localeCompare(b.person.class_name || '', 'ko')); const tx = store.transactions({ eventId: id });
-  page('🎉', e.title, `${deptTag(e.dept_id)} ${esc(e.type)}`, `<div class="row noprint"><button data-go="#events">◀ 목록</button><button data-act="editEvent" data-id="${id}">수정</button><button data-act="applyTpl" data-id="${id}">예시 준비 업무 추가</button><select data-evstatus="${id}">${[['planned', '예정'], ['done', '완료'], ['cancelled', '취소']].map(([v, l]) => `<option value="${v}"${e.status === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="sp"></span><button class="dng" data-act="delEvent" data-id="${id}">삭제</button></div>
+  page('🎉', e.title, `${deptTag(e.dept_id)} ${esc(e.type)}`, `${(() => { const b = bannerFor(e.type, e.title, e.dept_id); return `<div class="banner" style="--bn1:${b.c1};--bn2:${b.c2}">${b.src ? `<img src="${b.src}" alt="">` : ''}<span class="em">${b.em}</span><div><b>${esc(e.title)}</b><span class="t">${esc(range(e.start_date, e.end_date))}</span></div></div>`; })()}<div class="row noprint"><button data-go="#events">◀ 목록</button><button data-act="editEvent" data-id="${id}">수정</button><button data-act="applyTpl" data-id="${id}">예시 준비 업무 추가</button><select data-evstatus="${id}">${[['planned', '예정'], ['done', '완료'], ['cancelled', '취소']].map(([v, l]) => `<option value="${v}"${e.status === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="sp"></span><button class="dng" data-act="delEvent" data-id="${id}">삭제</button></div>
   <dl class="props" style="margin-top:14px"><dt>일정</dt><dd>${esc(range(e.start_date, e.end_date))}</dd><dt>장소</dt><dd>${esc(e.place) || '-'}</dd><dt>담당자</dt><dd>${esc(e.owner) || '-'}</dd><dt>목표 인원</dt><dd>${e.target_count || '-'}명</dd><dt>예상 예산</dt><dd>${won(e.expected_budget)}</dd>${e.note ? `<dt>메모</dt><dd>${esc(e.note)}</dd>` : ''}</dl>
   <h2>준비할 일 <button class="sm" data-act="newTask" data-id="${id}">+ 추가</button></h2>${tasks.map(k => `<div class="todo ${k.status === 'done' ? 'done' : ''}"><input type="checkbox" data-task="${k.id}" ${k.status === 'done' ? 'checked' : ''} aria-label="완료"><span class="tt sp">${esc(k.title)} <span class="mute small">${esc(k.assignee)}</span></span>${k.due ? `<span class="tag ${k.status !== 'done' && k.due < today() ? 'bad' : ''}">${md(k.due)}</span>` : ''}<button class="sm ghost" data-act="delTask" data-id="${k.id}" aria-label="삭제">✕</button></div>`).join('') || emptyState('준비 업무가 없어요', '‘+ 추가’로 직접 적거나, 위의 ‘예시 준비 업무 추가’로 이 행사에 맞는 예시를 불러오세요.', '')}
   <h2>준비물 <button class="sm" data-act="newSupply" data-id="${id}">+ 추가</button></h2>${store.supplies(id).map(x => `<div class="todo ${x.done ? 'done' : ''}"><input type="checkbox" data-supply="${x.id}" ${x.done ? 'checked' : ''} aria-label="준비 완료"><span class="tt sp">${esc(x.name)}</span><button class="sm ghost" data-act="delSupply" data-id="${x.id}" aria-label="삭제">✕</button></div>`).join('') || '<p class="mute small">준비물이 없어요. ‘+ 추가’로 적거나 행사 예시를 적용하면 채워져요.</p>'}
@@ -268,6 +280,8 @@ function vSettings() {
   <div class="row" style="margin:12px 0"><button data-act="resetDemo">가상 데이터로 초기화</button><button class="pri" data-act="startEmpty">실제 데이터로 시작 (비움)</button></div>
   <h2>백업·복원 (JSON 파일)</h2><div class="row"><button data-act="export">내보내기(.json 다운로드)</button><button data-act="import">파일에서 가져오기</button><input type="file" id="file" accept="application/json,.json" hidden></div>
   <p class="mute small">내보낸 파일에는 이름 등 개인정보가 들어 있을 수 있으니 안전한 곳에만 보관하세요. 가져오면 현재 데이터가 파일 내용으로 바뀝니다(바꾸기 전에 확인합니다).</p>
+  <h2>화면 미리보기</h2><div class="row"><button data-act="loginPreview">로그인 화면 미리보기</button><span class="mute small">서버 없이 모양만 보여 줘요(실제 로그인 아님).</span></div>
+  <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a></p>
   <h2>개인정보 안내</h2><ul class="small"><li>이 앱은 보호자 연락처·알레르기·계좌·주민번호를 입력받지 않습니다.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
   <h2>정보</h2><dl class="props"><dt>버전</dt><dd>0.2.0</dd><dt>저장 방식</dt><dd>${acct ? '계정별 서버 저장(Cloudflare D1)' : `localStorage (${window.__memOnly ? '사용 불가 → 임시 메모리' : '사용 중'})`}</dd><dt>통화·시간대</dt><dd>원화(정수) · Asia/Seoul</dd></dl>`);
 }
@@ -299,6 +313,7 @@ const ACT = {
   print: () => window.print(),
 
   // --- 도움 장치 ---
+  loginPreview: () => { location.hash = '#login-preview'; },
   help: () => openHelp(), tipHide: d => { lsSet('ms:tip:' + d.k, '1'); render(); }, tipShow: d => { lsSet('ms:tip:' + d.k, '0'); render(); },
   themeTpl: () => { const n = guard(() => store.loadMonthThemes(workDept(), UI.year)); toast(n ? `비어 있던 ${n}개 달에 예시를 넣었어요. 우리 교회에 맞게 고쳐 쓰세요.` : '비어 있는 달이 없어요.'); render(); },
   seasonTpl: () => { const n = guard(() => store.loadSeasonTemplate(workDept(), UI.year)); toast(n ? `${UI.year}년 절기 ${n}개를 넣었어요. 날짜를 꼭 확인하세요.` : '이미 모두 들어 있어요.'); render(); },

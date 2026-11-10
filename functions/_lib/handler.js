@@ -2,9 +2,11 @@
 import { validateState } from '../../public/js/store.js';
 
 const ITER = 100000;                       // Workers WebCrypto의 PBKDF2 반복 횟수 상한(확인된 값)
-const SESSION_MS = 30 * 24 * 3600e3;       // 세션 30일
+const SESSION_MS = 14 * 24 * 3600e3;       // 세션 14일(공용 PC 위험을 줄이려고 짧게)
 const MAX_STATE = 1_500_000;               // D1 한 줄 2MB 제한보다 작게
 const LOCK_MS = 15 * 60e3;
+const MIN_INVITE = 12;                     // 초대 코드가 이보다 짧으면 가입을 아예 닫는다(추측 쉬운 코드 방지)
+const WEAK_PW = new Set(['1234567890', '0123456789', 'qwertyuiop', 'password12', 'password123', 'passw0rd123', '1q2w3e4r5t', 'abcdefghij', 'iloveyou123', 'admin12345', 'qwerty12345', '0000000000', '1111111111']);
 const enc = new TextEncoder();
 
 const b64 = u8 => btoa(String.fromCharCode(...u8));
@@ -27,7 +29,9 @@ export async function verifyPassword(pw, stored) {
 const DUMMY = 'pbkdf2-sha256$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 class HttpError extends Error { constructor(status, msg, extra = {}) { super(msg); this.status = status; this.extra = extra; } }
-const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
+// Pages의 _headers 파일은 Functions 응답에 적용되지 않으므로(공식 문서) API 응답 헤더는 코드에서 직접 붙인다
+const SEC_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Cross-Origin-Resource-Policy': 'same-origin', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" };
+const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...SEC_HEADERS, ...headers } });
 
 function cookieName(secure) { return secure ? '__Host-ms_session' : 'ms_session'; }
 function readCookie(request, name) { const m = (request.headers.get('Cookie') || '').split(/;\s*/).find(c => c.startsWith(name + '=')); return m ? m.slice(name.length + 1) : null; }
@@ -58,7 +62,12 @@ async function currentUser(db, request, secure, now) {
 }
 
 const emailOk = e => typeof e === 'string' && e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-function pwCheck(p) { if (typeof p !== 'string' || p.length < 10) throw new HttpError(400, '비밀번호는 10자 이상이어야 합니다.'); if (p.length > 128) throw new HttpError(400, '비밀번호는 128자 이하여야 합니다.'); }
+function pwCheck(p, email = '') {
+  if (typeof p !== 'string' || p.length < 10) throw new HttpError(400, '비밀번호는 10자 이상이어야 합니다.'); if (p.length > 128) throw new HttpError(400, '비밀번호는 128자 이하여야 합니다.');
+  const low = p.toLowerCase(); const local = String(email).split('@')[0];
+  if (WEAK_PW.has(low) || /^(.)\1+$/.test(p) || (local.length >= 4 && low.includes(local))) throw new HttpError(400, '너무 추측하기 쉬운 비밀번호예요. 이메일과 다르게, 서로 다른 단어 여러 개를 이어 쓰는 것을 권해요.');
+}
+const inviteReady = env => typeof env.INVITE_CODE === 'string' && env.INVITE_CODE.length >= MIN_INVITE;
 
 export async function handle(request, env, now = Date.now()) {
   const url = new URL(request.url); const path = url.pathname.replace(/\/+$/, '') || '/'; const secure = url.protocol === 'https:'; const method = request.method.toUpperCase();
@@ -69,19 +78,24 @@ export async function handle(request, env, now = Date.now()) {
     const db = env.DB;
     if (method !== 'GET') { // CSRF 방어: 같은 출처 + JSON 요청만 허용(쿠키는 SameSite=Strict)
       const origin = request.headers.get('Origin'); if (origin && origin !== url.origin) throw new HttpError(403, '허용되지 않은 요청입니다.');
+      const sfs = request.headers.get('Sec-Fetch-Site'); if (sfs && sfs !== 'same-origin' && sfs !== 'none') throw new HttpError(403, '허용되지 않은 요청입니다.');
       if (!(request.headers.get('Content-Type') || '').includes('application/json')) throw new HttpError(415, 'JSON 요청만 받을 수 있습니다.');
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'local';
 
-    if (path === '/api/me' && method === 'GET') { const user = await currentUser(db, request, secure, now); return json({ ok: true, configured: true, signup: !!env.INVITE_CODE, user: user ? { email: user.email, name: user.name } : null }); }
+    if (path === '/api/me' && method === 'GET') { const user = await currentUser(db, request, secure, now); return json({ ok: true, configured: true, signup: inviteReady(env), user: user ? { email: user.email, name: user.name } : null }); }
 
     if (path === '/api/register' && method === 'POST') {
       if (!env.INVITE_CODE) throw new HttpError(403, '지금은 가입을 받지 않습니다(관리자가 초대 코드를 설정하지 않았습니다).');
+      if (!inviteReady(env)) throw new HttpError(403, `초대 코드가 너무 짧아 가입을 받지 않습니다(관리자: ${MIN_INVITE}자 이상으로 설정).`);
       if (await limited(db, `reg:${ip}`, 10, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
+      if (await limited(db, 'inv:all', 30, now)) throw new HttpError(429, '잘못된 초대 코드 입력이 많아 가입이 1시간 동안 잠겼습니다.'); // 여러 주소에서 코드를 추측하는 공격 대비
       const b = await body(request); const email = String(b.email || '').trim().toLowerCase(); const name = String(b.name || '').trim().slice(0, 40);
       await fail(db, `reg:${ip}`, now, 3600e3); // 가입 시도도 횟수에 포함(성공해도 1시간에 10번까지)
-      if (!same(String(b.invite || ''), env.INVITE_CODE)) throw new HttpError(403, '초대 코드가 맞지 않습니다.');
-      if (!emailOk(email)) throw new HttpError(400, '이메일 형식이 올바르지 않습니다.'); pwCheck(b.password);
+      if (!same(String(b.invite || ''), env.INVITE_CODE)) { await fail(db, 'inv:all', now, 3600e3); throw new HttpError(403, '초대 코드가 맞지 않습니다.'); }
+      if (!emailOk(email)) throw new HttpError(400, '이메일 형식이 올바르지 않습니다.'); pwCheck(b.password, email);
+      const maxUsers = Number(env.MAX_USERS); // 선택: 가입 가능한 최대 인원(혼자 쓰면 1로 설정)
+      if (Number.isInteger(maxUsers) && maxUsers > 0 && (await db.prepare('SELECT COUNT(*) c FROM users').bind().first()).c >= maxUsers) throw new HttpError(403, '가입 가능한 인원이 모두 찼습니다.');
       if (await db.prepare('SELECT 1 x FROM users WHERE email=?').bind(email).first()) throw new HttpError(409, '이미 가입된 이메일입니다.');
       const id = crypto.randomUUID(); await db.prepare('INSERT INTO users(id,email,name,pw_hash,created_at) VALUES(?,?,?,?,?)').bind(id, email, name, await hashPassword(b.password), now).run();
       const token = await newSession(db, id, now);
@@ -124,7 +138,7 @@ export async function handle(request, env, now = Date.now()) {
       return json({ ok: true, version: latest.version + 1 });
     }
     if (path === '/api/password' && method === 'POST') {
-      const b = await body(request); pwCheck(b.next); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
+      const b = await body(request); pwCheck(b.next, user.email); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
       if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
       if (!(await verifyPassword(String(b.current || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '현재 비밀번호가 맞지 않습니다.'); }
       await db.prepare('UPDATE users SET pw_hash=? WHERE id=?').bind(await hashPassword(b.next), user.id).run();

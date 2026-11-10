@@ -9,3 +9,9 @@ Thumbs.db
 *.json.bak
 목회비서_백업_*.json
 .devdata/
+.dev.vars
+*.pem
+*.key
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

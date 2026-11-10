@@ -1,0 +1,16 @@
+{
+  "_설명": "AI로 만든 이미지로 바꾸려면 파일을 이 폴더(public/img)에 넣고, 아래에서 해당 칸을 '파일이름'으로 바꿔 저장하세요. 비워 두면(null) 기본 그림(.svg)을 씁니다.",
+  "logo": null,
+  "login-hero": null,
+  "empty-schedule": null,
+  "empty-tasks": null,
+  "empty-people": null,
+  "empty-attendance": null,
+  "empty-money": null,
+  "empty-events": null,
+  "banner-vbs": null,
+  "banner-retreat": null,
+  "banner-christmas": null,
+  "banner-outing": null,
+  "banner-general": null
+}
