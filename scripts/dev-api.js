@@ -1,5 +1,5 @@
 // 로컬 개발용: 정적 파일 + /api(로그인·저장)를 함께 제공. Cloudflare D1 대신 같은 SQL을 SQLite 파일(.devdata/dev.sqlite)로 실행한다.
-// 실행: npm run dev:api  → http://localhost:8789  (초대 코드는 환경변수 INVITE_CODE, 기본값 dev-invite)
+// 실행: npm run dev:api  → http://localhost:8789  (초대 코드는 환경변수 INVITE_CODE, 기본값 dev-invite-local-only)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,8 +12,8 @@ const pub = path.join(root, 'public'); const dataDir = path.join(root, '.devdata
 const port = Number(process.env.PORT) || 8789;
 const sqlite = new DatabaseSync(process.env.DEV_DB || path.join(dataDir, 'dev.sqlite')); sqlite.exec('PRAGMA foreign_keys=ON'); sqlite.exec(fs.readFileSync(path.join(root, 'migrations', '0001_init.sql'), 'utf8'));
 const DB = { prepare: sql => { const st = sqlite.prepare(sql); return { bind: (...a) => ({ first: async () => st.get(...a) || null, all: async () => ({ results: st.all(...a) }), run: async () => ({ success: true, meta: { changes: Number(st.run(...a).changes) } }) }) }; } };
-const env = { DB, INVITE_CODE: process.env.INVITE_CODE === '' ? undefined : (process.env.INVITE_CODE || 'dev-invite') };
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json' };
+const env = { DB, MAX_USERS: process.env.MAX_USERS, INVITE_CODE: process.env.INVITE_CODE === '' ? undefined : (process.env.INVITE_CODE || 'dev-invite-local-only') };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg' };
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${port}`);

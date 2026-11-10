@@ -27,6 +27,9 @@
 - 글꼴: Inter 파일은 포함하지 않았습니다(PC에 있으면 사용, 없으면 맑은 고딕 등 시스템 글꼴).
 - 이전 Notion 스타일 파일은 `design/`에 보관했습니다(배포 안 됨).
 
+- **부서 색**: 아동부 초록 · 청년부 파랑 · 전체 초록(진한 초록). 부서를 고르면 메뉴·버튼·맨 위 줄·카드 강조·부서 배지 색이 함께 바뀝니다. 색은 `public/style.css` 맨 위 `--kid` `--yth` `--all` 값만 고치면 됩니다.
+- **이미지**: 기본 그림(로고, 로그인 그림, 빈 화면 6종)은 `public/img/*.svg`로 직접 만들어 들어 있습니다. AI로 만든 이미지로 바꾸는 방법과 프롬프트는 [docs/이미지-프롬프트.md](docs/이미지-프롬프트.md), 교체는 `public/img/manifest.json`에서 합니다.
+- **로그인 화면**: 왼쪽 소개 + 오른쪽 입력 화면. 로그인 서버를 켜기 전에도 `설정 → 로그인 화면 미리보기`(또는 주소 끝에 `#login-preview`)로 모양을 볼 수 있습니다.
 ## 폴더 구조
 ```
 public/              ← 배포되는 화면 (Cloudflare Pages 출력 폴더)
@@ -35,7 +38,8 @@ public/              ← 배포되는 화면 (Cloudflare Pages 출력 폴더)
   js/store.js        데이터·집계 로직 (브라우저와 서버 검증에서 공통 사용)
   js/templates.js    예시·도움말 내용
   js/auth.js         로그인 화면, 서버 저장 연결
-  js/csv.js  js/seed.js
+  js/csv.js  js/seed.js  js/images.js
+  img/              기본 그림(.svg)과 교체용 manifest.json
 functions/           ← 로그인·저장 API (Cloudflare Pages Functions)
   api/[[route]].js   /api/* 진입점
   _lib/handler.js    가입·로그인·세션·저장·계정 삭제
@@ -53,7 +57,7 @@ npm start
 npm run dev:api
 ```
 - `npm start` → `http://localhost:8788` : 로컬 모드(정적 미리보기)
-- `npm run dev:api` → `http://localhost:8789` : **로그인 포함** 전체 동작(진짜 SQL 데이터베이스를 SQLite 파일로 대신 사용, 초대 코드 `dev-invite`, 데이터는 `.devdata/`에 저장되며 GitHub에 올라가지 않음)
+- `npm run dev:api` → `http://localhost:8789` : **로그인 포함** 전체 동작(진짜 SQL 데이터베이스를 SQLite 파일로 대신 사용, 초대 코드 `dev-invite-local-only`, 데이터는 `.devdata/`에 저장되며 GitHub에 올라가지 않음)
 
 ---
 
@@ -98,7 +102,7 @@ Workers & Pages → Create → **Pages → Connect to Git**(화면에 ‘Continu
 1. **D1 데이터베이스 만들기**: Cloudflare 대시보드 → Storage & databases(또는 Workers & Pages) → **D1** → Create database → 이름 `ministry-secretary-db`
 2. **테이블 만들기**: 만든 데이터베이스 → **Console** → `migrations/0001_init.sql` 파일 내용 전체를 붙여넣고 실행
 3. **Pages 프로젝트에 연결**: Workers & Pages → 프로젝트 → **Settings → Bindings → Add → D1 database** → Variable name을 **`DB`**(대문자 그대로)로 입력 → 위 데이터베이스 선택
-4. **초대 코드 정하기**: **Settings → Variables and Secrets → Add** → 이름 **`INVITE_CODE`**, 값은 길고 추측하기 어려운 문장, **Encrypt(비밀)** 체크 → Save. 이 코드를 아는 사람만 가입할 수 있습니다. (설정하지 않으면 가입이 닫혀 있습니다.)
+4. **초대 코드 정하기**: **Settings → Variables and Secrets → Add** → 이름 **`INVITE_CODE`**, 값은 **12자 이상**의 길고 추측하기 어려운 문장(짧으면 가입이 자동으로 닫힘), **Encrypt(비밀)** 체크 → Save. 이 코드를 아는 사람만 가입할 수 있습니다. (설정하지 않으면 가입이 닫혀 있습니다.) 혼자 쓴다면 같은 화면에서 **MAX_USERS** = 1도 추가하고, **내 계정을 만든 뒤에는 INVITE_CODE를 삭제**해 가입을 완전히 닫으세요. 자세한 점검 결과와 설정은 [SECURITY.md](SECURITY.md)를 보세요.
 5. **다시 배포**: Deployments에서 최신 배포를 다시 실행(Retry) — 바인딩과 변수는 다음 배포부터 적용됩니다. 프로덕션 환경에 설정했는지 확인하세요(미리보기 환경은 따로 설정).
 6. 사이트를 열면 **로그인·가입 화면**이 나옵니다. 가입 탭에서 이메일·비밀번호(10자 이상)·초대 코드를 입력하세요.
 
@@ -127,8 +131,8 @@ Workers & Pages → Create → **Pages → Connect to Git**(화면에 ‘Continu
 
 ## 5. 보안·개인정보와 한계 (꼭 읽어 주세요)
 **로그인 모드에서**
-- 비밀번호는 원문 저장 없이 PBKDF2-SHA256(소금 포함)으로 해시합니다. 세션은 HttpOnly·Secure·SameSite=Strict 쿠키이고, 서버에는 토큰의 해시만 저장합니다(30일).
-- 로그인·가입 시도는 횟수를 제한합니다(이메일당 15분에 8회, 접속 주소당 30회). 다른 출처의 요청은 거부하고, 서버 오류 내용은 화면에 보이지 않습니다.
+- 비밀번호는 원문 저장 없이 PBKDF2-SHA256(소금 포함)으로 해시합니다. 세션은 HttpOnly·Secure·SameSite=Strict 쿠키이고, 서버에는 토큰의 해시만 저장합니다(14일). 화면은 30분 동안 아무 조작이 없으면 자동 로그아웃합니다.
+- 로그인·가입 시도는 횟수를 제한합니다(이메일당 15분에 8회, 접속 주소당 30회, 잘못된 초대 코드는 전체 30회/시간). 비밀번호는 10자 이상이며 너무 흔한 것·이메일이 들어간 것은 거부합니다. 다른 출처의 요청은 거부하고, 서버 오류 내용은 화면에 보이지 않습니다.
 - 각 요청은 **로그인한 본인의 데이터만** 읽고 씁니다(사용자 번호를 요청으로 받지 않음).
 - **한계**: ① 비밀번호 해시 반복 횟수가 100,000회로, 최신 권장치(OWASP 600,000회)보다 낮습니다(Workers의 WebCrypto 제한을 고려한 값 — 긴 비밀번호 10자+와 시도 제한으로 보완). ② 이메일 인증·비밀번호 자동 재설정·2단계 인증이 없습니다. ③ 데이터는 암호화 없이 D1에 JSON으로 저장되므로 **사이트 관리자는 기술적으로 모든 사용자의 데이터를 볼 수 있습니다.** 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 먼저 확인하세요. ④ 사용자 한 명의 데이터는 한 덩어리(약 1.5MB까지)로 저장되어, 몇 년 치 출석이 쌓이면 한계에 닿을 수 있습니다(넘으면 저장되지 않고 ‘데이터가 너무 커요’ 안내가 나오니, 그때 ‘내보내기’ 후 오래된 기록을 정리하세요). ⑤ 초대 코드는 모두가 공유하는 비밀이라, 유출되면 코드를 바꾸세요.
 - 사이트 접근 자체를 막으려면 Cloudflare Access 같은 별도 접근 제어를 함께 검토하세요(이 저장소에서는 설정하지 않았습니다).

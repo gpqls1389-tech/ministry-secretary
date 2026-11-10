@@ -18,9 +18,9 @@ async function call(env, method, path, { body, cookie, origin = BASE, ip = '1.1.
   const res = await handle(new Request(BASE + path, { method, headers, body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)) }), env, now);
   const sc = res.headers.get('Set-Cookie'); return { status: res.status, json: await res.json(), setCookie: sc, cookie: sc ? sc.split(';')[0] : null, res };
 }
-const envOf = (extra = {}) => ({ DB: fakeD1(), INVITE_CODE: 'invite-xyz', ...extra });
+const envOf = (extra = {}) => ({ DB: fakeD1(), INVITE_CODE: 'invite-xyz-12345', ...extra });
 const PW = 'correct-horse-9';
-async function signup(env, email = 'a@church.kr', ip) { const r = await call(env, 'POST', '/api/register', { body: { email, name: '관리자', password: PW, invite: 'invite-xyz' }, ip }); assert.equal(r.status, 201, JSON.stringify(r.json)); return r.cookie; }
+async function signup(env, email = 'a@church.kr', ip) { const r = await call(env, 'POST', '/api/register', { body: { email, name: '관리자', password: PW, invite: 'invite-xyz-12345' }, ip }); assert.equal(r.status, 201, JSON.stringify(r.json)); return r.cookie; }
 
 test('서버 설정 전(D1 없음): /api/me는 configured:false, 나머지는 503', async () => {
   const r = await call({}, 'GET', '/api/me'); assert.equal(r.status, 200); assert.equal(r.json.configured, false); assert.equal(r.json.user, null);
@@ -37,11 +37,11 @@ test('가입: 초대 코드 필수, 설정 안 했으면 가입 닫힘, 입력 �
   const closed = { DB: fakeD1() }; assert.equal((await call(closed, 'POST', '/api/register', { body: { email: 'a@b.kr', password: PW, invite: 'x' } })).status, 403);
   const env = envOf();
   assert.equal((await call(env, 'POST', '/api/register', { body: { email: 'a@b.kr', password: PW, invite: 'wrong' } })).status, 403);
-  assert.equal((await call(env, 'POST', '/api/register', { body: { email: 'not-an-email', password: PW, invite: 'invite-xyz' } })).status, 400);
-  assert.equal((await call(env, 'POST', '/api/register', { body: { email: 'a@b.kr', password: 'short', invite: 'invite-xyz' } })).status, 400);
-  const ok = await call(env, 'POST', '/api/register', { body: { email: 'A@B.kr', name: '홍', password: PW, invite: 'invite-xyz' } });
+  assert.equal((await call(env, 'POST', '/api/register', { body: { email: 'not-an-email', password: PW, invite: 'invite-xyz-12345' } })).status, 400);
+  assert.equal((await call(env, 'POST', '/api/register', { body: { email: 'a@b.kr', password: 'short', invite: 'invite-xyz-12345' } })).status, 400);
+  const ok = await call(env, 'POST', '/api/register', { body: { email: 'A@B.kr', name: '홍', password: PW, invite: 'invite-xyz-12345' } });
   assert.equal(ok.status, 201); for (const a of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', '__Host-ms_session']) assert.ok(ok.setCookie.includes(a), a);
-  assert.equal((await call(env, 'POST', '/api/register', { body: { email: 'a@b.kr', password: PW, invite: 'invite-xyz' } })).status, 409); // 이메일은 대소문자 무시
+  assert.equal((await call(env, 'POST', '/api/register', { body: { email: 'a@b.kr', password: PW, invite: 'invite-xyz-12345' } })).status, 409); // 이메일은 대소문자 무시
   const row = env.DB.raw.prepare('SELECT * FROM users').get(); assert.equal(row.email, 'a@b.kr'); assert.ok(!JSON.stringify(row).includes(PW));
   const sess = env.DB.raw.prepare('SELECT token_hash FROM sessions').get(); assert.ok(!ok.cookie.includes(sess.token_hash) && sess.token_hash.length === 64); // 토큰 원문이 아닌 해시만 저장
 });
@@ -109,6 +109,6 @@ test('로그아웃·세션 만료·비밀번호 변경·계정 삭제', async ()
 });
 
 test('http 로컬 개발: Secure 없는 쿠키 이름 사용', async () => {
-  const env = envOf(); const res = await handle(new Request('http://localhost:8788/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:8788' }, body: JSON.stringify({ email: 'a@b.kr', password: PW, invite: 'invite-xyz' }) }), env);
+  const env = envOf(); const res = await handle(new Request('http://localhost:8788/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:8788' }, body: JSON.stringify({ email: 'a@b.kr', password: PW, invite: 'invite-xyz-12345' }) }), env);
   const c = res.headers.get('Set-Cookie'); assert.ok(c.startsWith('ms_session=') && !c.includes('Secure') && c.includes('HttpOnly'));
 });
