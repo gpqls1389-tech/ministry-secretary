@@ -52,6 +52,7 @@ function makeAdapter(initial) {
 
 // 로그인·가입 화면(왼쪽 소개 + 오른쪽 입력). preview=true면 서버 없이 모양만 보여 준다(설정 → 로그인 화면 미리보기).
 function showLogin(signupOpen, { preview = false } = {}) {
+  document.body.dataset.theme = 'all'; // 로그인 화면은 항상 기본(진한 초록) 색
   return new Promise(resolve => {
     document.getElementById('auth')?.remove();
     const el = document.createElement('div'); el.id = 'auth'; document.body.appendChild(el); let tab = 'login';

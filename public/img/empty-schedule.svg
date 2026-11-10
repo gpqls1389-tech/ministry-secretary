@@ -1,1 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-hidden="true"><circle cx="120" cy="84" r="62" fill="#eceee9"/><rect x="66" y="40" width="108" height="86" rx="12" fill="#fff" stroke="#c9c6c0" stroke-width="3"/><path d="M66 66h108" stroke="#c9c6c0" stroke-width="3"/><rect x="66" y="40" width="108" height="26" rx="12" fill="#15803d"/><path d="M92 32v16M148 32v16" stroke="#0f5f2e" stroke-width="6" stroke-linecap="round"/><g fill="#e3e1dc"><rect x="80" y="78" width="16" height="12" rx="3"/><rect x="104" y="78" width="16" height="12" rx="3"/><rect x="128" y="78" width="16" height="12" rx="3"/><rect x="80" y="100" width="16" height="12" rx="3"/><rect x="104" y="100" width="16" height="12" rx="3"/></g><rect x="128" y="100" width="16" height="12" rx="3" fill="#f4c95d"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 360 240">
+  <defs><filter id="soft" x="-30%" y="-150%" width="160%" height="400%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+  <circle cx="180" cy="123" r="87" fill="#e3e1dc" opacity=".56"/>
+  <g opacity=".65" filter="url(#soft)">
+  <ellipse cx="180" cy="193" rx="66" ry="6" fill="#e3e1dc"/>
+  </g>
+  <rect x="116" y="61" width="128" height="115" rx="15" fill="#fffdf8"/>
+  <rect x="116" y="61" width="128" height="34" rx="15" fill="#15803d"/>
+  <rect x="116" y="79" width="128" height="16" rx="0" fill="#15803d"/>
+  <path d="M147 53v21m66-21v21" fill="none" stroke="#15803d" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M147 61v12m66-12v12" fill="none" stroke="#e5f5ea" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="131" y="107" width="20" height="20" rx="5" fill="#e5f5ea"/>
+  <rect x="157" y="107" width="20" height="20" rx="5" fill="#e5f5ea"/>
+  <rect x="183" y="107" width="20" height="20" rx="5" fill="#e5f5ea"/>
+  <rect x="209" y="107" width="20" height="20" rx="5" fill="#e5f5ea"/>
+  <rect x="131" y="133" width="20" height="20" rx="5" fill="#e5f5ea"/>
+  <rect x="157" y="133" width="20" height="20" rx="5" fill="#f4c95d"/>
+  <rect x="183" y="133" width="20" height="20" rx="5" fill="#e5f5ea"/>
+  <rect x="209" y="133" width="20" height="20" rx="5" fill="#e5f5ea"/>
+</svg>
