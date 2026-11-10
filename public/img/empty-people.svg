@@ -1,1 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-hidden="true"><circle cx="120" cy="84" r="62" fill="#eceee9"/><g fill="#fff" stroke="#c9c6c0" stroke-width="3"><circle cx="120" cy="66" r="17"/><path d="M90 126c0-22 14-34 30-34s30 12 30 34z"/><circle cx="80" cy="78" r="12" fill="#e5f5ea" stroke="#a7d9b9"/><path d="M58 126c0-16 10-25 22-25 5 0 9 1 12 4" fill="#e5f5ea" stroke="#a7d9b9"/><circle cx="160" cy="78" r="12" fill="#e8f2fd" stroke="#b3d6f6"/><path d="M182 126c0-16-10-25-22-25-5 0-9 1-12 4" fill="#e8f2fd" stroke="#b3d6f6"/></g><circle cx="120" cy="66" r="6" fill="#f4c95d"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 360 240">
+  <defs><filter id="soft" x="-30%" y="-150%" width="160%" height="400%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+  <g opacity=".65" filter="url(#soft)">
+  <ellipse cx="180" cy="180" rx="97" ry="6" fill="#e3e1dc"/>
+  </g>
+  <g transform="translate(118 11)">
+  <circle cx="0" cy="96" r="19" fill="#e5f5ea"/>
+  <path d="M-32 150a32 32 0 0 1 64 0v6a10 10 0 0 1-10 10h-44a10 10 0 0 1-10-10Z" fill="#e5f5ea"/>
+  </g>
+  <g transform="translate(242 11)">
+  <circle cx="0" cy="96" r="19" fill="#0075de"/>
+  <path d="M-32 150a32 32 0 0 1 64 0v6a10 10 0 0 1-10 10h-44a10 10 0 0 1-10-10Z" fill="#0075de"/>
+  </g>
+  <g transform="translate(180 0)">
+  <circle cx="0" cy="96" r="19" fill="#e3e1dc"/>
+  <path d="M-32 150a32 32 0 0 1 64 0v6a10 10 0 0 1-10 10h-44a10 10 0 0 1-10-10Z" fill="#e3e1dc"/>
+  </g>
+  <circle cx="180" cy="59" r="6" fill="#f4c95d"/>
+</svg>

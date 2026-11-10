@@ -1,1 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-hidden="true"><circle cx="120" cy="84" r="62" fill="#eceee9"/><ellipse cx="104" cy="118" rx="38" ry="12" fill="#e3e1dc"/><g stroke="#c9c6c0" stroke-width="3"><path d="M66 94v18c0 7 17 12 38 12s38-5 38-12V94z" fill="#fff"/><ellipse cx="104" cy="94" rx="38" ry="12" fill="#fff"/><path d="M66 74v20c0 7 17 12 38 12s38-5 38-12V74z" fill="#fff"/><ellipse cx="104" cy="74" rx="38" ry="12" fill="#e5f5ea" stroke="#a7d9b9"/></g><circle cx="158" cy="64" r="24" fill="#f4c95d" stroke="#e0b13f" stroke-width="3"/><text x="158" y="73" text-anchor="middle" font-size="26" font-weight="700" fill="#fff" font-family="sans-serif">₩</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 360 240">
+  <defs><filter id="soft" x="-30%" y="-150%" width="160%" height="400%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+  <g opacity=".65" filter="url(#soft)">
+  <ellipse cx="180" cy="185" rx="83" ry="6" fill="#e3e1dc"/>
+  </g>
+  <rect x="109" y="153" width="103" height="22" rx="11" fill="#e3e1dc"/>
+  <ellipse cx="160.5" cy="157" rx="50" ry="10" fill="#e5f5ea"/>
+  <rect x="109" y="135" width="103" height="22" rx="11" fill="#e5f5ea"/>
+  <ellipse cx="160.5" cy="139" rx="50" ry="10" fill="#fffdf8"/>
+  <rect x="109" y="117" width="103" height="22" rx="11" fill="#e3e1dc"/>
+  <ellipse cx="160.5" cy="121" rx="50" ry="10" fill="#e5f5ea"/>
+  <g transform="rotate(19 218 139)">
+  <ellipse cx="223" cy="140" rx="28" ry="46" fill="#c9835a"/>
+  <ellipse cx="217" cy="139" rx="28" ry="46" fill="#f4c95d"/>
+  <ellipse cx="217" cy="139" rx="21" ry="38" fill="none" stroke="#fffdf8" opacity=".55" stroke-width="3"/>
+  </g>
+</svg>
