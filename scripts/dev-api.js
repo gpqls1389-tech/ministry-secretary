@@ -13,7 +13,7 @@ const port = Number(process.env.PORT) || 8789;
 const sqlite = new DatabaseSync(process.env.DEV_DB || path.join(dataDir, 'dev.sqlite')); sqlite.exec('PRAGMA foreign_keys=ON'); sqlite.exec(fs.readFileSync(path.join(root, 'migrations', '0001_init.sql'), 'utf8'));
 const DB = { prepare: sql => { const st = sqlite.prepare(sql); return { bind: (...a) => ({ first: async () => st.get(...a) || null, all: async () => ({ results: st.all(...a) }), run: async () => ({ success: true, meta: { changes: Number(st.run(...a).changes) } }) }) }; } };
 const env = { DB, MAX_USERS: process.env.MAX_USERS, INVITE_CODE: process.env.INVITE_CODE === '' ? undefined : (process.env.INVITE_CODE || 'dev-invite-local-only') };
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.mjs': 'text/javascript; charset=utf-8', '.bcmap': 'application/octet-stream' };
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${port}`);

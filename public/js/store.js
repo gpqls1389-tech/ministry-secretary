@@ -276,6 +276,31 @@ export function createStore(storage, today = kstToday) {
       if (s.id) { Object.assign(S.schedules.find(x => x.id === s.id), rec); save(); return s.id; }
       return addSeries(S.schedules, rec, s);
     },
+    // PDF 등에서 가져온 후보를 한 번에 등록한다. items: [{ kind: 'event'|'schedule'|'service', dept_id, title, date, end, time, type }]
+    // 같은 부서·이름·날짜가 이미 있으면 건너뛰고, 하나라도 형식이 틀리면 아무것도 등록하지 않는다.
+    importPlanItems(items) {
+      if (!Array.isArray(items) || !items.length) throw new ValidationError('등록할 항목이 없어요.'); if (items.length > 300) throw new ValidationError('한 번에 300개까지 등록할 수 있어요.');
+      const rows = items.map((it, i) => {
+        const n = `${i + 1}번째 항목`; const kind = ['event', 'schedule', 'service'].includes(it.kind) ? it.kind : null; if (!kind) throw new ValidationError(`${n}: 구분을 고르세요.`);
+        if (!dept(Number(it.dept_id))) throw new ValidationError(`${n}: 부서를 선택하세요.`);
+        const title = reqText(it.title, `${n} 이름`); if (title.length > 80) throw new ValidationError(`${n}: 이름이 너무 길어요.`);
+        const date = reqDate(it.date, `${n} 날짜`); const end = it.end ? reqDate(it.end, `${n} 끝 날짜`) : date; if (end < date) throw new ValidationError(`${n}: 끝 날짜가 시작보다 빨라요.`);
+        return { kind, dept_id: Number(it.dept_id), title, date, end, time: /^\d{2}:\d{2}$/.test(it.time || '') ? it.time : '', type: SCHEDULE_TYPES.includes(it.type) ? it.type : '기타' };
+      });
+      S.schedules = S.schedules || []; const snap = JSON.stringify(S); const made = { event: 0, schedule: 0, service: 0 }; let skipped = 0;
+      try {
+        for (const r of rows) {
+          const dup = r.kind === 'event' ? S.events.some(e => e.dept_id === r.dept_id && e.title === r.title && e.start_date === r.date) : r.kind === 'service' ? S.services.some(e => e.dept_id === r.dept_id && e.title === r.title && e.date === r.date) : S.schedules.some(e => e.dept_id === r.dept_id && e.title === r.title && e.date === r.date);
+          if (dup) { skipped++; continue; }
+          if (r.kind === 'event') S.events.push({ id: nid(), dept_id: r.dept_id, title: r.title, type: '행사', start_date: r.date, end_date: r.end, place: '', owner: '', target_count: 0, expected_budget: 0, note: '', status: 'planned' });
+          else if (r.kind === 'service') S.services.push({ id: nid(), dept_id: r.dept_id, title: r.title, date: r.date, time: r.time, place: '', scripture: '', sermon_title: '', leader: '', order_text: '', kind: 'regular' });
+          else S.schedules.push({ id: nid(), dept_id: r.dept_id, title: r.title, type: r.type, date: r.date, time: r.time, place: '', note: '' });
+          made[r.kind]++;
+        }
+        save();
+      } catch (e) { S = JSON.parse(snap); throw e; }
+      return { made, skipped };
+    },
     schedule: id => (S.schedules || []).find(s => s.id === id),
     schedules(deptId) { return (S.schedules || []).filter(s => !deptId || s.dept_id === deptId).sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')); },
     deleteSchedule(id) { S.schedules = (S.schedules || []).filter(s => s.id !== id); save(); },
