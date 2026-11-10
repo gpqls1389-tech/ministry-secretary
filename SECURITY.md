@@ -33,7 +33,14 @@
 - 사이트 헤더 추가: `Strict-Transport-Security`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, CSP 세분화(`connect-src`, `object-src`, `upgrade-insecure-requests` 등)
 - `.gitignore`에 `.dev.vars`, 키·DB 파일 추가
 
-## 확인한 것 (가상 데이터, 자동 테스트 37개)
+## 영수증 사진 기능의 보안 (`/api/receipts`)
+- 사진은 **내 계정에만** 묶여 저장됩니다. 조회·삭제는 항상 세션의 사용자 번호로만 찾으므로 다른 계정 사진은 번호를 알아도 404입니다(테스트로 확인). 로그아웃 상태는 401, 다른 사이트에서 온 삭제 요청은 403.
+- JPEG만 받습니다(MIME + 파일 첫 바이트 확인). SVG·PNG 등 스크립트가 들어갈 수 있는 형식은 거부, 한 장 400KB·계정당 300장·60MB·시간당 60회 제한.
+- 사진 응답은 `Content-Type: image/jpeg`, `nosniff`, `Cache-Control: private, no-store`, `Content-Security-Policy: sandbox`, `Cross-Origin-Resource-Policy: same-origin`.
+- 사진은 올리기 전에 브라우저에서 다시 그려 저장하므로 위치 정보(EXIF) 같은 숨은 정보가 지워집니다. 계정을 삭제하면 사진도 함께 삭제됩니다.
+- **한계**: 사진은 암호화하지 않고 D1에 저장되므로 사이트 관리자는 기술적으로 볼 수 있습니다. 사진은 JSON 백업에 들어가지 않습니다. 영수증에 보이는 개인정보(카드번호·실명 등)는 가리고 찍도록 화면에 안내합니다.
+
+## 확인한 것 (가상 데이터, 자동 테스트 45개)
 - 로그아웃 상태: 명단·출석·회계 저장소 읽기/쓰기/비밀번호 변경/계정 삭제 모두 401, 데이터 변동 없음
 - 다른 계정: B는 A의 데이터를 읽기·덮어쓰기·삭제 불가, 요청에 `user_id`를 넣어도 무시, 토큰 한 글자 변조·로그아웃한 토큰 재사용·삭제된 계정 세션 모두 거부
 - 권한 상승: 관리자 권한/역할 자체가 없음(`role`·`is_admin` 값 무시, `/api/admin` 등 404)

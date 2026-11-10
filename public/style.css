@@ -205,3 +205,10 @@ body[data-theme="kid"] button.pri:hover, body[data-theme="kid"] .btn.pri:hover {
 .banner.has-img img { object-position:right bottom; }
 .banner.has-img::before { content:''; position:absolute; inset:0; z-index:1; background:linear-gradient(90deg,#fffdf6 0,#fffdf6 38%,rgba(255,253,246,0) 72%); }
 .banner.has-img .em, .banner.has-img > div { position:relative; z-index:2; }
+/* 교회력 표시·반복·영수증 */
+.cal .cs { display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; color:var(--mute); line-height:1.3; margin:0 0 2px; white-space:normal; }
+.cal .cs i, .lcdot { display:inline-block; width:8px; height:8px; border-radius:50%; border:1px solid rgba(0,0,0,.25); flex-shrink:0; vertical-align:baseline; margin-right:5px; }
+.cal .cs i { margin-right:0; }
+.rc-img { display:block; max-width:100%; max-height:70vh; margin:12px auto; border-radius:8px; border:1px solid var(--line); background:#fff; }
+.lcdot { width:9px; height:9px; }
+table.t tr.former td { color:var(--mute); }

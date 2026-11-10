@@ -1,10 +1,11 @@
 import { createStore, kstToday } from './store.js';
-import { EVENT_TEMPLATES, SERVICE_TEMPLATES, BUDGET_SUGGESTIONS, GUIDE_STEPS, TIPS, GLOSSARY, FAQ } from './templates.js';
-import { toCsv } from './csv.js';
+import { EVENT_TEMPLATES, SERVICE_TEMPLATES, BUDGET_SUGGESTIONS, GUIDE_STEPS, TIPS, GLOSSARY, FAQ, churchInfo, churchLabel, churchYear, REPEAT_RULES, SCHEDULE_TYPES } from './templates.js';
+import { toCsv, parseTable, decodeText } from './csv.js';
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장소 사용 불가 */ } };
 
-import { initAuth, accountApi, openLoginPreview } from './auth.js';
+import { initAuth, accountApi, openLoginPreview, receiptApi } from './auth.js';
+import { makeReceiptStore, compressImage } from './receipts.js';
 import { imgSrc, emptyImgFor, bannerFor } from './images.js';
 const A = await initAuth(); { const lg = document.getElementById('logo'); if (lg && imgSrc('logo')) lg.src = imgSrc('logo'); } // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
 let store;
@@ -12,6 +13,7 @@ try { store = createStore(A.storage); }
 catch { // 저장소를 쓸 수 없는 환경(사생활 보호 모드 등): 이번 방문 동안만 메모리에 보관
   const m = new Map(); store = createStore({ getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v) }); window.__memOnly = true;
 }
+const RCP = makeReceiptStore({ account: A.mode === 'account', api: receiptApi }); // 영수증 사진 저장소(로그인: 서버 / 아니면 이 브라우저)
 const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = n => (Number(n) || 0).toLocaleString('ko-KR') + '원';
@@ -20,11 +22,12 @@ const today = () => kstToday();
 const KIND = { child: '아동', youth: '청년', teacher: '교사', volunteer: '봉사자' };
 const PST = { applied: '신청', attended: '참석', cancelled: '취소' };
 const TST = { todo: '대기', doing: '진행', done: '완료' };
-const UI = { dept: 'all', year: Number(today().slice(0, 4)), month: today().slice(0, 7), planTab: 'cal', peopleTab: 'att' };
+const UI = { dept: 'all', year: Number(today().slice(0, 4)), month: today().slice(0, 7), planTab: 'cal', peopleTab: 'att', calSvc: false };
 try { UI.dept = localStorage.getItem('ms:dept') || 'all'; } catch { /* 저장소 사용 불가 */ }
 const did = () => (UI.dept === 'all' ? null : Number(UI.dept));
 const workDept = () => did() || store.depts()[0].id;
 const deptTag = id => { const d = store.dept(id); return d ? `<span class="tag ${id === 1 ? 'kid' : 'yth'}">${esc(d.name)}</span>` : ''; };
+const typeIco = i => (i.type === 'service' ? '⛪' : i.type === 'schedule' ? (i.kind === '교사 기도회' ? '🙏' : '📋') : '🎉');
 const range = (a, b) => (a === b ? a : `${a} ~ ${b}`);
 const dow = d => ['일', '월', '화', '수', '목', '금', '토'][new Date(d + 'T00:00:00Z').getUTCDay()];
 const md = d => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}(${dow(d)})`;
@@ -39,13 +42,14 @@ function fld(f, v) {
   const hint = f.hint ? `<span class="hint">${esc(f.hint)}</span>` : '';
   if (f.type === 'select') return `<label class="f">${esc(f.label)}<select name="${f.k}"${req}>${f.options.map(([a, b]) => `<option value="${esc(a)}"${String(a) === String(val) ? ' selected' : ''}>${esc(b)}</option>`).join('')}</select>${hint}</label>`;
   if (f.type === 'textarea') return `<label class="f">${esc(f.label)}<textarea name="${f.k}" placeholder="${esc(f.ph || '')}">${esc(val)}</textarea>${hint}</label>`;
+  if (f.type === 'file') return `<label class="f">${esc(f.label)}<input name="${f.k}" type="file" accept="${esc(f.accept || '')}"${f.capture ? ' capture="environment"' : ''}>${hint}</label>`;
   const dl = f.list ? `<datalist id="dl-${f.k}">${f.list.map(x => `<option value="${esc(x)}">`).join('')}</datalist>` : '';
   return `<label class="f">${esc(f.label)}${f.req ? ' *' : ''}<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.ph || '')}"${f.list ? ` list="dl-${f.k}"` : ''}${req}${f.type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''}>${dl}${hint}</label>`;
 }
 function form({ title, fields, values = {}, onSubmit, submit = '저장', intro = '', onOpen }) {
   const d = modal(`<form method="dialog"><h3>${esc(title)}</h3>${intro}${fields.map(f => fld(f, values[f.k])).join('')}<div class="err"></div><div class="dlg-foot"><button type="button" data-x>취소</button><button class="pri">${esc(submit)}</button></div></form>`);
   $('[data-x]', d).onclick = () => d.close();
-  $('form', d).onsubmit = async e => { e.preventDefault(); const o = {}; for (const f of fields) o[f.k] = d.querySelector(`[name="${f.k}"]`).value; try { await onSubmit(o); d.close(); render(); } catch (err) { $('.err', d).textContent = err.message; } };
+  $('form', d).onsubmit = async e => { e.preventDefault(); const o = {}; for (const f of fields) { const el = d.querySelector(`[name="${f.k}"]`); o[f.k] = f.type === 'file' ? ((el.files && el.files[0]) || null) : el.value; } const btn = $('.pri', d); btn.disabled = true; try { await onSubmit(o); d.close(); render(); } catch (err) { btn.disabled = false; $('.err', d).textContent = err.message; } };
   if (onOpen) onOpen(d);
   return d;
 }
@@ -101,14 +105,14 @@ function openHelp(tab = 'start') {
 // ----- 라우터 -----
 const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['money', '💰', '회계'], ['settings', '⚙️', '설정']];
 function render() {
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' ? 'events' : view === 'service' ? 'services' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' ? 'events' : view === 'service' ? 'services' : view === 'schedule' ? 'plan' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name]), ['all', '전체']].map(([v, l]) => `<button data-dept="${v}" class="${UI.dept === v ? 'on' : ''}">${l}</button>`).join('');
   paintAcct();
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : (did() === 1 ? 'kid' : did() === 2 ? 'youth' : 'all'); // 아동부 노랑 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -132,10 +136,10 @@ function vHome() {
   const todayN = H.week.filter(i => i.date <= t && i.end >= t).length; const overN = H.tasks.filter(k => k.overdue).length;
   const totB = H.budget.reduce((a, b) => a + b.budget, 0), totE = H.budget.reduce((a, b) => a + b.expense, 0);
   const monthExp = store.transactions({ deptId: did(), year: UI.year, month }).filter(x => x.kind === 'expense').reduce((a, x) => a + x.amount, 0);
-  const items = H.week.map(i => { const isToday = i.date <= t && i.end >= t; return `<div class="sched" data-open="${i.type}/${i.id}"><div class="datebox ${isToday ? 'today' : ''}"><small>${dow(i.date)}</small><b>${Number(i.date.slice(8))}</b></div><div class="what"><b>${i.type === 'service' ? '⛪' : '🎉'} ${esc(i.title)}</b><span>${i.end !== i.date ? esc(range(md(i.date), md(i.end))) : (i.time ? esc(i.time) : (i.type === 'service' ? '예배' : '행사'))}${isToday ? ' · 오늘' : ''}</span></div>${deptTag(i.dept_id)}</div>`; }).join('');
+  const items = H.week.map(i => { const isToday = i.date <= t && i.end >= t; return `<div class="sched" data-open="${i.type}/${i.id}"><div class="datebox ${isToday ? 'today' : ''}"><small>${dow(i.date)}</small><b>${Number(i.date.slice(8))}</b></div><div class="what"><b>${typeIco(i)} ${esc(i.title)}</b><span>${i.end !== i.date ? esc(range(md(i.date), md(i.end))) : [i.time ? esc(i.time) : '', i.type === 'service' ? esc(churchLabel(i.date)) : i.type === 'schedule' ? esc(i.kind || '일정') : '행사'].filter(Boolean).join(' · ')}${isToday ? ' · 오늘' : ''}</span></div>${deptTag(i.dept_id)}</div>`; }).join('');
   const tasks = H.tasks.slice(0, 8).map(k => { const [c, l] = k.due ? dday(k.due) : ['', '기한 없음']; return `<div class="todo"><input type="checkbox" data-task="${k.id}" aria-label="완료"><div class="sp"><div class="tt">${esc(k.title)}</div><div class="mute small">${esc(k.event.title)}${k.assignee ? ' · ' + esc(k.assignee) : ''}</div></div><span class="tag ${c}">${l}</span></div>`; }).join('');
   const budget = H.budget.map(b => { const pct = b.budget ? Math.round(b.expense / b.budget * 100) : 0; return `<div class="pad"><div class="row"><b>${esc(b.dept.name)}</b><span class="sp"></span>${b.budget && b.expense > b.budget ? '<span class="tag bad">예산 초과</span>' : `<span class="tag blue">${b.budget ? pct + '% 사용' : '예산 없음'}</span>`}</div><div style="margin:10px 0 14px">${barHtml(b.expense, b.budget)}</div><div class="dl"><div><div class="k">예산</div><div class="v">${won(b.budget)}</div></div><div><div class="k">지출</div><div class="v">${won(b.expense)}</div></div><div><div class="k">예산 잔액</div><div class="v" style="color:${b.budget_remaining < 0 ? 'var(--orange)' : 'var(--primary-dk)'}">${won(b.budget_remaining)}</div></div><div><div class="k">수입·지출 차액</div><div class="v" style="color:${b.net < 0 ? 'var(--orange)' : 'var(--good)'}">${won(b.net)}</div></div></div></div>`; }).join('<div style="border-top:1px solid var(--line)"></div>');
-  const actions = '<button class="pri" data-act="newEvent">+ 행사</button><button data-act="newService">+ 예배</button><button data-act="newTx">+ 지출 등록</button><button data-go="#services">출석 기록</button>';
+  const actions = '<button class="pri" data-act="newEvent">+ 행사</button><button data-act="newService">+ 예배</button><button data-act="newSchedule">+ 일정</button><button data-act="newTx">+ 지출 등록</button><button data-go="#services">출석 기록</button>';
   page('🏠', '홈', `${H.today} (${dow(H.today)}) · ${esc(scope)}`, `${backupNote}
   <div class="statrow">
     <div class="card sc"><div class="k">이번 주 일정</div><div class="v">${H.week.length}건</div><div class="s">오늘 ${todayN}건 · ${md(H.from)} ~ ${md(H.to)}</div></div>
@@ -153,18 +157,20 @@ function vHome() {
 
 // ----- 일정·계획 -----
 function vPlan() {
-  const tabs = `<div class="tabs"><a data-ptab="cal" class="${UI.planTab === 'cal' ? 'on' : ''}">월 달력</a><a data-ptab="year" class="${UI.planTab === 'year' ? 'on' : ''}">연간·절기 계획</a></div>`;
+  const tabs = `<div class="tabs"><a data-ptab="cal" class="${UI.planTab === 'cal' ? 'on' : ''}">월 달력</a><a data-ptab="list" class="${UI.planTab === 'list' ? 'on' : ''}">일정 목록</a><a data-ptab="year" class="${UI.planTab === 'year' ? 'on' : ''}">연간·절기 계획</a></div>`;
   if (UI.planTab === 'cal') {
     const [y, m] = UI.month.split('-').map(Number); const dim = new Date(Date.UTC(y, m, 0)).getUTCDate(); const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
-    const items = store.calendar(did(), `${UI.month}-01`, `${UI.month}-${pad(dim)}`); const cells = [];
+    const items = store.calendar(did(), `${UI.month}-01`, `${UI.month}-${pad(dim)}`, { services: UI.calSvc }); const cells = [];
     for (let i = 0; i < lead; i++) cells.push('<div class="out"></div>');
-    for (let d = 1; d <= dim; d++) { const ds = `${UI.month}-${pad(d)}`; cells.push(`<div class="${ds === today() ? 'today' : ''}"><b>${d}</b>${items.filter(i => i.date <= ds && i.end >= ds).map(i => `<a class="d${i.dept_id}" data-open="${i.type}/${i.id}" title="${esc(i.title)}">${i.type === 'service' ? '⛪ ' : ''}${esc(i.title)}</a>`).join('')}</div>`); }
+    for (let d = 1; d <= dim; d++) { const ds = `${UI.month}-${pad(d)}`; cells.push(`<div class="${ds === today() ? 'today' : ''}"><b>${d}</b>${dow(ds) === '일' ? `<small class="cs" title="교회력(자동 계산)"><i style="background:${churchInfo(ds).colorHex}"></i>${esc(churchInfo(ds).special || churchInfo(ds).label)}</small>` : ''}${items.filter(i => i.date <= ds && i.end >= ds).map(i => `<a class="d${i.dept_id}" data-open="${i.type}/${i.id}" title="${esc(i.title)}">${typeIco(i)} ${esc(i.title)}</a>`).join('')}</div>`); }
     const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7), next = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
-    page('🗓️', '일정·계획', '예배와 행사를 누르면 상세 화면으로 이동합니다.', `${tabs}<div class="row" style="margin-bottom:10px"><button data-month="${prev}">◀</button><b>${y}년 ${m}월</b><button data-month="${next}">▶</button><button data-month="${today().slice(0, 7)}">오늘</button></div><div class="cal">${['월', '화', '수', '목', '금', '토', '일'].map(w => `<div class="h">${w}</div>`).join('')}${cells.join('')}</div>`);
+    page('🗓️', '일정·계획', '일정(교사 기도회·회의)과 행사를 모아 보는 달력이에요. 주일예배는 ‘예배’ 메뉴에서 관리하고, 필요하면 아래에서 함께 볼 수 있어요.', `${tabs}<div class="row" style="margin-bottom:10px"><button data-month="${prev}">◀</button><b>${y}년 ${m}월</b><button data-month="${next}">▶</button><button data-month="${today().slice(0, 7)}">오늘</button><label class="small noprint" style="margin-left:8px"><input type="checkbox" data-calsvc${UI.calSvc ? ' checked' : ''}> 예배도 함께 보기</label><span class="sp"></span><button class="pri sm noprint" data-act="newSchedule">+ 일정</button></div><div class="cal">${['월', '화', '수', '목', '금', '토', '일'].map(w => `<div class="h">${w}</div>`).join('')}${cells.join('')}</div>`);
   } else {
-    const d = workDept(); const P = store.plan(d, UI.year); const seasons = store.seasons(d, UI.year);
+    if (UI.planTab === 'list') return vScheduleList(tabs);
+    const d = workDept(); const P = store.plan(d, UI.year); const autoSeasons = !store.seasons(d, UI.year).length ? guard(() => store.loadSeasonTemplate(d, UI.year)) : 0; const seasons = store.seasons(d, UI.year);
     const evs = store.get().events.filter(e => e.dept_id === d && e.start_date.startsWith(String(UI.year))).sort((a, b) => a.start_date.localeCompare(b.start_date));
     page('🗓️', '일정·계획', `${deptTag(d)} ${UI.dept === 'all' ? '<span class="mute small">(전체 보기에서는 첫 부서를 표시합니다)</span>' : ''}`, `${tabs}<div class="row"><b>${store.dept(d).name}</b>${yearSel()}</div>
+    <h2>교회력 <span class="mute small">${UI.year}년 · 자동 계산</span></h2><div class="tablewrap"><table class="t"><thead><tr><th>절기</th><th>전례 색</th><th>기간</th><th>설명</th></tr></thead><tbody>${churchYear(UI.year).map(s => `<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.color)}</td><td>${esc(s.start)} ~ ${esc(s.end)}</td><td class="mute small">${esc(s.note)}</td></tr>`).join('')}</tbody></table></div><p class="mute small">서방 교회력의 일반 규칙으로 계산한 값이에요. 교단·교회마다 절기 이름과 주차 세는 방법이 조금 다를 수 있으니 확인해서 쓰세요. 달력과 예배 목록에는 이 계산 결과가 자동으로 표시돼요.${autoSeasons ? ` 아래 ‘절기 계획’에는 ${UI.year}년 기본 절기 ${autoSeasons}개를 자동으로 넣었어요.` : ''}</p>
     <h2>사역 목표</h2><textarea id="goal" placeholder="올해 사역 목표">${esc(P.goal)}</textarea>
     <h2>월별 교육 주제 <button class="sm noprint" data-act="themeTpl">예시 넣기</button></h2><p class="mute small noprint" style="margin:-6px 0 10px">비어 있는 달만 예시로 채웁니다. 이미 적은 달은 바뀌지 않아요. 채운 뒤 우리 교회에 맞게 고쳐 쓰세요.</p><div class="tablewrap"><table class="t"><tbody>${Array.from({ length: 12 }, (_, i) => `<tr><td style="width:60px">${i + 1}월</td><td><input class="cell-in" data-theme="${i + 1}" value="${esc(P.themes[i + 1] || '')}" placeholder="교육 주제"></td></tr>`).join('')}</tbody></table></div>
     <div class="row" style="margin-top:8px"><button class="pri" data-act="savePlan">목표·주제 저장</button></div>
@@ -212,29 +218,56 @@ function vEvent(id) {
 }
 
 // ----- 예배 -----
+// 반복 입력: 같은 내용을 여러 날짜에 한 번에 만든다(예배·일정 공통)
+const REPEAT_FIELDS = [{ k: 'repeat', label: '반복', type: 'select', options: REPEAT_RULES, hint: '‘매주’를 고르면 위 날짜부터 ‘반복 종료일’까지 같은 요일마다 한 번에 만들어져요(최대 104회). 이미 같은 이름·날짜가 있으면 건너뛰어요.' }, { k: 'until', label: '반복 종료일', type: 'date', hint: '반복할 때만 입력하세요. 예: 올해 마지막 주일.' }];
+function seriesToast() { const s = store.lastSeries(); toast(s.made > 1 ? `${s.made}개를 한 번에 만들었어요.${s.skipped ? ` (이미 있는 ${s.skipped}개는 건너뜀)` : ''}${s.capped ? ' (한 번에 만들 수 있는 최대 104회까지만 만들었어요)' : ''}` : '저장했습니다.'); }
+// 날짜 칸 아래에 그 날짜의 교회력(절기·주차)을 자동으로 보여 준다
+function churchHint(d) {
+  const inp = d.querySelector('[name=date]'); if (!inp) return; const note = document.createElement('div'); note.className = 'tplnote'; inp.closest('label').after(note);
+  const show = () => { note.hidden = !/^\d{4}-\d{2}-\d{2}$/.test(inp.value); if (!note.hidden) { const i = churchInfo(inp.value); note.innerHTML = `<span class="lcdot" style="background:${i.colorHex}"></span><b>${esc(churchLabel(inp.value))}</b> <span class="mute">(교회력 자동 계산 · 전례 색 ${esc(i.color)})</span>`; } };
+  inp.addEventListener('input', show); inp.addEventListener('change', show); show();
+}
 function serviceForm(v = {}) {
   const fields = [...(!v.id ? [{ k: 'tpl', label: '예배 순서 예시 (선택)', type: 'select', options: [['', '직접 입력'], ...Object.entries(SERVICE_TEMPLATES).map(([k, t]) => [k, t.name])], hint: '고르면 아래 ‘예배 순서’ 칸이 채워져요. 우리 교회에 맞게 고쳐 쓰세요.' }] : []),
-    { k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'title', label: '예배명', req: true, ph: '예: 어린이 주일예배' }, { k: 'kind', label: '구분', type: 'select', options: [['regular', '정기예배'], ['special', '특별예배']], hint: '출석부에는 정기예배만 나와요.' }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'time', label: '시간', type: 'time' }, { k: 'place', label: '장소' },
+    { k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'title', label: '예배명', req: true, ph: '예: 어린이 주일예배' }, { k: 'kind', label: '구분', type: 'select', options: [['regular', '정기예배'], ['special', '특별예배']], hint: '출석부에는 정기예배만 나와요.' }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'time', label: '시간', type: 'time' }, { k: 'place', label: '장소' }, ...(!v.id ? REPEAT_FIELDS : []),
     { k: 'scripture', label: '성경 본문 (개역개정, 장·절)', ph: '예: 시편 23:1-6', hint: '직접 입력하는 칸이에요. 개역개정 본문을 확인하세요.' }, { k: 'sermon_title', label: '설교 제목' }, { k: 'leader', label: '담당자' }, { k: 'order_text', label: '예배 순서', type: 'textarea', ph: '줄마다 한 순서씩' }];
-  form({ title: v.id ? '예배 수정' : '예배 추가', values: { dept_id: workDept(), date: today(), kind: 'regular', ...v }, fields,
-    onOpen: d => { const sel = d.querySelector('[name=tpl]'); if (!sel) return; sel.onchange = () => { const t = SERVICE_TEMPLATES[sel.value]; if (!t) return; const o = d.querySelector('[name=order_text]'); if (!o.value.trim() || o.dataset.auto === '1') { o.value = t.order; o.dataset.auto = '1'; } if (sel.value === 'special') d.querySelector('[name=kind]').value = 'special'; }; },
-    onSubmit: o => { const id = store.saveService({ ...v, ...o, dept_id: Number(o.dept_id) }); if (!v.id) location.hash = `#service/${id}`; } });
+  form({ title: v.id ? '예배 수정' : '예배 추가', values: { dept_id: workDept(), date: today(), kind: 'regular', repeat: 'none', ...v }, fields,
+    onOpen: d => { churchHint(d); const sel = d.querySelector('[name=tpl]'); if (!sel) return; sel.onchange = () => { const t = SERVICE_TEMPLATES[sel.value]; if (!t) return; const o = d.querySelector('[name=order_text]'); if (!o.value.trim() || o.dataset.auto === '1') { o.value = t.order; o.dataset.auto = '1'; } if (sel.value === 'special') d.querySelector('[name=kind]').value = 'special'; }; },
+    onSubmit: o => { const id = store.saveService({ ...v, ...o, dept_id: Number(o.dept_id) }); if (!v.id) { const ls = store.lastSeries(); seriesToast(); location.hash = ls.made > 1 ? '#services' : `#service/${id}`; } } });
 }
 function vServices() {
   const list = store.services(did()).filter(s => s.date.startsWith(String(UI.year)));
   const others = store.services(did()).length - list.length;
-  page('⛪', '예배', `${yearSel()}`, `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button></div><div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>부서</th><th>설교 제목</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="5">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 어린이·청년 예배 순서가 채워져요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
+  page('⛪', '예배', `${yearSel()}`, `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button></div><div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>교회력</th><th>부서</th><th>설교 제목</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="6">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 예배 순서가 채워지고, ‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
 }
 const AT = { cls: '' };
 function vService(id) {
   const s = store.service(id); if (!s) { page('⛪', '예배', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
   const people = store.people({ deptId: s.dept_id }); const classes = [...new Set(people.map(p => p.class_name).filter(Boolean))]; const att = new Map(store.get().attendance.filter(a => a.service_id === id).map(a => [a.person_id, a.present]));
   const shown = people.filter(p => !AT.cls || p.class_name === AT.cls); const c = store.attendanceCount(id);
-  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button><button data-act="print">인쇄</button><span class="sp"></span><button class="dng" data-act="delService" data-id="${id}">삭제</button></div>
-  <dl class="props" style="margin-top:14px"><dt>성경 본문</dt><dd>${esc(s.scripture) || '-'}</dd><dt>설교 제목</dt><dd>${esc(s.sermon_title) || '-'}</dd><dt>담당</dt><dd>${esc(s.leader) || '-'}</dd><dt>순서</dt><dd style="white-space:pre-wrap">${esc(s.order_text) || '-'}</dd></dl>
+  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button data-act="print">인쇄</button><span class="sp"></span><button class="dng" data-act="delService" data-id="${id}">삭제</button></div>
+  <dl class="props" style="margin-top:14px"><dt>교회력</dt><dd><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))} <span class="mute small">(자동 계산)</span></dd><dt>성경 본문</dt><dd>${esc(s.scripture) || '-'}</dd><dt>설교 제목</dt><dd>${esc(s.sermon_title) || '-'}</dd><dt>담당</dt><dd>${esc(s.leader) || '-'}</dd><dt>순서</dt><dd style="white-space:pre-wrap">${esc(s.order_text) || '-'}</dd></dl>
   <h2>출석 체크 <span class="tag ok">출석 ${c.present}명</span> <span class="tag">기록 ${c.recorded}명</span></h2><p class="mute small noprint">이름을 누르면 바로 저장됩니다. 같은 회차에서 한 사람은 한 번만 집계되고, 복제한 예배의 출석은 비어 있습니다.</p>
   <div class="row noprint" style="margin-bottom:10px"><button data-cls="" class="${!AT.cls ? 'pri' : ''}">전체</button>${classes.map(x => `<button data-cls="${esc(x)}" class="${AT.cls === x ? 'pri' : ''}">${esc(x)}</button>`).join('')}<span class="sp"></span><button data-act="allPresent" data-id="${id}">보이는 인원 전원 출석</button><button data-act="newPersonHere" data-id="${id}">+ 새 사람</button></div>
   <div class="att-list">${shown.map(p => `<label class="att-row ${att.get(p.id) ? 'on' : ''}"><span class="who"><span class="avatar k${s.dept_id}">${esc(p.name.slice(0, 1))}</span><span style="min-width:0"><b>${esc(p.display)}</b><span class="mute small">${esc(p.class_name)}${p.kind === 'teacher' ? ' · 교사' : ''}</span></span></span><span class="chk"><input type="checkbox" data-att="${id}/${p.id}" ${att.get(p.id) ? 'checked' : ''} aria-label="${esc(p.name)} 출석"><i><span class="y">✓ 출석</span><span class="n">출석 체크</span></i></span></label>`).join('') || emptyState('명단이 없어요', '인원·출석에서 이 부서의 인원을 먼저 등록하세요.', '<button class="sm pri" data-go="#people">인원 등록하러 가기</button>')}</div>`);
+}
+
+// ----- 일정(교사 기도회·회의 등. 예배·행사와 별도) -----
+function scheduleForm(v = {}) {
+  form({ title: v.id ? '일정 수정' : '일정 추가', values: { dept_id: workDept(), date: today(), type: '교사 기도회', repeat: 'none', ...v }, intro: '<p class="mute small">교사 기도회·회의처럼 예배·행사가 아닌 모임을 적어요. 주일예배는 ‘예배’ 메뉴에서 관리합니다.</p>',
+    fields: [{ k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'type', label: '구분', type: 'select', options: SCHEDULE_TYPES.map(x => [x, x]) }, { k: 'title', label: '일정 이름', req: true, ph: '예: 교사 기도회' }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'time', label: '시간', type: 'time' }, { k: 'place', label: '장소' }, ...(!v.id ? REPEAT_FIELDS : []), { k: 'note', label: '메모', type: 'textarea' }],
+    onOpen: d => { churchHint(d); const ty = d.querySelector('[name=type]'), ti = d.querySelector('[name=title]'); if (!v.id && ty && ti) { ti.value = ti.value || ty.value; ti.dataset.auto = '1'; ty.onchange = () => { if (ti.dataset.auto === '1') ti.value = ty.value; }; ti.oninput = () => { ti.dataset.auto = '0'; }; } },
+    onSubmit: o => { store.saveSchedule({ ...v, ...o, dept_id: Number(o.dept_id) }); seriesToast(); } });
+}
+function vSchedule(id) {
+  const s = store.schedule(id); if (!s) { page('🗓️', '일정', '', '<div class="callout bad">일정을 찾을 수 없습니다.</div>'); return; }
+  const n = store.seriesCount('schedule', id);
+  page(typeIco({ type: 'schedule', kind: s.type }), s.title, `${deptTag(s.dept_id)} ${esc(s.type)}`, `<div class="row noprint"><button data-go="#plan">◀ 달력</button><button data-act="editSchedule" data-id="${id}">수정</button>${n > 1 ? `<button data-act="delSeries" data-kind="schedule" data-id="${id}">이 날짜부터 반복 ${n}개 삭제</button>` : ''}<span class="sp"></span><button class="dng" data-act="delSchedule" data-id="${id}">삭제</button></div>
+  <dl class="props" style="margin-top:14px"><dt>날짜</dt><dd>${md(s.date)} ${esc(s.time)}</dd><dt>교회력</dt><dd>${esc(churchLabel(s.date))}</dd><dt>장소</dt><dd>${esc(s.place) || '-'}</dd><dt>메모</dt><dd style="white-space:pre-wrap">${esc(s.note) || '-'}</dd></dl>`);
+}
+function vScheduleList(tabs) {
+  const t = today(); const all = store.schedules(did()); const rows = [...all.filter(s => s.date < t).slice(-5), ...all.filter(s => s.date >= t)];
+  page('🗓️', '일정·계획', '교사 기도회·회의 같은 모임을 등록해요. ‘반복’을 쓰면 여러 주를 한 번에 만들 수 있어요.', `${tabs}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newSchedule">+ 새 일정</button></div><div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>일정</th><th>구분</th><th>부서</th><th>장소</th></tr></thead><tbody>${rows.map(s => `<tr class="link${s.date < t ? ' former' : ''}" data-open="schedule/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b></td><td>${esc(s.type)}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.place)}</td></tr>`).join('') || `<tr><td colspan="5">${emptyState('등록된 일정이 없어요', '교사 기도회·교사 회의 같은 모임을 넣어 보세요. 매주 하는 모임은 ‘반복’을 매주로 하면 한 번에 만들어져요.', '<button class="sm pri" data-act="newSchedule">+ 일정 만들기</button>')}</td></tr>`}</tbody></table></div><p class="mute small">지난 일정은 최근 5개만 보여요.</p>`);
 }
 
 // ----- 인원·출석 -----
@@ -245,14 +278,14 @@ function vPeople() {
     page('👥', '인원·출석', `${deptTag(d)} 최근 정기예배 ${M.services.length}회 · ○ 출석 · × 결석 · 빈칸 미기록 ${UI.dept === 'all' ? '<span class="mute small">(전체 보기에서는 첫 부서)</span>' : ''}`, `${tabs}<div class="row noprint" style="margin-bottom:10px"><button data-act="print">인쇄</button><button data-act="csvAtt">엑셀(CSV)로 내려받기</button></div><div class="tablewrap"><table class="t att"><thead><tr><th>이름 (반)</th>${M.services.map(s => `<th title="${esc(s.title)}" class="${s.date === today() ? 'cur' : ''}"><a data-open="service/${s.id}" style="cursor:pointer">${Number(s.date.slice(5, 7))}/${Number(s.date.slice(8))}<small>${dow(s.date)}</small></a></th>`).join('')}<th>출석</th><th>출석률</th></tr></thead><tbody>${M.rows.map(r => `<tr class="${r.former ? 'former' : ''}"><td><div class="who"><span class="avatar sm k${d}">${esc(r.person.name.slice(0, 1))}</span><span><b>${esc(r.person.name)}</b>${r.person.birth_year && M.rows.filter(x => x.person.name === r.person.name).length > 1 ? ` <span class="mute small">${r.person.birth_year}년생</span>` : ''}<br><span class="mute small">${esc(r.person.class_name)}${r.former ? ' · 이전 부서원' : ''}</span></span></div></td>${r.cells.map(c => `<td class="${c === 1 ? 'p' : c === 0 ? 'a' : 'n'}"><span class="mk" title="${c === 1 ? '출석' : c === 0 ? '결석' : '미기록'}">${c === 1 ? '✓' : c === 0 ? '✕' : '·'}</span></td>`).join('')}<td><b>${r.present}</b></td><td class="rate ${r.rate !== null && r.rate < 50 ? 'lo' : ''}">${r.rate === null ? '-' : r.rate + '%'}${r.rate === null ? '' : barHtml(r.rate, 100)}</td></tr>`).join('') || `<tr><td colspan="${M.services.length + 3}">${emptyState('아직 출석 기록이 없어요', '먼저 ‘인원’을 등록하고, ‘예배’에서 정기예배를 만들어 출석을 체크하면 이 표에 최근 8회가 모여요.', '<button class="sm" data-act="newPerson">+ 인원 등록</button><button class="sm" data-go="#services">예배로 가기</button>')}</td></tr>`}</tbody><tfoot><tr><td>합계(출석 인원)</td>${M.totals.map(n => `<td class="c">${n}</td>`).join('')}<td colspan="2"></td></tr></tfoot></table></div><p class="mute small">출석률이 50% 미만이면 빨간색으로 표시됩니다. 보호자 연락처·알레르기 같은 민감 정보는 이 앱이 수집하지 않습니다.</p>`);
   } else {
     const st = UI.pstatus || 'active'; const list = store.people({ deptId: did(), status: st });
-    page('👥', '인원·출석', `${list.length}명`, `${tabs}<div class="row noprint" style="margin-bottom:10px"><button class="pri" data-act="newPerson">+ 인원 등록</button><select data-pstatus><option value="active"${st === 'active' ? ' selected' : ''}>현재 명단</option><option value="graduated"${st === 'graduated' ? ' selected' : ''}>졸업·이동</option><option value="inactive"${st === 'inactive' ? ' selected' : ''}>비활성</option><option value="all"${st === 'all' ? ' selected' : ''}>전체</option></select><button data-act="csvRoster">엑셀(CSV)로 내려받기</button></div><div class="tablewrap"><table class="t"><thead><tr><th>이름</th><th>구분</th><th>부서</th><th>반·조</th><th>상태</th><th></th></tr></thead><tbody>${list.map(p => `<tr><td><b>${esc(p.display)}</b></td><td>${KIND[p.kind]}</td><td>${deptTag(p.dept_id)}</td><td>${esc(p.class_name)}</td><td>${p.status === 'active' ? '' : '<span class="tag">' + (p.status === 'graduated' ? '졸업·이동' : '비활성') + '</span>'}</td><td><button class="sm" data-act="editPerson" data-id="${p.id}">수정</button> <button class="sm" data-act="movePerson" data-id="${p.id}">이동</button> ${p.status === 'active' ? `<button class="sm" data-act="retire" data-id="${p.id}">명단 제외</button>` : `<button class="sm" data-act="reactivate" data-id="${p.id}">복귀</button>`}</td></tr>`).join('') || `<tr><td colspan="6">${emptyState('명단이 비어 있어요', '아동·청년·교사를 반(조)과 함께 등록하세요. 출생년도를 넣으면 같은 이름도 구분돼요. 연락처 같은 민감 정보는 입력하지 마세요.', '<button class="sm pri" data-act="newPerson">+ 인원 등록</button>')}</td></tr>`}</tbody></table></div><p class="mute small">‘명단 제외’는 현재 명단에서만 빼며 과거 출석·행사 기록은 그대로 남습니다.</p>`);
+    page('👥', '인원·출석', `${list.length}명`, `${tabs}<div class="row noprint" style="margin-bottom:10px"><button class="pri" data-act="newPerson">+ 인원 등록</button><select data-pstatus><option value="active"${st === 'active' ? ' selected' : ''}>현재 명단</option><option value="graduated"${st === 'graduated' ? ' selected' : ''}>졸업·이동</option><option value="inactive"${st === 'inactive' ? ' selected' : ''}>비활성</option><option value="all"${st === 'all' ? ' selected' : ''}>전체</option></select><button data-act="csvRoster">엑셀(CSV)로 내려받기</button><button data-act="peopleTemplate">등록 양식 내려받기</button><button class="pri" data-act="peopleImport">양식으로 한꺼번에 등록</button></div><div class="tablewrap"><table class="t"><thead><tr><th>이름</th><th>구분</th><th>부서</th><th>반·조</th><th>상태</th><th></th></tr></thead><tbody>${list.map(p => `<tr><td><b>${esc(p.display)}</b></td><td>${KIND[p.kind]}</td><td>${deptTag(p.dept_id)}</td><td>${esc(p.class_name)}</td><td>${p.status === 'active' ? '' : '<span class="tag">' + (p.status === 'graduated' ? '졸업·이동' : '비활성') + '</span>'}</td><td><button class="sm" data-act="editPerson" data-id="${p.id}">수정</button> <button class="sm" data-act="movePerson" data-id="${p.id}">이동</button> ${p.status === 'active' ? `<button class="sm" data-act="retire" data-id="${p.id}">명단 제외</button>` : `<button class="sm" data-act="reactivate" data-id="${p.id}">복귀</button>`}</td></tr>`).join('') || `<tr><td colspan="6">${emptyState('명단이 비어 있어요', '아동·청년·교사를 반(조)과 함께 등록하세요. 출생년도를 넣으면 같은 이름도 구분돼요. 연락처 같은 민감 정보는 입력하지 마세요.', '<button class="sm pri" data-act="newPerson">+ 인원 등록</button><button class="sm" data-act="peopleImport">양식으로 한꺼번에 등록</button>')}</td></tr>`}</tbody></table></div><p class="mute small">‘명단 제외’는 현재 명단에서만 빼며 과거 출석·행사 기록은 그대로 남습니다.</p>`);
   }
 }
 
 // ----- 회계 -----
 function txTable(rows) {
   const inc = rows.filter(t => t.kind === 'income').reduce((a, t) => a + t.amount, 0), exp = rows.filter(t => t.kind === 'expense').reduce((a, t) => a + t.amount, 0);
-  return `<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th>적요</th><th>행사</th><th class="num">금액</th><th></th></tr></thead><tbody>${rows.map(t => `<tr><td>${md(t.date)}</td><td><span class="tag ${t.kind === 'income' ? 'in' : 'out'}">${t.kind === 'income' ? '수입' : '지출'}</span></td><td>${esc(t.category)}</td><td>${esc(t.memo)}</td><td class="mute small">${esc((store.ev(t.event_id) || {}).title || '')}</td><td class="num" style="color:${t.kind === 'income' ? 'var(--green)' : 'var(--ink)'}">${t.kind === 'income' ? '+' : '−'}${won(t.amount)}</td><td><button class="sm" data-act="editTx" data-id="${t.id}">수정</button> <button class="sm ghost dng" data-act="voidTx" data-id="${t.id}">취소</button></td></tr>`).join('') || `<tr><td colspan="7">${emptyState('거래가 없어요', '지출이나 수입을 등록하면 여기와 예산 현황에 반영돼요. 행사와 관계있다면 ‘연결 행사’를 고르세요.', '<button class="sm pri" data-act="newTx">+ 지출 등록</button>')}</td></tr>`}</tbody><tfoot><tr><td colspan="5">합계 (수입 ${won(inc)} · 지출 ${won(exp)})</td><td class="num">${inc - exp < 0 ? '−' : '+'}${won(Math.abs(inc - exp))}</td><td></td></tr></tfoot></table></div>`;
+  return `<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th>적요</th><th>행사</th><th class="num">금액</th><th>영수증</th><th></th></tr></thead><tbody>${rows.map(t => `<tr><td>${md(t.date)}</td><td><span class="tag ${t.kind === 'income' ? 'in' : 'out'}">${t.kind === 'income' ? '수입' : '지출'}</span></td><td>${esc(t.category)}</td><td>${esc(t.memo)}</td><td class="mute small">${esc((store.ev(t.event_id) || {}).title || '')}</td><td class="num" style="color:${t.kind === 'income' ? 'var(--green)' : 'var(--ink)'}">${t.kind === 'income' ? '+' : '−'}${won(t.amount)}</td><td>${t.receipt ? `<button class="sm" data-act="viewReceipt" data-id="${t.id}">📎 보기</button>` : '<span class="mute small">-</span>'}</td><td><button class="sm" data-act="editTx" data-id="${t.id}">수정</button> <button class="sm ghost dng" data-act="voidTx" data-id="${t.id}">취소</button></td></tr>`).join('') || `<tr><td colspan="8">${emptyState('거래가 없어요', '지출이나 수입을 등록하면 여기와 예산 현황에 반영돼요. 행사와 관계있다면 ‘연결 행사’를 고르세요.', '<button class="sm pri" data-act="newTx">+ 지출 등록</button>')}</td></tr>`}</tbody><tfoot><tr><td colspan="5">합계 (수입 ${won(inc)} · 지출 ${won(exp)})</td><td class="num">${inc - exp < 0 ? '−' : '+'}${won(Math.abs(inc - exp))}</td><td></td><td></td></tr></tfoot></table></div>`;
 }
 function vMoney() {
   const ids = did() ? [did()] : store.depts().map(d => d.id); const sums = ids.map(i => ({ d: store.dept(i), s: store.deptSummary(i, UI.year) }));
@@ -266,8 +299,13 @@ function vMoney() {
 function txForm(v = {}) {
   const wd = Number(v.dept_id || workDept()); const evs = store.get().events.filter(e => e.dept_id === wd);
   const cats = [...new Set([...store.get().budgets.filter(b => b.dept_id === wd).map(b => b.category), ...BUDGET_SUGGESTIONS])];
-  form({ title: v.id ? '거래 수정' : '지출·수입 등록', values: { kind: 'expense', date: today(), dept_id: wd, event_id: '', ...v, event_id: v.event_id || '' }, fields: [{ k: 'kind', label: '구분', type: 'select', options: [['expense', '지출'], ['income', '수입']] }, { k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'amount', label: '금액 (원, 정수)', type: 'number', req: true, ph: '예: 45000', hint: '쉼표 없이 숫자만. 0은 입력할 수 없어요.' }, { k: 'category', label: '항목', list: cats, hint: '예산 항목과 같은 이름으로 쓰면 예산 대비 집행에 잡혀요.' }, { k: 'event_id', label: '연결 행사 (선택)', type: 'select', options: [['', '(행사와 무관한 부서 지출)'], ...evs.map(e => [e.id, `${e.start_date} ${e.title}`])], hint: '연결하면 행사 결산에도 보이고, 부서 합계에는 한 번만 더해져요.' }, { k: 'memo', label: '적요', ph: '예: 간식 구입' }],
-    onSubmit: o => { const rec = { ...o, dept_id: Number(o.dept_id), amount: o.amount === '' ? NaN : Number(o.amount) }; if (v.id) store.updateTransaction(v.id, rec); else store.addTransaction(rec); toast('저장했습니다.'); } });
+  form({ title: v.id ? '거래 수정' : '지출·수입 등록', values: { kind: 'expense', date: today(), dept_id: wd, event_id: '', ...v, event_id: v.event_id || '' }, fields: [{ k: 'kind', label: '구분', type: 'select', options: [['expense', '지출'], ['income', '수입']] }, { k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'amount', label: '금액 (원, 정수)', type: 'number', req: true, ph: '예: 45000', hint: '쉼표 없이 숫자만. 0은 입력할 수 없어요.' }, { k: 'category', label: '항목', list: cats, hint: '예산 항목과 같은 이름으로 쓰면 예산 대비 집행에 잡혀요.' }, { k: 'event_id', label: '연결 행사 (선택)', type: 'select', options: [['', '(행사와 무관한 부서 지출)'], ...evs.map(e => [e.id, `${e.start_date} ${e.title}`])], hint: '연결하면 행사 결산에도 보이고, 부서 합계에는 한 번만 더해져요.' }, { k: 'memo', label: '적요', ph: '예: 간식 구입' }, ...(v.receipt ? [{ k: 'receipt_act', label: '현재 영수증 사진', type: 'select', options: [['keep', '그대로 두기'], ['remove', '삭제하기']] }] : []), { k: 'receipt_file', label: v.receipt ? '영수증 사진 바꾸기 (선택)' : '영수증 사진 (선택)', type: 'file', accept: 'image/*', capture: true, hint: `휴대폰에서는 바로 촬영할 수 있어요. 카드번호·주민등록번호·실명 같은 개인정보는 가리고 찍어 주세요. 사진은 올리기 전에 작게 줄이고 위치 정보 등은 지워요. ${RCP.account ? '사진은 내 계정의 서버에만 저장돼요.' : '로그인 전에는 이 브라우저에만 저장돼요.'} 사진은 백업 파일(JSON)에 들어가지 않으니, 종이 영수증도 보관하세요.` }],
+    onSubmit: async o => {
+      const rec = { ...o, dept_id: Number(o.dept_id), amount: o.amount === '' ? NaN : Number(o.amount), receipt: v.receipt && o.receipt_act !== 'remove' ? v.receipt : null }; delete rec.receipt_file; delete rec.receipt_act; let fresh = null;
+      if (o.receipt_file) { fresh = await RCP.put(await compressImage(o.receipt_file)); rec.receipt = fresh; }
+      try { if (v.id) store.updateTransaction(v.id, rec); else store.addTransaction(rec); } catch (e) { if (fresh) await RCP.remove(fresh); throw e; }
+      if (v.receipt && rec.receipt !== v.receipt) RCP.remove(v.receipt); toast('저장했습니다.');
+    } });
 }
 
 // ----- 설정 -----
@@ -288,6 +326,9 @@ function vSettings() {
 
 // ----- 이벤트 -----
 const ACT = {
+  newSchedule: () => scheduleForm(), editSchedule: d => scheduleForm(store.schedule(Number(d.id))),
+  delSchedule: async d => { if (await ask('이 일정을 삭제할까요?', '삭제')) { store.deleteSchedule(Number(d.id)); location.hash = '#plan'; toast('삭제했어요.'); } },
+  delSeries: async d => { const id = Number(d.id); const n = store.seriesCount(d.kind, id); if (await ask(`이 날짜부터 같은 반복으로 만든 ${n}개를 모두 삭제할까요?${d.kind === 'service' ? '\n해당 예배의 출석 기록도 함께 지워져요.' : ''}\n되돌릴 수 없어요.`, '삭제')) { store.deleteSeries(d.kind, id); location.hash = d.kind === 'service' ? '#services' : '#plan'; toast('삭제했어요.'); } },
   newEvent: () => eventForm(), editEvent: d => eventForm(store.ev(Number(d.id))), newService: () => serviceForm(), editService: d => serviceForm(store.service(Number(d.id))), newTx: d => txForm(d.ev ? { event_id: d.ev, dept_id: store.ev(Number(d.ev)).dept_id } : {}),
   voidTx: async d => { if (await ask('이 거래를 취소할까요? 집계에서 제외됩니다.', '거래 취소')) { store.voidTransaction(Number(d.id)); render(); toast('취소했습니다.'); } },
   newTask: d => form({ title: '준비 업무', fields: [{ k: 'title', label: '업무', req: true }, { k: 'due', label: '마감일', type: 'date' }, { k: 'assignee', label: '담당자' }], onSubmit: o => store.addTask(Number(d.id), o.title, o.due || null, o.assignee) }),
@@ -326,9 +367,30 @@ const ACT = {
   editTx: d => { const t = store.get().transactions.find(x => x.id === Number(d.id)); if (t) txForm(t); },
   newSupply: d => form({ title: '준비물 추가', fields: [{ k: 'name', label: '준비물', req: true, ph: '예: 이름표' }], onSubmit: o => store.addSupply(Number(d.id), o.name) }),
   delSupply: d => { store.deleteSupply(Number(d.id)); render(); },
+  peopleTemplate: () => { const dn = (store.dept(workDept()) || {}).name || '아동부'; download('명단_등록양식.csv', toCsv([['이름', '구분(아동/청년/교사/봉사자)', '부서(비우면 현재 선택한 부서)', '반·조', '출생년도'], ['(예시)가온', '아동', dn, '해님반', '2018'], ['(예시)나래', '아동', dn, '달님반', '2016'], ['(예시)김교사', '교사', dn, '해님반', '']])); toast('양식을 내려받았어요. ‘(예시)’ 줄은 지우고 입력한 뒤 CSV로 저장하세요.'); },
+  peopleImport: () => {
+    let plan = null;
+    const d = modal(`<div class="dlg"><h3>명단 한꺼번에 등록</h3><ol class="small"><li>‘등록 양식 내려받기’로 파일을 받아 엑셀에서 열어요.</li><li>이름·구분·반·출생년도를 줄마다 입력하고(‘(예시)’ 줄은 지우세요) <b>CSV로 저장</b>해요.</li><li>아래에서 그 파일을 고르거나, 엑셀 표를 복사해 붙여넣으세요.</li></ol><div class="row" style="margin-bottom:8px"><button data-tpl>양식 내려받기</button></div><label class="f">파일 선택(.csv)<input type="file" accept=".csv,.txt,text/csv"></label><label class="f">또는 엑셀에서 복사해 붙여넣기<textarea data-paste placeholder="이름 [탭] 구분 [탭] 부서 [탭] 반·조 [탭] 출생년도"></textarea></label><div data-prev></div><p class="mute small">연락처·주소 같은 민감한 정보는 넣지 마세요. 같은 이름·부서·반·출생년도가 이미 있으면 건너뜁니다.</p><div class="dlg-foot"><button data-x>닫기</button><button data-check>내용 확인</button><button class="pri" data-run disabled>등록하기</button></div></div>`);
+    $('[data-x]', d).onclick = () => d.close(); $('[data-tpl]', d).onclick = () => ACT.peopleTemplate();
+    $('[data-check]', d).onclick = async () => {
+      const prev = $('[data-prev]', d); const run = $('[data-run]', d); run.disabled = true; plan = null;
+      try {
+        const f = $('input[type=file]', d).files[0]; const text = f ? decodeText(await f.arrayBuffer()) : $('[data-paste]', d).value;
+        if (!text.trim()) throw new Error('파일을 고르거나 표를 붙여넣어 주세요.');
+        let rows = parseTable(text).map((r, i) => ({ r, line: i + 1 })); if (rows.length && /이름/.test(rows[0].r[0] || '')) rows = rows.slice(1);
+        rows = rows.filter(x => !/^\(예시\)/.test((x.r[0] || '').trim())).map(({ r, line }) => ({ line, name: r[0], kind: r[1], dept: r[2], class_name: r[3], birth_year: r[4] }));
+        if (!rows.length) throw new Error('등록할 줄이 없어요. 양식의 ‘(예시)’ 줄만 있는지 확인하세요.');
+        plan = store.planPeopleImport(rows, workDept());
+        prev.innerHTML = `<div class="callout ${plan.errors.length ? 'warn' : ''}" style="margin:8px 0"><div class="sp"><b>등록 ${plan.ok.length}명</b> · 중복 건너뜀 ${plan.dup.length}명 · 확인 필요 ${plan.errors.length}줄</div></div>${plan.errors.length ? `<ul class="small">${plan.errors.slice(0, 8).map(e => `<li>${e.line}번째 줄: ${esc(e.msg)}</li>`).join('')}${plan.errors.length > 8 ? `<li>…외 ${plan.errors.length - 8}줄</li>` : ''}</ul><p class="mute small">확인이 필요한 줄은 등록되지 않아요. 파일을 고쳐서 다시 올리거나, 등록 가능한 사람만 먼저 등록하세요.</p>` : ''}${plan.ok.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>이름</th><th>구분</th><th>부서</th><th>반·조</th><th>출생</th></tr></thead><tbody>${plan.ok.slice(0, 8).map(p => `<tr><td>${esc(p.name)}</td><td>${KIND[p.kind]}</td><td>${esc((store.dept(p.dept_id) || {}).name || '')}</td><td>${esc(p.class_name)}</td><td>${p.birth_year || ''}</td></tr>`).join('')}</tbody></table></div>${plan.ok.length > 8 ? `<p class="mute small">…외 ${plan.ok.length - 8}명</p>` : ''}` : ''}`;
+        run.disabled = !plan.ok.length;
+      } catch (e) { prev.innerHTML = `<div class="callout warn" style="margin:8px 0">${esc(e.message)}</div>`; }
+    };
+    $('[data-run]', d).onclick = () => { if (!plan || !plan.ok.length) return; const n = guard(() => store.addPeopleBulk(plan.ok), `${plan.ok.length}명을 등록했어요.`); if (n) { d.close(); render(); } };
+  },
+  viewReceipt: d => { const t = store.get().transactions.find(x => x.id === Number(d.id)); if (!t || !t.receipt) return; const src = RCP.src(t.receipt); const dl = modal(`<div class="dlg"><div class="row"><h3 style="margin:0">영수증 · ${esc(t.date)} ${esc(t.memo || t.category)}</h3><span class="sp"></span><button class="sm" data-c>닫기</button></div>${src ? `<img class="rc-img" src="${esc(src)}" alt="영수증 사진">` : '<p class="mute">사진을 찾을 수 없어요. 다른 브라우저에서 올린 사진이거나 삭제된 사진일 수 있어요.</p>'}<p class="mute small">${won(t.amount)}</p></div>`); $('[data-c]', dl).onclick = () => dl.close(); },
   csvAtt: () => { const M = store.attendanceMatrix(workDept(), { last: 8 }); const rows = [['이름', '반', ...M.services.map(s => s.date), '출석', '출석률'], ...M.rows.map(r => [r.person.name, r.person.class_name, ...r.cells.map(c => (c === 1 ? '○' : c === 0 ? '×' : '')), r.present, r.rate === null ? '' : r.rate + '%'])]; download(`출석부_${store.dept(workDept()).name}_${today()}.csv`, toCsv(rows)); },
   csvRoster: () => { const rows = [['이름', '구분', '부서', '반·조', '출생년도', '상태'], ...store.people({ deptId: did(), status: UI.pstatus || 'active' }).map(p => [p.name, KIND[p.kind], (store.dept(p.dept_id) || {}).name || '', p.class_name, p.birth_year || '', p.status])]; download(`명단_${today()}.csv`, toCsv(rows)); },
-  csvTx: () => { const rows = [['날짜', '부서', '구분', '항목', '적요', '행사', '금액'], ...store.transactions({ deptId: did(), year: UI.year, month: UI.mmonth || undefined }).map(t => [t.date, (store.dept(t.dept_id) || {}).name, t.kind === 'income' ? '수입' : '지출', t.category, t.memo, (store.ev(t.event_id) || {}).title || '', t.amount])]; download(`거래내역_${UI.year}_${today()}.csv`, toCsv(rows)); },
+  csvTx: () => { const rows = [['날짜', '부서', '구분', '항목', '적요', '행사', '금액', '영수증'],...store.transactions({ deptId: did(), year: UI.year, month: UI.mmonth || undefined }).map(t => [t.date, (store.dept(t.dept_id) || {}).name, t.kind === 'income' ? '수입' : '지출', t.category, t.memo, (store.ev(t.event_id) || {}).title || '', t.amount, t.receipt ? '있음' : ''])]; download(`거래내역_${UI.year}_${today()}.csv`, toCsv(rows)); },
   // --- 계정 ---
   logout: async () => { if (AUTH_BUSY()) return toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true); await accountApi.logout().catch(() => {}); location.reload(); },
   changePw: () => form({ title: '비밀번호 변경', intro: '<p class="mute small">변경하면 다른 기기는 모두 로그아웃돼요.</p>', fields: [{ k: 'cur', label: '현재 비밀번호', type: 'password', req: true }, { k: 'nxt', label: '새 비밀번호 (10자 이상)', type: 'password', req: true }], onSubmit: async o => { try { await accountApi.changePassword(o.cur, o.nxt); toast('비밀번호를 바꿨어요.'); } catch (e) { throw e; } } }),
@@ -354,6 +416,7 @@ document.addEventListener('change', e => {
   else if (t.matches('[data-pstat]')) { const [a, b] = t.dataset.pstat.split('/').map(Number); guard(() => store.setParticipant(a, b, t.value)); render(); }
   else if (t.matches('[data-att]')) { const [a, b] = t.dataset.att.split('/').map(Number); guard(() => store.setAttendance(a, b, t.checked)); t.closest('label').classList.toggle('on', t.checked); const c = store.attendanceCount(a); const h = $('#main h2 .tag.ok'); if (h) { h.textContent = `출석 ${c.present}명`; h.nextElementSibling.textContent = `기록 ${c.recorded}명`; } }
   else if (t.matches('[data-supply]')) { guard(() => store.toggleSupply(Number(t.dataset.supply), t.checked)); render(); }
+  else if (t.matches('[data-calsvc]')) { UI.calSvc = t.checked; render(); }
   else if (t.matches('[data-pstatus]')) { UI.pstatus = t.value; render(); }
   else if (t.matches('[data-mmonth]')) { UI.mmonth = t.value; render(); }
   else if (t.id === 'file') { const f = t.files[0]; if (!f) return; f.text().then(async txt => { if (await ask('현재 데이터를 이 파일의 내용으로 바꿉니다. 계속할까요?', '가져오기')) { guard(() => { store.importJson(txt); render(); }, '가져왔습니다.'); } t.value = ''; }); }
