@@ -246,3 +246,4 @@ table.t tr.picked td { background:var(--primary-bg); }
 .u-legend { display:none; }
 #attchart { min-height:220px; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.update-bar { position:fixed; left:50%; bottom:var(--size-4); transform:translateX(-50%); z-index:60; display:flex; gap:var(--size-2); align-items:center; padding:var(--size-2) var(--size-4); background:var(--ink,#1f2937); color:#fff; border-radius:var(--radius-pill); box-shadow:var(--shadow-3); max-width:calc(100vw - 24px); } .update-bar button.ghost { color:#fff; }

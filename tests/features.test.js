@@ -409,3 +409,14 @@ test('외부 UI 부품(vendor): 파일이 받은 그대로이고 라이선스가
   const headers = fs.readFileSync(new URL('../public/_headers', import.meta.url), 'utf8'); assert.ok(/script-src 'self'(;|\s*;)/.test(headers) && !/script-src[^;]*unsafe/.test(headers)); // 외부 스크립트 허용 없음
   const ui = fs.readFileSync(new URL('../public/js/ui.js', import.meta.url), 'utf8'); assert.ok(/name: escapeHtml\(r\.name\)/.test(ui), '타임라인 제목은 이스케이프해서 넘겨야 함');
 });
+test('앱 설치(PWA): 설치 정보·아이콘·보안 설정, 새 버전 읽기', async () => {
+  const rd = p => fs.readFileSync(new URL('../public/' + p, import.meta.url));
+  const m = JSON.parse(rd('manifest.webmanifest').toString('utf8'));
+  assert.equal(m.display, 'standalone'); assert.equal(m.lang, 'ko'); assert.ok(m.name && m.short_name && m.start_url && m.scope); assert.match(m.theme_color, /^#[0-9a-f]{6}$/i);
+  const sizes = new Set(); for (const ic of m.icons) { const png = rd(ic.src); assert.equal(png.subarray(1, 4).toString(), 'PNG'); const w = png.readUInt32BE(16), h = png.readUInt32BE(20); assert.equal(`${w}x${h}`, ic.sizes, ic.src); sizes.add(ic.sizes); }
+  assert.ok(sizes.has('192x192') && sizes.has('512x512')); assert.ok(m.icons.some(i => i.purpose === 'maskable'));
+  const html = rd('index.html').toString('utf8'); assert.match(html, /rel="manifest" href="manifest\.webmanifest"/); assert.match(html, /name="theme-color"/); assert.match(html, /rel="apple-touch-icon"/);
+  const csp = /Content-Security-Policy:\s*(.+)/.exec(rd('_headers').toString('utf8'))[1]; assert.ok(csp.includes("manifest-src 'self'")); assert.ok(csp.includes("script-src 'self';") && !/unsafe-eval|script-src[^;]*unsafe-inline/.test(csp)); assert.ok(csp.includes("connect-src 'self'"));
+  const { parseVersion } = await import('../public/js/install.js'); const { VERSION } = await import('../public/js/version.js');
+  assert.equal(parseVersion(rd('js/version.js').toString('utf8')), VERSION); assert.equal(parseVersion("export const VERSION = 'MB12';"), 'MB12'); assert.equal(parseVersion('garbage'), null); assert.equal(parseVersion(null), null);
+});
