@@ -210,7 +210,7 @@ function eventForm(v = {}) {
         const st = d.querySelector('[name=start_date]'), en = d.querySelector('[name=end_date]'); if (st.value && !en.value && t.days > 1) { const x = new Date(st.value + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + t.days - 1); en.value = x.toISOString().slice(0, 10); }
         const ti = d.querySelector('[name=title]'); if (!ti.value) ti.value = t.name;
         note.innerHTML = `<b>자동으로 만들어지는 준비 업무 ${t.tasks.length}개</b> (시작일 기준)<ul>${t.tasks.slice(0, 5).map(x => `<li>${x.offset < 0 ? Math.abs(x.offset) + '일 전' : x.offset + '일 후'} · ${esc(x.title)}</li>`).join('')}</ul>${t.tasks.length > 5 ? `<span class="mute">…외 ${t.tasks.length - 5}개</span>` : ''}<br><span class="mute">이 목록은 예시예요. 만든 뒤 우리 교회에 맞게 고치고 지우세요.</span>`; }; },
-    onSubmit: o => { const key = o.tpl; const id = store.saveEvent({ ...v, ...o, dept_id: Number(o.dept_id) }); if (!isNew && v.start_date && o.start_date && o.start_date !== v.start_date) offerShift(id, v.start_date, o.start_date); if (isNew && key) { const r = store.applyEventTemplate(id, key); toast(`준비 업무 ${r.tasks}개, 준비물 ${r.supplies}개를 만들었어요.`); } if (isNew) location.hash = `#event/${id}`; } });
+    onSubmit: o => { const key = o.tpl; const oldStart = v.start_date; const id = store.saveEvent({ ...v, ...o, dept_id: Number(o.dept_id) }); if (!isNew && oldStart && o.start_date && o.start_date !== oldStart) offerShift(id, oldStart, o.start_date); if (isNew && key) { const r = store.applyEventTemplate(id, key); toast(`준비 업무 ${r.tasks}개, 준비물 ${r.supplies}개를 만들었어요.`); } if (isNew) location.hash = `#event/${id}`; } });
 }
 // ----- 행사 진행 가이드 -----
 const gList = a => a && a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
