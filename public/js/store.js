@@ -27,6 +27,7 @@ export function safeUrl(u) {
   if (!['https:', 'http:'].includes(x.protocol) || x.username || x.password || !x.hostname.includes('.') || x.href.length > 300) throw new ValidationError('사이트 주소가 올바르지 않아요(https://로 시작하는 전체 주소, 300자 이하).');
   return x.href;
 }
+export const TODO_TIME = /^([01]\d|2[0-3]):[0-5]\d$/; // 할 일 알림 시간(HH:MM)
 export const RECEIPT_ID = /^[A-Za-z0-9_-]{1,64}$/; // 영수증 사진 번호(서버: 32자리 16진수, 이 브라우저: l로 시작)
 export function validateState(j) {
   const bad = m => { throw new ValidationError(`이 앱의 백업 파일이 아니거나 내용이 손상되었습니다. (${m})`); };
@@ -35,6 +36,8 @@ export function validateState(j) {
   if (!j.plans || typeof j.plans !== 'object' || Array.isArray(j.plans)) bad('plans');
   if (j.supplies !== undefined && !Array.isArray(j.supplies)) bad('준비물');
   if (j.schedules !== undefined && !Array.isArray(j.schedules)) bad('일정');
+  if (j.todos !== undefined && (!Array.isArray(j.todos) || j.todos.length > 2000)) bad('할 일');
+  for (const t of (j.todos || [])) if (!isId(t.id) || typeof t.title !== 'string' || t.title.length > 200 || !isDate(t.date) || !(t.time === '' || TODO_TIME.test(String(t.time))) || typeof t.done !== 'boolean') bad('할 일');
   for (const k of ['visits', 'assets', 'links']) if (j[k] !== undefined && !Array.isArray(j[k])) bad(k === 'visits' ? '심방 기록' : k === 'links' ? '내 사이트' : '비품');
   if (!Number.isSafeInteger(j.nextId) || j.nextId < 1) bad('nextId');
   const dids = new Set(); for (const d of j.depts) { if (!isId(d.id) || typeof d.name !== 'string') bad('부서'); dids.add(d.id); }
@@ -58,7 +61,7 @@ export function validateState(j) {
 // 비어 있는 새 데이터(부서만 있음). 새 계정과 ‘실제 데이터로 시작’에서 사용
 export function emptyState(todayStr = kstToday()) {
   const base = makeSeed(todayStr);
-  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [], visits: [], assets: [], links: [] };
+  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [], visits: [], assets: [], links: [], todos: [] };
 }
 
 export function createStore(storage, today = kstToday) {
@@ -71,7 +74,7 @@ export function createStore(storage, today = kstToday) {
   let recovered = false;
   function load() {
     let raw = null;
-    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; S = j; return S; } } catch {
+    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; j.todos = j.todos || []; S = j; return S; } } catch {
       // 저장된 값이 손상된 경우: 가상 데이터로 덮어쓰기 전에 원본을 따로 남겨 둔다(복구 가능)
       if (raw) { try { storage.setItem(KEY + ':broken', raw); recovered = true; } catch { /* 무시 */ } }
     }
@@ -104,7 +107,7 @@ export function createStore(storage, today = kstToday) {
     importJson(text) {
       let j; try { j = JSON.parse(text); } catch { throw new ValidationError('JSON 형식이 아닙니다.'); }
       validateState(j);
-      j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; const before = S; S = j;
+      j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; j.todos = j.todos || []; const before = S; S = j;
       try { save(); } catch (e) { S = before; throw e; }
     },
     markExported() { S.lastExport = new Date().toISOString(); save(); },
@@ -248,6 +251,22 @@ export function createStore(storage, today = kstToday) {
       const last = new Map(), next = new Map(); for (const v of (S.visits || [])) { if (!last.has(v.person_id) || v.date > last.get(v.person_id)) last.set(v.person_id, v.date); if (v.follow_up && v.follow_up >= t && (!next.has(v.person_id) || v.follow_up < next.get(v.person_id))) next.set(v.person_id, v.follow_up); }
       return S.people.filter(p => p.status === 'active' && (!deptId || p.dept_id === deptId)).map(p => ({ person: p, last: last.get(p.id) || null, next: next.get(p.id) || null, days: last.has(p.id) ? Math.round((Date.parse(t + 'T00:00:00Z') - Date.parse(last.get(p.id) + 'T00:00:00Z')) / 864e5) : null }));
     },
+
+    // ----- 오늘 할 일(개인 메모. 시간을 정하면 그 시간에 알림) -----
+    // 날짜 없는 항목은 만들지 않고, 시간은 비우거나 HH:MM. 완료한 지 30일이 넘은 항목은 자리가 모자랄 때만 정리한다.
+    todos() { return (S.todos || []).slice().sort((a, b) => a.date.localeCompare(b.date) || (a.time || '99:99').localeCompare(b.time || '99:99') || a.id - b.id); },
+    saveTodo(t) {
+      const title = reqText(t.title, '할 일').slice(0, 120); const date = t.date ? reqDate(t.date, '날짜') : today(); const time = String(t.time || '').trim();
+      if (time && !TODO_TIME.test(time)) throw new ValidationError('시간은 시:분(예: 09:30)으로 입력하세요.');
+      S.todos = S.todos || [];
+      if (t.id) { const x = S.todos.find(v => v.id === t.id); if (!x) throw new ValidationError('할 일을 찾을 수 없습니다.'); Object.assign(x, { title, date, time }); save(); return t.id; }
+      if (S.todos.length >= 500) { const cut = addDays(today(), -30); S.todos = S.todos.filter(v => !(v.done && v.date < cut)); }
+      if (S.todos.length >= 500) throw new ValidationError('할 일이 너무 많아요(500개). 완료한 항목을 지워 주세요.');
+      const id = nid(); S.todos.push({ id, title, date, time, done: false }); save(); return id;
+    },
+    setTodoDone(id, done) { const x = (S.todos || []).find(v => v.id === id); if (!x) throw new ValidationError('할 일을 찾을 수 없습니다.'); x.done = !!done; save(); },
+    moveTodoToToday(id) { const x = (S.todos || []).find(v => v.id === id); if (!x) throw new ValidationError('할 일을 찾을 수 없습니다.'); x.date = today(); save(); },
+    deleteTodo(id) { S.todos = (S.todos || []).filter(v => v.id !== id); save(); },
 
     // ----- 내가 추가한 사이트(자료실) -----
     saveLink(l) {
