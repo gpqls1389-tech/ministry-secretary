@@ -3,9 +3,9 @@
 // - 공식 기관·출판사를 우선했고 광고가 아닙니다. 유료 여부·회원가입·이용 조건은 바뀔 수 있어 note에는 ‘확인된 것’만 적고, 나머지는 사이트에서 확인하도록 했습니다.
 // - 교재·찬양·이미지·성경 본문은 저작권 이용 조건을 각 사이트에서 확인하세요. 이 목록은 주소와 소개만 담고 내용은 가져오지 않습니다.
 // - 고칠 때: 아래 배열에 { name, url(https 전체 주소), category, audience('공통'|'아동부'|'청년부'), desc, note } 를 추가하고, 새 구분이면 RESOURCE_CATEGORIES에도 넣으세요. RESOURCES_CHECKED도 확인한 날짜로 바꾸세요.
-export const RESOURCES_CHECKED = '2026-11-10';
+export const RESOURCES_CHECKED = '2026-11-11';
 
-export const RESOURCE_CATEGORIES = ['교단·교회력', '성경', '교재·공과', '대림절·성탄절', '활동지·성경학교', '교사 교육', '청년 사역', '행정·회계', '저작권', '이미지·디자인', '안전·아동 보호', '개인정보'];
+export const RESOURCE_CATEGORIES = ['교단·교회력', '성경', '교재·공과', '대림절·성탄절', '활동지·성경학교', '놀이·활동', '교사 교육', '청년 사역', '행정·회계', '저작권', '이미지·디자인', '안전·아동 보호', '개인정보'];
 
 export const RESOURCES = [
   // ----- 교단·교회력 (공통) -----
@@ -67,4 +67,25 @@ export const RESOURCES = [
   // ----- 개인정보 (공통) -----
   { name: '개인정보 포털 (개인정보보호위원회)', url: 'https://www.privacy.go.kr/', category: '개인정보', audience: '공통', desc: '개인정보 침해신고, 열람 요구, 분쟁조정 신청과 사업자용 자가진단, 아동·청소년 개인정보 삭제 요청 등을 제공합니다.', note: '본인인증으로 이용, 만 14세 미만은 법정대리인 동의 필요(페이지 안내). 침해신고 118' },
   { name: '개인정보보호위원회', url: 'https://pipc.go.kr/np/', category: '개인정보', audience: '공통', desc: '개인정보 정책·법령 해석 지원, 침해신고·분쟁조정 제도 안내와 아동·청소년 관련 자료를 모은 누리집입니다.', note: '법령해석지원센터 02-2100-3043(평일 9~18시, 페이지 안내)' },
+  // ----- 교재·공과·성경학교 추가 (2026-11-11 확인) -----
+  { name: '히즈쇼 (HisShow)', url: 'https://www.hisshow.co.kr/', category: '교재·공과', audience: '아동부', desc: '주일학교 교재(하나님나라 바이블랜드·성경탐험, 예수님과 나 키즈/주니어, 왕의 자녀 키즈/주니어, 하나님나라 틴즈·하이틴즈), 여름/겨울성경학교 공과교재, 가정홈스쿨 제품, 히즈쇼 TV 메뉴를 운영하는 교재 쇼핑몰입니다.', note: '교재는 유료 판매. 가격·최신 주제는 사이트에서 확인(페이지마다 다르게 보일 수 있음). 감리교 전통과 맞는지는 교재를 직접 보고 판단' },
+  { name: '파이디온선교회', url: 'https://www.paidion.org/min_kids.php', category: '교재·공과', audience: '아동부', desc: '3세~6학년을 위한 연령별 활동 중심·성경 중심 교재를 개발·보급하는 선교회로, 유아·유치·유년·초등부 교재와 신나는 성경탐험, 교사 강습회·디렉터스쿨을 안내합니다(검색 결과의 공식 페이지 기준).', note: '검색 결과에 2018~2025년 페이지가 섞여 있어 현재 판매 교재·가격은 공식 사이트에서 확인' },
+  { name: '파이디온 VBS (성경학교)', url: 'https://paidion.org/ministry/vbs/', category: '활동지·성경학교', audience: '아동부', desc: '파이디온선교회의 여름·겨울 성경학교(VBS) 소개 페이지로, 연도별 주제와 교재·교사강습회로 이어집니다.', note: '교재는 유료. 연도별 주제는 해마다 바뀜' },
+  { name: '갓피플 (GodPeople)', url: 'https://www.godpeople.com/', category: '성경', audience: '공통', desc: '성경별(구약·신약) 자료, 갓피플성경 앱 소개, 오늘의 테마 콘텐츠, 신간 도서 소개를 모은 기독교 포털입니다(메인 화면 기준).', note: '교회학교 전용 사이트는 아님. 자료별 이용 조건 확인' },
+  // ----- 놀이·활동 (영어 자료는 번역·각색 시 출처와 이용 조건 확인) -----
+  { name: 'Ministry-To-Children', url: 'https://ministry-to-children.com/', category: '놀이·활동', audience: '아동부', desc: '어린이 예배 공과와 자료를 제공하는 영어 사이트로, 주일학교 게임·성경 암송 게임·활동지·만들기·절기(크리스마스) 분류를 둔 것을 확인했습니다.', note: '영어. 자료별 이용 조건과 신학 입장 확인, 한국 상황에 맞게 각색' },
+  { name: 'Sunday School Zone', url: 'https://sundayschoolzone.com/', category: '놀이·활동', audience: '아동부', desc: '성경 활동과 주일학교 활동 자료를 모은 영어 사이트로, 성탄 만들기·활동지·어린이 설교 자료 분류가 있습니다.', note: '영어. 이용 조건은 자료별로 확인' },
+  { name: "DLTK's Bible", url: 'https://www.dltk-bible.com/', category: '놀이·활동', audience: '아동부', desc: '성경 이야기를 바탕으로 한 색칠 그림, 워크시트, 공작, 게임을 인쇄해 쓰도록 모은 영어 사이트입니다.', note: '페이지에 저작권 표기와 이용약관 링크가 있어 인쇄·배포 전 약관 확인. 영어' },
+  { name: 'ChurchLeaders 어린이 사역', url: 'https://churchleaders.com/children', category: '놀이·활동', audience: '아동부', desc: '어린이 사역자를 위한 글과 무료 자료(공과·만들기·인쇄물) 분류를 제공하는 영어 사이트입니다.', note: '영어. 글마다 이용 조건 확인' },
+  { name: 'Kids Sunday School', url: 'https://www.kidssundayschool.com/', category: '놀이·활동', audience: '아동부', desc: '유아·초등 주일학교 공과, 만들기, 활동, 게임, 퍼즐, 연극 대본, 노래, 게시판 꾸미기 자료를 제공하는 영어 사이트입니다.', note: '온라인 자료는 회원가입과 유료 이용권이 필요(페이지 안내). 영어' },
+  // ----- 이미지·디자인 추가 (2026-11-11 확인) -----
+  { name: '미리캔버스', url: 'https://www.miricanvas.com/', category: '이미지·디자인', audience: '공통', desc: '프레젠테이션, 포스터, 소셜 미디어, 퀴즈 등의 템플릿을 제공하는 온라인 디자인 도구입니다.', note: '무료 범위와 유료 요금제는 사이트에서 확인. 템플릿 속 이미지·폰트 이용 조건 확인' },
+  { name: '망고보드', url: 'https://www.mangoboard.net/', category: '이미지·디자인', audience: '공통', desc: '카드뉴스, PPT, 포스터, SNS 템플릿, 영상을 템플릿으로 만드는 디자인·영상 제작 플랫폼입니다.', note: '요금제·결제 메뉴가 있어 무료 범위는 사이트에서 확인' },
+  { name: 'Canva (캔바)', url: 'https://www.canva.com/ko_kr/', category: '이미지·디자인', audience: '공통', desc: '온라인 비주얼 디자인 도구로, 포스터·PPT·퀴즈·레크리에이션 템플릿을 찾아 쓸 수 있습니다.', note: '캐릭터·유료 소재가 들어간 템플릿이 있어 이용 조건과 저작권 확인' },
+  { name: '눈누', url: 'https://noonnu.cc/', category: '이미지·디자인', audience: '공통', desc: '상업적으로 쓸 수 있는 한글 폰트를 찾아보는 폰트 검색 사이트이며 유료 폰트 마켓도 함께 운영합니다.', note: '폰트마다 사용 범위가 다르니 각 폰트의 라이선스 문구를 직접 확인' },
+  { name: 'Google Fonts', url: 'https://fonts.google.com/', category: '이미지·디자인', audience: '공통', desc: '글꼴을 둘러보고 고를 수 있는 Google의 글꼴 서비스입니다.', note: '글꼴별 라이선스 확인' },
+  { name: 'Pixabay (픽사베이)', url: 'https://pixabay.com/ko/', category: '이미지·디자인', audience: '공통', desc: '무료 이미지를 검색할 수 있는 이미지 사이트입니다.', note: '이용 조건은 사이트 약관에서 확인. 인물 사진은 초상권을 확인하고, 교회 아이들 사진과 섞어 쓰지 않기' },
+  { name: 'Pexels (펙셀스)', url: 'https://www.pexels.com/ko-kr/', category: '이미지·디자인', audience: '공통', desc: '무료 이미지(저작권 없는 이미지)를 검색할 수 있는 이미지 사이트입니다.', note: '이용 조건은 사이트 약관에서 확인. 인물 사진은 초상권 확인' },
+  { name: 'Unsplash (언스플래시)', url: 'https://unsplash.com/', category: '이미지·디자인', audience: '공통', desc: '무료 이미지와 사진을 검색할 수 있는 사진 사이트입니다.', note: '이용 조건은 사이트 약관에서 확인. 인물 사진은 초상권 확인' },
+  { name: 'unDraw', url: 'https://undraw.co/', category: '이미지·디자인', audience: '공통', desc: '무료 오픈소스 SVG 일러스트 모음입니다. 페이지에 출처 표기 없이 상업적·개인적 프로젝트에 쓸 수 있다고 안내하되 unDraw 자체를 복제하는 것은 허용하지 않는다고 적혀 있습니다.', note: '교회 행사 포스터·활동지 일러스트로 활용 가능. 안내 문구는 사용 전 다시 확인' },
 ];
