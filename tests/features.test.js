@@ -434,3 +434,12 @@ test('데스크톱 프로그램(desktop/): 보안 설정, 고정된 버전, 워�
   assert.match(wf, /permissions:\s*\n\s*contents:\s*write/); assert.match(wf, /desktop-v\*/); assert.ok(!/pull_request/.test(wf), '외부 PR로는 실행하지 않음');
   const ico = fs.readFileSync(new URL('../desktop/build/icon.ico', import.meta.url)); assert.equal(ico.readUInt16LE(2), 1); assert.ok(ico.readUInt16LE(4) >= 4);
 });
+test('데스크톱 프로그램 안내: 버전 표식 읽기·비교, 다운로드 주소는 설치 파일 이름과 일치', async () => {
+  const { desktopVersion, cmpSemver } = await import('../public/js/install.js'); const { DESKTOP } = await import('../public/js/version.js');
+  assert.equal(desktopVersion('Mozilla/5.0 Electron/45 MokhoeBiseoDesktop/11.3.0'), '11.3.0'); assert.equal(desktopVersion('Mozilla/5.0 Chrome/120'), null); assert.equal(desktopVersion(''), null);
+  assert.equal(cmpSemver('11.3.0', '11.4.0'), -1); assert.equal(cmpSemver('11.10.0', '11.9.0'), 1); assert.equal(cmpSemver('11.3.0', '11.3.0'), 0);
+  const pkg = JSON.parse(fs.readFileSync(new URL('../desktop/package.json', import.meta.url), 'utf8'));
+  assert.equal(DESKTOP.version, pkg.version, 'DESKTOP.version 은 desktop/package.json 과 같아야 함'); assert.equal(pkg.build.win.artifactName.replace('${ext}', 'exe'), DESKTOP.file);
+  assert.ok(DESKTOP.download.startsWith('https://github.com/gpqls1389-tech/ministry-secretary/releases/') && DESKTOP.download.endsWith('/' + DESKTOP.file)); assert.ok(DESKTOP.page.startsWith('https://github.com/gpqls1389-tech/ministry-secretary/releases'));
+  const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8'); assert.ok(app.includes('코드 서명이 없는 파일') && app.includes('스마트 앱 컨트롤'));
+});
