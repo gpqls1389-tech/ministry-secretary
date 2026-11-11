@@ -1,5 +1,6 @@
 // 로그인·사용자별 저장 API (Cloudflare Pages Functions + D1). 웹 표준 API만 사용하므로 Node 테스트에서도 그대로 실행된다.
 import { validateState } from '../../public/js/store.js';
+import { IMAGE_KINDS, IMAGE_SIZES, IMAGE_QUALITIES, PROMPT_MIN, PROMPT_MAX, imageConfig, emailAllowed, callOpenAI, rateKeys, DAY_MS } from './imagegen.js';
 
 const ITER = 100000;                       // Workers WebCrypto의 PBKDF2 반복 횟수 상한(확인된 값)
 const SESSION_MS = 14 * 24 * 3600e3;       // 세션 14일(공용 PC 위험을 줄이려고 짧게)
@@ -194,6 +195,26 @@ export async function handle(request, env, now = Date.now()) {
       await ensureReceipts(db); const r = await db.prepare('DELETE FROM receipts WHERE id=? AND user_id=?').bind(rm[1], user.id).run();
       if (!r.meta.changes) throw new HttpError(404, '사진을 찾을 수 없습니다.');
       return json({ ok: true });
+    }
+    // ---- AI 이미지 만들기 (로그인 필요 · 하루 한도 · 서버에 저장하지 않음) ----
+    if (path === '/api/image/status' && method === 'GET') {
+      const cfg = imageConfig(env); const k = rateKeys(user.id); const r = await db.prepare('SELECT n, reset_at FROM rate WHERE key=?').bind(k.user).first(); const used = r && r.reset_at > now ? r.n : 0;
+      return json({ ok: true, enabled: !!env.OPENAI_API_KEY, allowed: emailAllowed(cfg, user.email), limit: cfg.limit, left: Math.max(0, cfg.limit - used), kinds: Object.fromEntries(Object.entries(IMAGE_KINDS).map(([a, v]) => [a, { label: v.label, size: v.size }])) });
+    }
+    if (path === '/api/image/generate' && method === 'POST') {
+      if (!env.OPENAI_API_KEY) throw new HttpError(503, '이미지 만들기가 아직 켜져 있지 않아요. 관리자가 OPENAI_API_KEY를 설정해야 해요.');
+      const cfg = imageConfig(env); if (!emailAllowed(cfg, user.email)) throw new HttpError(403, '이 계정은 이미지 만들기를 쓸 수 없어요(관리자가 허용한 계정만 가능).');
+      const b = await body(request, 2000);
+      const prompt = typeof b.prompt === 'string' ? b.prompt.trim() : ''; if (prompt.length < PROMPT_MIN || prompt.length > PROMPT_MAX) throw new HttpError(400, `설명은 ${PROMPT_MIN}자 이상 ${PROMPT_MAX}자 이하로 적어 주세요.`);
+      const kind = IMAGE_KINDS[b.kind] ? b.kind : 'free'; const size = IMAGE_KINDS[kind].size || (IMAGE_SIZES.includes(b.size) ? b.size : '1024x1024'); const quality = IMAGE_QUALITIES.includes(b.quality) ? b.quality : 'medium';
+      const k = rateKeys(user.id);
+      if (await limited(db, k.user, cfg.limit, now)) throw new HttpError(429, `오늘 만들 수 있는 이미지(${cfg.limit}장)를 모두 썼어요. 내일 다시 해 주세요.`);
+      if (await limited(db, k.all, cfg.total, now)) throw new HttpError(429, '오늘 이 사이트에서 만들 수 있는 이미지 수를 모두 썼어요. 내일 다시 해 주세요.');
+      await fail(db, k.user, now, DAY_MS); await fail(db, k.all, now, DAY_MS); // 호출하기 전에 센다(실패해도 한도에 포함 → 비용 폭주 방지)
+      const safetyId = (await sha256Hex(`mb-user:${user.id}`)).slice(0, 32); // 사용자 식별 정보 대신 해시만 보낸다
+      let out; try { out = await callOpenAI({ env, cfg, prompt, size, quality, safetyId, fetchFn: env.OPENAI_FETCH || fetch }); } catch (e) { throw new HttpError(e.status || 502, e.message); }
+      const r = await db.prepare('SELECT n FROM rate WHERE key=?').bind(k.user).first();
+      return json({ ok: true, image: out.image, mime: out.mime, kind, size, left: Math.max(0, cfg.limit - ((r && r.n) || 0)) });
     }
     throw new HttpError(404, '찾을 수 없습니다.');
   } catch (e) {

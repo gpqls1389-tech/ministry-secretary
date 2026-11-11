@@ -112,3 +112,45 @@ test('http 로컬 개발: Secure 없는 쿠키 이름 사용', async () => {
   const env = envOf(); const res = await handle(new Request('http://localhost:8788/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:8788' }, body: JSON.stringify({ email: 'a@b.kr', password: PW, invite: 'invite-xyz-12345' }) }), env);
   const c = res.headers.get('Set-Cookie'); assert.ok(c.startsWith('ms_session=') && !c.includes('Secure') && c.includes('HttpOnly'));
 });
+
+// ---- AI 이미지 만들기 ----
+const PNG_B64 = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ...Array(300).fill(7)]).toString('base64');
+const okFetch = (calls, status = 200, payload) => async (url, init) => { calls.push({ url, init, body: JSON.parse(init.body) }); return { ok: status < 400, status, json: async () => (payload !== undefined ? payload : { data: [{ b64_json: PNG_B64 }] }) }; };
+test('이미지 만들기: 로그인 필요, 키가 없으면 꺼짐, 상태 조회', async () => {
+  const env = envOf(); assert.equal((await call(env, 'GET', '/api/image/status')).status, 401); assert.equal((await call(env, 'POST', '/api/image/generate', { body: { prompt: '귀여운 양 그림' } })).status, 401);
+  const ck = await signup(env); const st = await call(env, 'GET', '/api/image/status', { cookie: ck }); assert.equal(st.json.enabled, false); assert.equal(st.json.limit, 8); assert.equal(st.json.left, 8); assert.ok(st.json.kinds.banner);
+  const off = await call(env, 'POST', '/api/image/generate', { cookie: ck, body: { prompt: '귀여운 양 그림', kind: 'empty' } }); assert.equal(off.status, 503); assert.match(off.json.error, /OPENAI_API_KEY/);
+  const on = envOf({ OPENAI_API_KEY: 'sk-test-SECRET-123' }); const ck2 = await signup(on); assert.equal((await call(on, 'GET', '/api/image/status', { cookie: ck2 })).json.enabled, true);
+});
+test('이미지 만들기: 요청 내용(모델·크기·안전 지침·익명 식별자), 응답, 키 비노출, 입력 검증', async () => {
+  const calls = []; const env = envOf({ OPENAI_API_KEY: 'sk-test-SECRET-123', OPENAI_FETCH: okFetch(calls) }); const ck = await signup(env, 'teacher@church.kr');
+  const r = await call(env, 'POST', '/api/image/generate', { cookie: ck, body: { prompt: '  구유 옆에서 양과 함께 있는 따뜻한 성탄 장면  ', kind: 'banner', quality: 'low' } });
+  assert.equal(r.status, 200, JSON.stringify(r.json)); assert.ok(r.json.image.startsWith('data:image/png;base64,')); assert.equal(r.json.mime, 'image/png'); assert.equal(r.json.size, '1536x1024'); assert.equal(r.json.left, 7);
+  assert.equal(calls.length, 1); const c = calls[0]; assert.equal(c.url, 'https://api.openai.com/v1/images/generations'); assert.equal(c.init.method, 'POST'); assert.equal(c.init.headers.Authorization, 'Bearer sk-test-SECRET-123');
+  assert.equal(c.body.model, 'gpt-image-2.5-flare'); assert.equal(c.body.size, '1536x1024'); assert.equal(c.body.quality, 'low'); assert.equal(c.body.n, 1); assert.match(c.body.safety_identifier, /^[0-9a-f]{32}$/);
+  assert.ok(c.body.prompt.includes('구유 옆에서 양과 함께 있는 따뜻한 성탄 장면') && /Do NOT put any text/.test(c.body.prompt) && /real people/.test(c.body.prompt));
+  assert.ok(!JSON.stringify(c.body).includes('teacher@church.kr')); assert.ok(!JSON.stringify(r.json).includes('sk-test-SECRET')); // 이메일은 보내지 않고, 키는 응답에 없음
+  const model = await call(envOf({ OPENAI_API_KEY: 'k', OPENAI_IMAGE_MODEL: 'my-model', OPENAI_FETCH: okFetch(calls) }), 'GET', '/api/image/status'); assert.equal(model.status, 401);
+  const e2 = envOf({ OPENAI_API_KEY: 'k', OPENAI_IMAGE_MODEL: 'my-model', OPENAI_FETCH: okFetch(calls) }); const ck3 = await signup(e2); await call(e2, 'POST', '/api/image/generate', { cookie: ck3, body: { prompt: '자유 크기 그림', kind: 'free', size: '1024x1536', quality: 'weird' } });
+  const last = calls.at(-1).body; assert.equal(last.model, 'my-model'); assert.equal(last.size, '1024x1536'); assert.equal(last.quality, 'medium'); // 모르는 값은 기본값으로
+  for (const bad of [{ prompt: '짧' }, { prompt: 'x'.repeat(501) }, { prompt: 123 }, {}]) assert.equal((await call(env, 'POST', '/api/image/generate', { cookie: ck, body: bad })).status, 400);
+  assert.equal((await call(env, 'POST', '/api/image/generate', { cookie: ck, body: { prompt: '귀여운 양 그림' }, ctype: 'text/plain' })).status, 415);
+  assert.equal((await call(env, 'POST', '/api/image/generate', { cookie: ck, body: { prompt: '귀여운 양 그림' }, origin: 'https://evil.test' })).status, 403);
+});
+test('이미지 만들기: 하루 한도(사용자별·전체), 24시간 뒤 초기화, 허용 계정', async () => {
+  const calls = []; const env = envOf({ OPENAI_API_KEY: 'k', OPENAI_FETCH: okFetch(calls), IMAGE_DAILY_LIMIT: '2', IMAGE_DAILY_TOTAL: '3' }); const a = await signup(env, 'a@church.kr', '1.1.1.1'); const b = await signup(env, 'b@church.kr', '2.2.2.2'); const t0 = Date.now();
+  const gen = (ck, now) => call(env, 'POST', '/api/image/generate', { cookie: ck, body: { prompt: '귀여운 양 그림', kind: 'empty' }, now });
+  assert.equal((await gen(a, t0)).status, 200); assert.equal((await gen(a, t0)).status, 200); const over = await gen(a, t0); assert.equal(over.status, 429); assert.match(over.json.error, /2장/); assert.equal(calls.length, 2); // 한도에서는 OpenAI를 부르지 않음
+  assert.equal((await gen(b, t0)).status, 200); const all = await gen(b, t0); assert.equal(all.status, 429); assert.match(all.json.error, /이 사이트/); assert.equal(calls.length, 3); // 전체 한도 3장
+  assert.equal((await call(env, 'GET', '/api/image/status', { cookie: a, now: t0 })).json.left, 0);
+  assert.equal((await gen(a, t0 + 25 * 3600e3)).status, 200); // 24시간 뒤 다시 가능
+  const only = envOf({ OPENAI_API_KEY: 'k', OPENAI_FETCH: okFetch([]), IMAGE_ALLOWED_EMAILS: ' Admin@church.kr , x@y.kr ' }); const ad = await signup(only, 'admin@church.kr', '3.3.3.3'); const ot = await signup(only, 'other@church.kr', '4.4.4.4');
+  assert.equal((await call(only, 'GET', '/api/image/status', { cookie: ot })).json.allowed, false); assert.equal((await call(only, 'POST', '/api/image/generate', { cookie: ot, body: { prompt: '귀여운 양 그림' } })).status, 403); assert.equal((await call(only, 'POST', '/api/image/generate', { cookie: ad, body: { prompt: '귀여운 양 그림' } })).status, 200);
+});
+test('이미지 만들기: OpenAI 오류는 친절한 문장으로 바꾸고 원문·키는 노출하지 않는다', async () => {
+  const run = async (status, payload, throwErr) => { const calls = []; const f = throwErr ? async () => { throw throwErr; } : okFetch(calls, status, payload); const env = envOf({ OPENAI_API_KEY: 'sk-test-SECRET-123', OPENAI_FETCH: f }); const ck = await signup(env); const r = await call(env, 'POST', '/api/image/generate', { cookie: ck, body: { prompt: '귀여운 양 그림' } }); assert.ok(!JSON.stringify(r.json).includes('sk-test-SECRET')); return r; };
+  const pol = await run(400, { error: { code: 'moderation_blocked', message: 'Your request was rejected by the safety system: details-xyz' } }); assert.equal(pol.status, 422); assert.match(pol.json.error, /안전 정책/); assert.ok(!pol.json.error.includes('details-xyz'));
+  assert.equal((await run(401, { error: { message: 'Incorrect API key provided: sk-test-SECRET-123' } })).status, 502); assert.equal((await run(429, { error: { message: 'rate' } })).status, 503); assert.equal((await run(500, { error: {} })).status, 502);
+  assert.equal((await run(200, { data: [] })).status, 502); assert.equal((await run(200, { data: [{ b64_json: '!!!not-base64!!!'.repeat(10) }] })).status, 502); assert.equal((await run(200, { data: [{ b64_json: Buffer.from('plain text not image'.repeat(10)).toString('base64') }] })).status, 502);
+  const to = await run(200, {}, Object.assign(new Error('aborted'), { name: 'AbortError' })); assert.equal(to.status, 504); assert.equal((await run(200, {}, new Error('network'))).status, 502);
+});
