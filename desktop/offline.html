@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>목회 비서 — 연결할 수 없어요</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: "Malgun Gothic", system-ui, sans-serif; background: #f7f7f2; color: #1f2937; }
+  main { max-width: 440px; padding: 32px; text-align: center; }
+  h1 { font-size: 22px; margin: 0 0 12px; }
+  p { line-height: 1.6; color: #475569; }
+  button { margin-top: 12px; padding: 10px 22px; border: 0; border-radius: 10px; background: #15803d; color: #fff; font-size: 16px; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>인터넷에 연결할 수 없어요</h1>
+  <p>목회 비서는 인터넷 연결이 필요해요. 연결을 확인한 뒤 다시 시도하세요. 입력한 데이터는 로그인한 계정의 서버에 있어서 사라지지 않아요.</p>
+  <button id="retry">다시 시도</button>
+</main>
+<script>
+  var SITE = 'https://ministry-secretary.pages.dev/';
+  document.getElementById('retry').onclick = function () { location.href = SITE; };
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "name": "mokhoe-biseo-desktop",
+  "productName": "목회 비서",
+  "version": "11.3.0",
+  "description": "목회 비서 데스크톱 프로그램(웹 사이트를 앱 창으로 여는 껍데기)",
+  "main": "main.js",
+  "private": true,
+  "author": "gpqls1389-tech",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "app.ministry-secretary.desktop",
+    "productName": "목회 비서",
+    "copyright": "목회 비서",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "offline.html", "package.json"],
+    "asar": true,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "artifactName": "MokhoeBiseo-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "목회 비서",
+      "deleteAppDataOnUninstall": false,
+      "language": "1042"
+    }
+  }
+}

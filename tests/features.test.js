@@ -401,7 +401,7 @@ test('외부 UI 부품(vendor): 파일이 받은 그대로이고 라이선스가
     'frappe-gantt/frappe-gantt.es.js': 'e2a6320ab5116d5896a806b4f7e8ca9c01d1fe32e5344b90e34138d110b3127a', 'frappe-gantt/frappe-gantt.css': '74ccfd2390849e729cda95a358439f003b79b94770ff732713217bc8045e7a69',
     'uplot/uPlot.esm.js': '5dd9b3281aa64b461b42d9945f6adb2649d346502b12281a9ae0d46599a80eba', 'uplot/uPlot.min.css': 'df630c6a8d6f8eeaff264b50f73ce5b114f646ffd9a0bb74f049b0a00135fa04',
     'open-props/sizes.min.css': '496b8f65d37ab4e57126d889c07b99672c7f755d79b7036105081a036055ed27', 'open-props/shadows.min.css': '2b54a9752d08e24a8e1e6aa0d53b40cbd3ed883710b02a40dd46b39803f29502', 'open-props/borders.min.css': '4b54a59a0933a803068281e85bfc1f246261fed2d5324e64178209903a2e912d' };
-  for (const [f, sum] of Object.entries(SUMS)) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(new URL('../public/vendor/' + f, import.meta.url))).digest('hex'), sum, f + ' 파일이 바뀌었어요(받은 그대로여야 함)');
+  for (const [f, sum] of Object.entries(SUMS)) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(new URL('../public/vendor/' + f, import.meta.url), 'utf8').replace(/\r\n/g, '\n')).digest('hex'), sum, f + ' 파일이 바뀌었어요(받은 그대로여야 함; 줄바꿈 CRLF/LF 차이는 무시)');
   for (const d of ['vanilla-calendar-pro', 'frappe-gantt', 'uplot', 'open-props']) assert.match(fs.readFileSync(new URL(`../public/vendor/${d}/LICENSE.txt`, import.meta.url), 'utf8'), /MIT/);
   const notices = fs.readFileSync(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8'); for (const n of ['vanilla-calendar-pro 3.4.0', 'frappe-gantt 1.2.2', 'uPlot 1.6.32', 'Open Props 1.7.23']) assert.ok(notices.includes(n), n + ' 고지');
   const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'); for (const f of ['sizes', 'borders', 'shadows']) assert.ok(html.includes(`vendor/open-props/${f}.min.css`));
@@ -419,4 +419,18 @@ test('앱 설치(PWA): 설치 정보·아이콘·보안 설정, 새 버전 읽�
   const csp = /Content-Security-Policy:\s*(.+)/.exec(rd('_headers').toString('utf8'))[1]; assert.ok(csp.includes("manifest-src 'self'")); assert.ok(csp.includes("script-src 'self';") && !/unsafe-eval|script-src[^;]*unsafe-inline/.test(csp)); assert.ok(csp.includes("connect-src 'self'"));
   const { parseVersion } = await import('../public/js/install.js'); const { VERSION } = await import('../public/js/version.js');
   assert.equal(parseVersion(rd('js/version.js').toString('utf8')), VERSION); assert.equal(parseVersion("export const VERSION = 'MB12';"), 'MB12'); assert.equal(parseVersion('garbage'), null); assert.equal(parseVersion(null), null);
+});
+test('데스크톱 프로그램(desktop/): 보안 설정, 고정된 버전, 워크플로 고정', () => {
+  const rd = p => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
+  const main = rd('desktop/main.js'); const pkg = JSON.parse(rd('desktop/package.json')); const wf = rd('.github/workflows/desktop-release.yml');
+  assert.match(main, /contextIsolation:\s*true/); assert.match(main, /nodeIntegration:\s*false/); assert.match(main, /sandbox:\s*true/); assert.match(main, /webSecurity:\s*true/);
+  assert.ok(!/enableRemoteModule|webviewTag:\s*true|allowRunningInsecureContent|nodeIntegration:\s*true|contextIsolation:\s*false/.test(main));
+  assert.match(main, /setPermissionRequestHandler\(\(wc, permission, cb\) => cb\(false\)\)/); assert.match(main, /setWindowOpenHandler/); assert.match(main, /will-navigate/); assert.match(main, /SITE = 'https:\/\/ministry-secretary\.pages\.dev\/'/);
+  assert.match(main, /SMOKE = !app\.isPackaged/); // 시험용 동작은 설치본에서 꺼짐
+  for (const [k, v] of Object.entries(pkg.devDependencies)) assert.match(v, /^\d+\.\d+\.\d+$/, `${k} 버전은 정확히 고정`);
+  assert.equal(pkg.build.win.artifactName, 'MokhoeBiseo-Setup.${ext}'); assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false); assert.ok(fs.existsSync(new URL('../desktop/package-lock.json', import.meta.url)));
+  for (const f of pkg.build.files) assert.ok(fs.existsSync(new URL('../desktop/' + f, import.meta.url)), f);
+  for (const m of wf.matchAll(/uses:\s*(\S+)@(\S+)/g)) assert.match(m[2], /^[0-9a-f]{40}$/, `${m[1]} 는 커밋 SHA로 고정해야 함`);
+  assert.match(wf, /permissions:\s*\n\s*contents:\s*write/); assert.match(wf, /desktop-v\*/); assert.ok(!/pull_request/.test(wf), '외부 PR로는 실행하지 않음');
+  const ico = fs.readFileSync(new URL('../desktop/build/icon.ico', import.meta.url)); assert.equal(ico.readUInt16LE(2), 1); assert.ok(ico.readUInt16LE(4) >= 4);
 });
