@@ -30,7 +30,7 @@ export async function enhanceDates(root) {
       cal.init(); cals.push(cal);
     }
     // 대화상자가 닫히면(Esc 포함) 열려 있던 달력도 함께 치운다.
-    root.addEventListener('close', () => cals.forEach(c => { try { const m = c.context.mainElement; if (m && m.matches(':popover-open')) m.hidePopover(); c.destroy(); } catch (e) { /* 이미 정리됨 */ } }));
+    root.addEventListener('close', () => cals.forEach(c => { let m = null; try { m = c.context.mainElement; if (m && m.matches(':popover-open')) m.hidePopover(); c.destroy(); } catch (e) { /* 이미 정리됨 */ } if (m && m.isConnected) m.remove(); }));
   } catch (e) { /* 달력 없이도 입력은 가능 */ }
 }
 
