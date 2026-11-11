@@ -377,3 +377,14 @@ test('목회 브리핑·행사 진행: 기한 지남/오늘/임박 우선순위,
   const sv = s.saveService({ dept_id: d1, title: '주일예배', date: '2026-11-15', kind: 'regular', order_text: '' }); assert.ok(s.briefing(d1, T).some(x => x.kind === 'service' && x.go === `service/${sv}`));
   s.saveService({ id: sv, dept_id: d1, title: '주일예배', date: '2026-11-15', kind: 'regular', order_text: '1. 입례' }); assert.ok(!s.briefing(d1, T).some(x => x.kind === 'service'));
 });
+test('행사 날짜 변경 시 마감일 이동(완료 업무 제외), 결산 확인·회고 저장과 백업 복원', () => {
+  const s = mk(); const d = s.depts()[0].id; const id = s.saveEvent({ dept_id: d, title: '성탄 발표회', start_date: '2026-12-20' });
+  const add = (title, due, status = 'todo') => s.get().tasks.push({ id: 8000 + s.get().tasks.length, event_id: id, title, due, assignee: '', status });
+  add('A', '2026-12-10'); add('B', '2026-12-15', 'done'); add('C', '');
+  assert.equal(s.shiftEventTasks(id, 3), 1); const by = Object.fromEntries(s.get().tasks.filter(k => k.event_id === id).map(k => [k.title, k.due]));
+  assert.equal(by.A, '2026-12-13'); assert.equal(by.B, '2026-12-15'); assert.equal(by.C, ''); assert.throws(() => s.shiftEventTasks(99999, 1)); assert.throws(() => s.shiftEventTasks(id, 1.5));
+  s.setSettled(id, true); assert.equal(s.ev(id).settled, true); s.setSettled(id, false); assert.equal(s.ev(id).settled, false);
+  assert.throws(() => s.saveRetro(id, { good: ' ', change: '', next: '' })); s.saveRetro(id, { good: '아이들이 즐거워함', change: '리허설 시간', next: '8주 전 장소 예약부터' }); assert.equal(s.ev(id).retro.next, '8주 전 장소 예약부터');
+  s.saveEvent({ ...s.ev(id), title: '성탄 발표회(수정)' }); assert.ok(s.ev(id).retro && s.ev(id).title.endsWith('(수정)')); // 행사 수정해도 회고 유지
+  const s2 = mk(); s2.importJson(s.exportJson()); assert.equal(s2.ev(id).retro.good, '아이들이 즐거워함'); // 백업·복원에 포함
+});

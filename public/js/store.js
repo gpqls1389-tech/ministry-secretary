@@ -148,6 +148,18 @@ export function createStore(storage, today = kstToday) {
       return cards.sort((a, b) => a.pri - b.pri || a.title.localeCompare(b.title, 'ko'));
     },
 
+    // 행사 시작일을 바꿀 때 마감일이 있는 미완료 업무를 days일 만큼 옮긴다(완료된 업무는 그대로).
+    shiftEventTasks(eventId, days) {
+      if (!ev(eventId) || !Number.isInteger(days)) throw new ValidationError('행사를 찾을 수 없습니다.');
+      let n = 0; for (const k of S.tasks) if (k.event_id === eventId && k.status !== 'done' && k.due) { k.due = addDays(k.due, days); n++; } save(); return n;
+    },
+    // 행사 마무리: 결산 확인 표시, 회고(잘된 점 / 바꿀 점 / 다음 담당자가 언제 무엇부터)
+    setSettled(eventId, on) { const e = ev(eventId); if (!e) throw new ValidationError('행사를 찾을 수 없습니다.'); e.settled = !!on; save(); },
+    saveRetro(eventId, r) {
+      const e = ev(eventId); if (!e) throw new ValidationError('행사를 찾을 수 없습니다.'); const t = x => String((r && x) || '').trim().slice(0, 600);
+      const rec = { good: t(r.good), change: t(r.change), next: t(r.next) }; if (!rec.good && !rec.change && !rec.next) throw new ValidationError('한 칸 이상 적어 주세요.'); e.retro = rec; save();
+    },
+
     // ----- 행사 -----
     saveEvent(e) {
       const rec = { dept_id: Number(e.dept_id), title: reqText(e.title, '행사명'), type: e.type || '행사', start_date: reqDate(e.start_date, '시작일'), end_date: reqDate(e.end_date || e.start_date, '종료일'), place: e.place || '', owner: e.owner || '', target_count: Number(e.target_count || 0), expected_budget: reqMoney(Number(e.expected_budget || 0), '예상 예산', true), note: e.note || '', status: e.status || 'planned' };
