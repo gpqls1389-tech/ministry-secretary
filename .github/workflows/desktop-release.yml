@@ -1,0 +1,73 @@
+# 목회 비서 데스크톱 프로그램(Windows 설치 파일)을 GitHub 서버에서 만들어 Release 로 올립니다.
+# - 태그 `desktop-v11.3.0` 처럼 desktop-v 로 시작하는 태그를 올리면 설치 파일을 만들어 같은 이름의 Release 에 붙입니다.
+# - 수동 실행(Actions → desktop-release → Run workflow)은 설치 파일만 만들어 ‘아티팩트’로 보관합니다(Release 는 만들지 않음).
+# - 설치 파일은 코드 서명이 없습니다(서명 인증서가 없음). Windows 가 ‘알 수 없는 게시자’ 경고를 띄울 수 있습니다.
+name: desktop-release
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: 설치
+        run: npm ci --no-audit --no-fund
+      - name: 프로그램이 사이트를 불러오는지 시험(설치 파일을 만들기 전)
+        env:
+          MB_SMOKE: ${{ runner.temp }}\smoke.json
+        run: |
+          $p = Start-Process -FilePath node_modules\electron\dist\electron.exe -ArgumentList '.' -PassThru
+          $ok = $p.WaitForExit(90000)
+          if (-not $ok) { Stop-Process -Id $p.Id -Force; throw '시험이 90초 안에 끝나지 않았어요' }
+          if (-not (Test-Path $env:MB_SMOKE)) { throw '시험 결과 파일이 없어요' }
+          $r = Get-Content $env:MB_SMOKE -Raw; Write-Host $r
+          $j = $r | ConvertFrom-Json
+          if (-not $j.desktopUA) { throw '데스크톱 표식(User-Agent)이 없어요' }
+          if (-not $j.hasApp) { throw '사이트 화면을 불러오지 못했어요' }
+      - name: 설치 파일 만들기
+        run: npm run dist
+      - name: 파일 확인과 해시
+        run: |
+          $f = Get-Item dist\MokhoeBiseo-Setup.exe
+          Write-Host ("크기: {0:N1} MB" -f ($f.Length / 1MB))
+          $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+          "$h  MokhoeBiseo-Setup.exe" | Set-Content -Encoding ascii dist\MokhoeBiseo-Setup.exe.sha256
+          Get-Content dist\MokhoeBiseo-Setup.exe.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: MokhoeBiseo-Setup
+          path: |
+            desktop/dist/MokhoeBiseo-Setup.exe
+            desktop/dist/MokhoeBiseo-Setup.exe.sha256
+          if-no-files-found: error
+      - name: Release 에 올리기(태그로 실행했을 때만)
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $notes = @"
+          목회 비서 데스크톱 프로그램 ($env:TAG) — Windows 64비트 설치 파일입니다.
+
+          - 이 프로그램은 사이트를 앱 창으로 여는 프로그램입니다. 열 때마다 최신 사이트 버전(MB11.x)을 불러오므로 사이트가 올라가면 자동으로 새 버전이 됩니다. 데이터는 로그인한 계정의 서버에 있어 그대로 이어집니다.
+          - **코드 서명이 없는 파일입니다.** Windows 가 ‘알 수 없는 게시자’ 경고를 띄울 수 있고, 스마트 앱 컨트롤이 켜진 PC에서는 실행이 막힐 수 있습니다. 그런 PC에서는 사이트에서 ‘앱으로 설치’(브라우저 설치)를 쓰세요.
+          - 받은 파일이 맞는지 확인하려면 함께 올린 `.sha256` 의 해시와 비교하세요.
+          "@
+          gh release create $env:TAG dist\MokhoeBiseo-Setup.exe dist\MokhoeBiseo-Setup.exe.sha256 --title "목회 비서 데스크톱 $env:TAG" --notes $notes --verify-tag
