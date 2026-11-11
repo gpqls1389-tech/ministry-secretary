@@ -18,15 +18,19 @@ export async function enhanceDates(root) {
     if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
     const inputs = [...root.querySelectorAll('input[type=date]')]; if (!inputs.length) return;
     const [{ Calendar }] = await Promise.all([once('vcp', () => import('../vendor/vanilla-calendar-pro/index.mjs')), cssLink('vendor/vanilla-calendar-pro/index.css')]);
+    const cals = []; const toTop = m => { try { m.setAttribute('popover', 'manual'); Object.assign(m.style, { margin: '0', right: 'auto', bottom: 'auto', width: 'auto', height: 'auto' }); if (!m.matches(':popover-open')) m.showPopover(); } catch (e) { /* popover 미지원이면 달력이 대화상자 뒤에 가려질 수 있음 */ } };
     for (const input of inputs) {
       const v = input.value; input.type = 'text'; input.value = v; input.placeholder = 'YYYY-MM-DD'; input.autocomplete = 'off'; input.maxLength = 10; input.setAttribute('inputmode', 'numeric');
       const cal = new Calendar(input, {
         inputMode: true, locale: 'ko-KR', firstWeekday: 0, selectedTheme: 'light', positionToInput: 'auto', selectedDates: DATE.test(v) ? [v] : [],
-        onShow(self) { const cur = DATE.test(input.value) ? [input.value] : []; self.selectedDates = cur; if (cur[0]) { self.selectedYear = Number(cur[0].slice(0, 4)); self.selectedMonth = Number(cur[0].slice(5, 7)) - 1; } self.update({ dates: true, month: true, year: true }); },
+        onShow(self) { const cur = DATE.test(input.value) ? [input.value] : []; self.selectedDates = cur; if (cur[0]) { self.selectedYear = Number(cur[0].slice(0, 4)); self.selectedMonth = Number(cur[0].slice(5, 7)) - 1; } self.update({ dates: true, month: true, year: true }); toTop(self.context.mainElement); },
+        onHide(self) { try { const m = self.context.mainElement; if (m && m.matches(':popover-open')) m.hidePopover(); } catch (e) { /* 이미 닫힘 */ } },
         onChangeToInput(self) { const d = self.context.selectedDates[0]; input.value = d || ''; input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); self.hide(); },
       });
-      cal.init();
+      cal.init(); cals.push(cal);
     }
+    // 대화상자가 닫히면(Esc 포함) 열려 있던 달력도 함께 치운다.
+    root.addEventListener('close', () => cals.forEach(c => { try { const m = c.context.mainElement; if (m && m.matches(':popover-open')) m.hidePopover(); c.destroy(); } catch (e) { /* 이미 정리됨 */ } }));
   } catch (e) { /* 달력 없이도 입력은 가능 */ }
 }
 
