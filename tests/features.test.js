@@ -425,7 +425,7 @@ test('데스크톱 프로그램(desktop/): 보안 설정, 고정된 버전, 워�
   const main = rd('desktop/main.js'); const pkg = JSON.parse(rd('desktop/package.json')); const wf = rd('.github/workflows/desktop-release.yml');
   assert.match(main, /contextIsolation:\s*true/); assert.match(main, /nodeIntegration:\s*false/); assert.match(main, /sandbox:\s*true/); assert.match(main, /webSecurity:\s*true/);
   assert.ok(!/enableRemoteModule|webviewTag:\s*true|allowRunningInsecureContent|nodeIntegration:\s*true|contextIsolation:\s*false/.test(main));
-  assert.match(main, /setPermissionRequestHandler\(\(wc, permission, cb\) => cb\(false\)\)/); assert.match(main, /setWindowOpenHandler/); assert.match(main, /will-navigate/); assert.match(main, /SITE = 'https:\/\/ministry-secretary\.pages\.dev\/'/);
+  assert.match(main, /permission !== 'notifications'\) return false/); assert.match(main, /setPermissionRequestHandler\(\(wc, permission, cb, details\) => cb\(allowed\(/); assert.match(main, /setPermissionCheckHandler\(\(wc, permission, requestingOrigin\) => allowed\(/); assert.match(main, /u\.origin === ORIGIN|new URL\(url\)\.origin === ORIGIN/); assert.match(main, /setWindowOpenHandler/); assert.match(main, /will-navigate/); assert.match(main, /SITE = 'https:\/\/ministry-secretary\.pages\.dev\/'/);
   assert.match(main, /SMOKE = !app\.isPackaged/); // 시험용 동작은 설치본에서 꺼짐
   for (const [k, v] of Object.entries(pkg.devDependencies)) assert.match(v, /^\d+\.\d+\.\d+$/, `${k} 버전은 정확히 고정`);
   assert.equal(pkg.build.win.artifactName, 'MokhoeBiseo-Setup.${ext}'); assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false); assert.ok(fs.existsSync(new URL('../desktop/package-lock.json', import.meta.url)));
@@ -442,4 +442,23 @@ test('데스크톱 프로그램 안내: 버전 표식 읽기·비교, 다운로�
   assert.equal(DESKTOP.version, pkg.version, 'DESKTOP.version 은 desktop/package.json 과 같아야 함'); assert.equal(pkg.build.win.artifactName.replace('${ext}', 'exe'), DESKTOP.file);
   assert.ok(DESKTOP.download.startsWith('https://github.com/gpqls1389-tech/ministry-secretary/releases/') && DESKTOP.download.endsWith('/' + DESKTOP.file)); assert.ok(DESKTOP.page.startsWith('https://github.com/gpqls1389-tech/ministry-secretary/releases'));
   const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8'); assert.ok(app.includes('코드 서명이 없는 파일') && app.includes('스마트 앱 컨트롤'));
+});
+test('버전 연동: 사이트 MB11.N = 설치 프로그램 11.N.0, 할 일(저장·검증·알림 대상 고르기)', async () => {
+  const { VERSION, DESKTOP } = await import('../public/js/version.js'); const pkg = JSON.parse(fs.readFileSync(new URL('../desktop/package.json', import.meta.url), 'utf8'));
+  const m = /^MB11(?:\.(\d+))?$/.exec(VERSION); assert.ok(m); const want = `11.${m[1] || 0}.0`; assert.equal(pkg.version, want, '사이트를 고칠 때마다 desktop/package.json 버전도 같은 번호로 올려야 함'); assert.equal(DESKTOP.version, want);
+  const wf = fs.readFileSync(new URL('../.github/workflows/desktop-release.yml', import.meta.url), 'utf8'); assert.match(wf, /branches:\s*\[main\]/); assert.match(wf, /paths:\s*\['desktop\/\*\*'\]/);
+  const { dueTodos, kstNow } = await import('../public/js/reminders.js'); const { validateState } = await import('../public/js/store.js');
+  const s = mk(); const T = '2026-11-10';
+  const a = s.saveTodo({ title: '교사 기도회 자료 확인', time: '09:30', date: T }); const b = s.saveTodo({ title: '메모만', date: T }); const c2 = s.saveTodo({ title: '어제 못한 일', date: '2026-11-09', time: '08:00' }); s.saveTodo({ title: '저녁 연락', time: '19:00', date: T });
+  assert.throws(() => s.saveTodo({ title: '', date: T })); assert.throws(() => s.saveTodo({ title: 'x', time: '25:61' })); assert.throws(() => s.saveTodo({ title: 'x', time: '9:30' })); assert.throws(() => s.saveTodo({ title: 'x', date: '2026-13-40' }));
+  const now = { date: T, time: '10:00' }; assert.deepEqual(dueTodos(s.get().todos, now).map(x => x.title), ['교사 기도회 자료 확인']); // 시간 없는 것·지난 날짜·아직 안 된 시간은 제외
+  assert.equal(dueTodos(s.get().todos, now, { [`${a}|${T}|09:30`]: T }).length, 0); // 이미 알린 것 제외
+  assert.equal(dueTodos(s.get().todos, now, {}, { [a]: Date.now() + 60000 }).length, 0); // 다시 알림 대기 중 제외
+  assert.equal(dueTodos(s.get().todos, { date: T, time: '19:00' }).length, 2); // 19:00 이 되면 저녁 연락도 포함
+  s.setTodoDone(a, true); assert.equal(dueTodos(s.get().todos, now).length, 0); s.setTodoDone(a, false);
+  s.saveTodo({ id: a, title: '수정됨', date: T, time: '09:45' }); assert.equal(s.get().todos.find(x => x.id === a).time, '09:45');
+  s.moveTodoToToday(c2); assert.equal(s.get().todos.find(x => x.id === c2).date, '2026-11-10'); s.deleteTodo(b); assert.ok(!s.get().todos.some(x => x.id === b));
+  validateState(JSON.parse(s.exportJson())); const s2 = mk(); s2.importJson(s.exportJson()); assert.equal(s2.todos().length, s.todos().length); // 백업·복원
+  const bad = JSON.parse(s.exportJson()); bad.todos[0].time = '99:99'; assert.throws(() => validateState(bad)); const old = JSON.parse(s.exportJson()); delete old.todos; validateState(old); // 예전 백업(할 일 없음)도 읽힘
+  assert.deepEqual(kstNow(Date.UTC(2026, 10, 10, 15, 30)), { date: '2026-11-11', time: '00:30' }); // UTC 15:30 = 한국 다음 날 00:30
 });

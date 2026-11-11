@@ -51,8 +51,10 @@ function createWindow() {
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.on('web-contents-created', (e, contents) => { contents.on('will-attach-webview', ev => ev.preventDefault()); });
 app.whenReady().then(() => {
-  session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(false)); // 카메라·위치 등은 모두 거부(영수증 사진은 파일 선택으로 올림)
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // 허용하는 것은 ‘알림’(할 일 시간 알림) 하나뿐이고, 목회 비서 사이트에서 온 요청일 때만 허용한다. 카메라·위치 등은 모두 거부(영수증 사진은 파일 선택으로 올림).
+  const allowed = (permission, url) => { if (permission !== 'notifications') return false; try { return new URL(url).origin === ORIGIN; } catch (e) { return false; } };
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(allowed(permission, (details && details.requestingUrl) || wc.getURL())));
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => allowed(permission, requestingOrigin));
   buildMenu(); createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

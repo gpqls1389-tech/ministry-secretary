@@ -14,6 +14,7 @@ import { GUIDES, GUIDE_CHECKED, guideKeyFor, guideTasks } from './guides.js';
 import { VERSION, CHANGELOG, DESKTOP } from './version.js';
 import { enhanceDates, ganttChart, lineChart, escapeHtml } from './ui.js';
 import { isStandalone, canPromptInstall, promptInstall, fetchLatestVersion, watchUpdates, desktopVersion, cmpSemver } from './install.js';
+import { kstNow, startReminders, snoozeTodo, notifyPermission, askNotifyPermission, desktopNotify } from './reminders.js';
 // 오래 켜 둔 창이 옛 버전에 머물지 않게, 새 버전이 올라오면 알려 준다.
 function showUpdateBar(v) { if (document.getElementById('update-bar')) return; const b = document.createElement('div'); b.id = 'update-bar'; b.className = 'update-bar noprint'; b.setAttribute('role', 'status'); b.innerHTML = `새 버전 <b>${esc(v)}</b>이 나왔어요. <button class="sm pri" id="update-go">새로 고침</button> <button class="sm ghost" id="update-x" aria-label="닫기">✕</button>`; document.body.appendChild(b); b.querySelector('#update-go').onclick = () => location.reload(); b.querySelector('#update-x').onclick = () => b.remove(); }
 const A = await initAuth(); { const lg = document.getElementById('logo'); if (lg && imgSrc('logo')) lg.src = imgSrc('logo'); } // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
@@ -128,6 +129,22 @@ function render() {
 }
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 watchUpdates(VERSION, showUpdateBar);
+// ----- 할 일 시간 알림(팝업) -----
+const reminderQueue = []; let reminderOpen = false;
+function showReminder(todo) { reminderQueue.push(todo); nextReminder(); }
+function nextReminder() {
+  if (reminderOpen || !reminderQueue.length) return; const todo = reminderQueue.shift(); reminderOpen = true;
+  if (document.visibilityState !== 'visible') desktopNotify(todo); // 창이 가려져 있을 때만 바탕화면 알림(보일 때는 팝업으로 충분)
+  const d = modal(`<div class="dlg" role="alertdialog" aria-label="할 일 알림"><h3 style="margin:0 0 8px">⏰ 할 일 시간이에요</h3><p style="font-size:1.1rem;margin:0 0 4px"><b>${esc(todo.time)}</b></p><p style="white-space:pre-wrap;margin:0 0 12px">${esc(todo.title)}</p><div class="dlg-foot"><button data-close>닫기</button><button data-snooze>10분 뒤 다시</button><button class="pri" data-done>완료</button></div></div>`);
+  const end = () => { reminderOpen = false; setTimeout(nextReminder, 200); };
+  d.addEventListener('close', end, { once: true });
+  d.querySelector('[data-close]').onclick = () => d.close();
+  d.querySelector('[data-snooze]').onclick = () => { snoozeTodo(todo, 10); toast('10분 뒤에 다시 알려 드릴게요.'); d.close(); };
+  d.querySelector('[data-done]').onclick = () => { guard(() => store.setTodoDone(todo.id, true), '완료했어요.'); d.close(); render(); };
+}
+startReminders({ getTodos: () => store.get().todos || [], onDue: showReminder });
+document.addEventListener('submit', e => { const f = e.target.closest && e.target.closest('[data-todoform]'); if (!f) return; e.preventDefault(); const title = f.elements.title.value, time = f.elements.time.value; const ok = guard(() => { store.saveTodo({ title, time, date: today() }); return true; }); if (ok) { render(); const inp = document.querySelector('[data-todoform] [name=title]'); if (inp) inp.focus(); } });
+document.addEventListener('change', e => { const t = e.target; if (t.matches && t.matches('[data-todo]')) { guard(() => store.setTodoDone(Number(t.dataset.todo), t.checked)); render(); } });
 const page = (ico, title, sub, body, actions = '') => { $('#main').innerHTML = `<div class="pagehead"><div><h1 class="title"><span class="ico">${ico}</span>${esc(title)}</h1><p class="sub">${sub}</p></div>${actions ? `<div class="actions noprint">${actions}</div>` : ''}</div>${tipHtml()}${body}`; };
 const barHtml = (spent, budget) => { const p = budget ? Math.min(100, Math.round(spent / budget * 100)) : 0; return `<div class="bar ${budget && spent > budget ? 'over' : p >= 85 ? 'warn' : ''}"><i style="width:${p}%"></i></div>`; };
 const yearSel = () => `<select data-year>${[UI.year - 1, UI.year, UI.year + 1].map(y => `<option${y === UI.year ? ' selected' : ''} value="${y}">${y}년</option>`).join('')}</select>`;
@@ -151,9 +168,17 @@ function vHome() {
   const tasks = H.tasks.slice(0, 8).map(k => { const [c, l] = k.due ? dday(k.due) : ['', '기한 없음']; return `<div class="todo"><input type="checkbox" data-task="${k.id}" aria-label="완료"><div class="sp"><div class="tt">${esc(k.title)}</div><div class="mute small">${esc(k.event.title)}${k.assignee ? ' · ' + esc(k.assignee) : ''}</div></div><span class="tag ${c}">${l}</span></div>`; }).join('');
   const budget = H.budget.map(b => { const pct = b.budget ? Math.round(b.expense / b.budget * 100) : 0; return `<div class="pad"><div class="row"><b>${esc(b.dept.name)}</b><span class="sp"></span>${b.budget && b.expense > b.budget ? '<span class="tag bad">예산 초과</span>' : `<span class="tag blue">${b.budget ? pct + '% 사용' : '예산 없음'}</span>`}</div><div style="margin:10px 0 14px">${barHtml(b.expense, b.budget)}</div><div class="dl"><div><div class="k">예산</div><div class="v">${won(b.budget)}</div></div><div><div class="k">지출</div><div class="v">${won(b.expense)}</div></div><div><div class="k">예산 잔액</div><div class="v" style="color:${b.budget_remaining < 0 ? 'var(--orange)' : 'var(--primary-dk)'}">${won(b.budget_remaining)}</div></div><div><div class="k">수입·지출 차액</div><div class="v" style="color:${b.net < 0 ? 'var(--orange)' : 'var(--good)'}">${won(b.net)}</div></div></div></div>`; }).join('<div style="border-top:1px solid var(--line)"></div>');
   const actions = '<button class="pri" data-act="newEvent">+ 행사</button><button data-act="newService">+ 예배</button><button data-act="newSchedule">+ 일정</button><button data-act="newTx">+ 지출 등록</button><button data-go="#services">출석 기록</button><button data-act="notice" data-kind="week">이번 주 안내 문구</button><button data-go="#season">🕯️ 대림절·성탄절</button>';
+  const nowK = kstNow(); const allTodos = store.todos(); const todayTodos = allTodos.filter(x => x.date === t); const pastTodos = allTodos.filter(x => x.date < t && !x.done); const openN = todayTodos.filter(x => !x.done).length; const np = notifyPermission();
+  const todoRow = (x, past) => `<div class="todo ${x.done ? 'done' : ''}"><input type="checkbox" data-todo="${x.id}" ${x.done ? 'checked' : ''} aria-label="완료"><span class="tt sp">${esc(x.title)}</span>${x.time ? `<span class="tag ${!x.done && !past && x.time <= nowK.time ? 'warn' : ''}">⏰ ${esc(x.time)}</span>` : ''}${past ? `<span class="tag">${md(x.date)}</span><button class="sm" data-act="moveTodo" data-id="${x.id}">오늘로</button>` : ''}<button class="sm ghost noprint" data-act="editTodo" data-id="${x.id}" aria-label="수정">수정</button><button class="sm ghost noprint" data-act="delTodo" data-id="${x.id}" aria-label="삭제">✕</button></div>`;
+  const notifLine = np === 'granted' ? '✅ 바탕화면 알림이 켜져 있어요.' : np === 'denied' ? '바탕화면 알림이 꺼져 있어요(브라우저·앱 설정에서 허용하면 켜져요). 지금은 화면 팝업으로만 알려요.' : np === 'unsupported' ? '이 환경에서는 바탕화면 알림을 쓸 수 없어요. 화면 팝업으로 알려요.' : '<button class="sm" data-act="enableNotif">🔔 바탕화면 알림 켜기</button>';
+  const todoHtml = `<section class="box" id="todo-box" style="margin-bottom:16px"><div class="cardh"><h3>오늘 할 일</h3><span class="tag">${openN}/${todayTodos.length}</span><span class="sub">${md(t)}(${dow(t)})</span></div><div class="cardb">
+    <form data-todoform class="todoadd noprint"><input name="title" placeholder="오늘 할 일을 적으세요" maxlength="120" required aria-label="할 일"><input type="time" name="time" aria-label="알림 시간(선택)" title="시간을 정하면 그 시간에 알려 줘요"><button class="pri">추가</button></form>
+    ${todayTodos.map(x => todoRow(x, false)).join('') || emptyState('오늘 할 일이 없어요', '위에 적고 ‘추가’를 누르세요. 시간을 함께 정하면 그 시간에 팝업으로 알려 줘요.', '')}
+    ${pastTodos.length ? `<details class="small" style="margin:8px 12px"><summary>지난 할 일 ${pastTodos.length}건 (아직 안 끝남)</summary>${pastTodos.map(x => todoRow(x, true)).join('')}</details>` : ''}
+    <p class="mute small noprint" style="margin:8px 12px">⏰ 시간을 정한 할 일은 <b>이 앱·사이트를 열어 둔 동안</b> 그 시간에 팝업으로 알려요(창을 닫으면 알림이 오지 않아요). ${notifLine}</p></div></section>`;
   const brief = store.briefing(did(), t); const kindIco = { event: '🎉', service: '⛪', care: '💛' };
   const briefHtml = `<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>이번 주 목회 브리핑</h3><span class="tag">${brief.length}</span><span class="sub">지금 챙길 일을 급한 순서로 보여 줘요</span></div><div class="cardb">${brief.slice(0, 5).map(c => `<a class="sched" href="#${c.go}" style="text-decoration:none;color:inherit"><div class="datebox"><b>${kindIco[c.kind]}</b></div><div class="what"><b>${esc(c.title)}</b><span>${esc(c.reason)}${c.detail ? ' · ' + esc(c.detail) : ''}</span></div>${c.pri === 1 ? '<span class="tag bad">급함</span>' : c.pri === 2 ? '<span class="tag warn">오늘</span>' : ''}</a>`).join('') || emptyState('지금 급하게 챙길 일이 없어요', '기한이 지난 업무, 오늘 마감 업무, 2주 안에 다가오는 행사, 순서가 비어 있는 이번 주 예배가 여기에 나타나요.', '')}${brief.length > 5 ? `<p class="mute small" style="margin:8px 12px">외 ${brief.length - 5}건 · <a href="#events">행사에서 모두 보기</a></p>` : ''}</div></section>`;
-  page('🏠', '홈', `${H.today} (${dow(H.today)}) · ${esc(scope)}`, `${backupNote}${briefHtml}
+  page('🏠', '홈', `${H.today} (${dow(H.today)}) · ${esc(scope)}`, `${backupNote}${todoHtml}${briefHtml}
   <div class="statrow">
     <div class="card sc"><div class="k">이번 주 일정</div><div class="v">${H.week.length}건</div><div class="s">오늘 ${todayN}건 · ${md(H.from)} ~ ${md(H.to)}</div></div>
     <div class="card sc ${overN ? 'warn' : ''}"><div class="k">준비할 일</div><div class="v">${H.tasks.length}건</div><div class="s">${overN ? `<span class="tag bad">기한 지남 ${overN}건</span>` : '기한 지난 업무 없음'}</div></div>
@@ -575,6 +600,10 @@ const ACT = {
   delSchedule: async d => { if (await ask('이 일정을 삭제할까요?', '삭제')) { store.deleteSchedule(Number(d.id)); location.hash = '#plan'; toast('삭제했어요.'); } },
   delSeries: async d => { const id = Number(d.id); const n = store.seriesCount(d.kind, id); if (await ask(`이 날짜부터 같은 반복으로 만든 ${n}개를 모두 삭제할까요?${d.kind === 'service' ? '\n해당 예배의 출석 기록도 함께 지워져요.' : ''}\n되돌릴 수 없어요.`, '삭제')) { store.deleteSeries(d.kind, id); location.hash = d.kind === 'service' ? '#services' : '#plan'; toast('삭제했어요.'); } },
   printPage: () => window.print(),
+  editTodo: d => { const x = (store.get().todos || []).find(v => v.id === Number(d.id)); if (!x) return; form({ title: '할 일 수정', values: x, fields: [{ k: 'title', label: '할 일', req: true }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'time', label: '알림 시간(선택)', type: 'time', hint: '비우면 알림 없이 목록에만 보여요.' }], onSubmit: o => { store.saveTodo({ id: x.id, ...o }); } }); },
+  delTodo: d => { guard(() => store.deleteTodo(Number(d.id))); render(); },
+  moveTodo: d => { guard(() => store.moveTodoToToday(Number(d.id)), '오늘로 옮겼어요.'); render(); },
+  enableNotif: async () => { const r = await askNotifyPermission(); toast(r === 'granted' ? '바탕화면 알림을 켰어요.' : '알림을 켜지 않았어요. 화면 팝업으로는 계속 알려요.'); render(); },
   installApp: async () => { const r = await promptInstall(); if (r === 'accepted') toast('설치했어요. 바탕화면·시작 메뉴에서 ‘목회 비서’를 열어 보세요.'); else if (r === 'unavailable') toast('이 브라우저에서는 설치 버튼을 쓸 수 없어요. 아래 설치 방법을 보세요.', true); render(); },
   checkUpdate: async () => { const v = await fetchLatestVersion(); if (!v) { toast('새 버전을 확인하지 못했어요. 인터넷 연결을 확인하세요.', true); return; } if (v !== VERSION) showUpdateBar(v); else toast(`최신 버전이에요 (${VERSION}).`); },
   settle: d => { guard(() => store.setSettled(Number(d.id), d.on === '1')); render(); },
