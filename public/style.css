@@ -247,3 +247,5 @@ table.t tr.picked td { background:var(--primary-bg); }
 #attchart { min-height:220px; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
 .update-bar { position:fixed; left:50%; bottom:var(--size-4); transform:translateX(-50%); z-index:60; display:flex; gap:var(--size-2); align-items:center; padding:var(--size-2) var(--size-4); background:var(--ink,#1f2937); color:#fff; border-radius:var(--radius-pill); box-shadow:var(--shadow-3); max-width:calc(100vw - 24px); } .update-bar button.ghost { color:#fff; }
+
+.btnlike { display:inline-block; padding:9px 16px; border:1px solid var(--line,#d6d3c8); border-radius:var(--radius-ctl); background:#fff; color:inherit; text-decoration:none; font-weight:600; } .btnlike.pri { background:var(--primary); border-color:var(--primary); color:#fff; } .btnlike:hover { filter:brightness(.96); }

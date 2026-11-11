@@ -2,9 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB11.3';
+export const VERSION = 'MB11.4';
+
+// 데스크톱 프로그램(Windows 설치 파일). 새 설치 파일을 Release 로 올릴 때 version 을 같이 올립니다(desktop/package.json 과 같아야 함).
+// 프로그램은 사이트를 불러오는 껍데기라서, 사이트 버전(MB11.x)이 올라가도 설치 파일을 다시 받을 필요는 없습니다.
+export const DESKTOP = { version: '11.3.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB11.4', date: '2026-11-11', items: ['설정에 Windows 데스크톱 프로그램 다운로드 링크 추가(설치 파일, 코드 서명 없음)', '데스크톱 프로그램으로 실행 중이면 프로그램 버전을 보여 주고 새 설치 파일이 있으면 알림'] },
   { v: 'MB11.3', date: '2026-11-11', items: ['설정에 ‘앱으로 설치’ 추가(컴퓨터·휴대폰에 설치, 열 때마다 최신 버전으로 자동 업그레이드, 로그인 데이터는 그대로)', '새 버전이 올라오면 알림과 ‘새 버전 확인’ 버튼', '앱 아이콘 추가'] },
   { v: 'MB11.2', date: '2026-11-11', items: ['날짜 입력칸에 달력 선택기 추가(마우스가 있는 기기)', '행사 목록·행사 상세에 타임라인(막대 그래프) 보기 추가', '예배 화면에 출석 추이 차트와 표 추가', '디자인 정돈: 모서리 값 이름 붙이기, 간격·그림자 변수 도입, 키보드 포커스 표시'] },
   { v: 'MB11.1', date: '2026-11-11', items: ['설정에 현재 버전과 버전별 변경 목록 추가'] },

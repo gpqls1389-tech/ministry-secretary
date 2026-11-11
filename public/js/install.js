@@ -31,3 +31,8 @@ export function watchUpdates(current, onNew) {
   window.addEventListener('focus', check);
   setTimeout(check, 5000);
 }
+
+// 데스크톱 프로그램(껍데기)이 User-Agent 끝에 붙이는 표식에서 프로그램 버전을 읽는다. 브라우저면 null.
+export const desktopVersion = (ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '')) => { const m = /MokhoeBiseoDesktop\/(\d+\.\d+\.\d+)/.exec(String(ua || '')); return m ? m[1] : null; };
+// 'a.b.c' 두 개를 비교해 a<b 이면 -1, 같으면 0, a>b 이면 1.
+export const cmpSemver = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d < 0 ? -1 : 1; } return 0; };
