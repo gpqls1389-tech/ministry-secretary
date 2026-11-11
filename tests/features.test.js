@@ -395,3 +395,17 @@ test('버전 표시: VERSION 은 변경 목록 맨 앞과 같고, 번호는 중�
   for (const x of CHANGELOG) { assert.match(x.v, /^MB11(\.\d+)?$/); assert.match(x.date, /^\d{4}-\d{2}-\d{2}$/); assert.ok(x.items.length > 0 && x.items.every(i => typeof i === 'string' && i)); }
   assert.equal(CHANGELOG.at(-1).v, 'MB11');
 });
+test('외부 UI 부품(vendor): 파일이 받은 그대로이고 라이선스가 함께 있으며, 사용자 글은 이스케이프된다', async () => {
+  const crypto = await import('node:crypto'); const SUMS = {
+    'vanilla-calendar-pro/index.mjs': 'e85bbcc14e85bfc01298803c28aa22db05e9350203b99e76691f134c1dcb3531', 'vanilla-calendar-pro/index.css': '856fd50a667cfb58577060358a9a9cbae108cd05f954dccbfbca6fbe4f6b0d24',
+    'frappe-gantt/frappe-gantt.es.js': 'e2a6320ab5116d5896a806b4f7e8ca9c01d1fe32e5344b90e34138d110b3127a', 'frappe-gantt/frappe-gantt.css': '74ccfd2390849e729cda95a358439f003b79b94770ff732713217bc8045e7a69',
+    'uplot/uPlot.esm.js': '5dd9b3281aa64b461b42d9945f6adb2649d346502b12281a9ae0d46599a80eba', 'uplot/uPlot.min.css': 'df630c6a8d6f8eeaff264b50f73ce5b114f646ffd9a0bb74f049b0a00135fa04',
+    'open-props/sizes.min.css': '496b8f65d37ab4e57126d889c07b99672c7f755d79b7036105081a036055ed27', 'open-props/shadows.min.css': '2b54a9752d08e24a8e1e6aa0d53b40cbd3ed883710b02a40dd46b39803f29502', 'open-props/borders.min.css': '4b54a59a0933a803068281e85bfc1f246261fed2d5324e64178209903a2e912d' };
+  for (const [f, sum] of Object.entries(SUMS)) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(new URL('../public/vendor/' + f, import.meta.url))).digest('hex'), sum, f + ' 파일이 바뀌었어요(받은 그대로여야 함)');
+  for (const d of ['vanilla-calendar-pro', 'frappe-gantt', 'uplot', 'open-props']) assert.match(fs.readFileSync(new URL(`../public/vendor/${d}/LICENSE.txt`, import.meta.url), 'utf8'), /MIT/);
+  const notices = fs.readFileSync(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8'); for (const n of ['vanilla-calendar-pro 3.4.0', 'frappe-gantt 1.2.2', 'uPlot 1.6.32', 'Open Props 1.7.23']) assert.ok(notices.includes(n), n + ' 고지');
+  const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'); for (const f of ['sizes', 'borders', 'shadows']) assert.ok(html.includes(`vendor/open-props/${f}.min.css`));
+  const { escapeHtml } = await import('../public/js/ui.js'); assert.equal(escapeHtml('<img src=x onerror=alert(1)>&"\''), '&lt;img src=x onerror=alert(1)&gt;&amp;&quot;&#39;');
+  const headers = fs.readFileSync(new URL('../public/_headers', import.meta.url), 'utf8'); assert.ok(/script-src 'self'(;|\s*;)/.test(headers) && !/script-src[^;]*unsafe/.test(headers)); // 외부 스크립트 허용 없음
+  const ui = fs.readFileSync(new URL('../public/js/ui.js', import.meta.url), 'utf8'); assert.ok(/name: escapeHtml\(r\.name\)/.test(ui), '타임라인 제목은 이스케이프해서 넘겨야 함');
+});

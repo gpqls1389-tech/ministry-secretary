@@ -13,3 +13,9 @@
 - 저작권·라이선스: Mozilla 및 pdf.js 기여자, Apache License 2.0 — 전문: `public/vendor/pdfjs/LICENSE.txt`, 출처: https://github.com/mozilla/pdf.js
 - 받은 곳: npm 공식 저장소 `pdfjs-dist-6.5.438.tgz` (npm이 제공하는 sha512 무결성 해시와 일치함을 확인)
 - 쓰임: `설정 → 일정·계획 → PDF에서 가져오기`에서 PDF의 글자를 **브라우저 안에서만** 읽습니다(PDF를 서버로 보내지 않음).
+## 화면 부품 4종 (달력·타임라인·차트·디자인 변수) — 모두 MIT License
+받은 곳은 모두 npm 공식 저장소이며, npm이 제공하는 sha512 무결성 해시와 일치함을 확인했습니다. 파일은 **수정 없이 그대로** `public/vendor/` 에 두었고, 자동 테스트가 파일이 바뀌지 않았는지(SHA-256) 확인합니다. 각 폴더의 `LICENSE.txt` 가 라이선스 전문입니다.
+- **vanilla-calendar-pro 3.4.0** — Copyright (c) 2024 Yury Uvarov, 출처 https://github.com/uvarov-frontend/vanilla-calendar-pro, 위치 `public/vendor/vanilla-calendar-pro/` (`index.mjs`, `index.css`). 쓰임: 날짜 입력칸의 달력 선택(마우스가 있는 기기에서만).
+- **frappe-gantt 1.2.2** — Copyright (c) 2024 Frappe Technologies Pvt. Ltd., 출처 https://github.com/frappe/gantt, 위치 `public/vendor/frappe-gantt/` (`frappe-gantt.es.js`, `frappe-gantt.css`). 쓰임: 행사·준비 일정 타임라인(읽기 전용). 이 라이브러리는 제목을 HTML로 그리는 곳이 있어, 사용자가 입력한 글은 항상 이스케이프해서 넘깁니다.
+- **uPlot 1.6.32** — Copyright (c) 2022 Leon Sorokin, 출처 https://github.com/leeoniya/uPlot, 위치 `public/vendor/uplot/` (`uPlot.esm.js`, `uPlot.min.css`). 쓰임: 예배 화면의 출석 추이 차트.
+- **Open Props 1.7.23** — Copyright (c) 2021 Adam Argyle, 출처 https://github.com/argyleink/open-props, 위치 `public/vendor/open-props/` (`sizes.min.css`, `borders.min.css`, `shadows.min.css` 만 사용). 쓰임: 새 화면 부품의 간격·모서리·그림자 값.
