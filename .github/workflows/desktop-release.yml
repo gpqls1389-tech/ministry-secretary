@@ -28,7 +28,11 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - name: 설치
-        run: npm ci --no-audit --no-fund
+        run: |
+          npm ci --no-audit --no-fund
+          # 새 npm 은 설치 스크립트를 자동으로 돌리지 않을 수 있어, Electron 실행 파일을 받는 공식 스크립트를 직접 실행한다.
+          if (-not (Test-Path node_modules\electron\dist\electron.exe)) { node node_modules\electron\install.js }
+          if (-not (Test-Path node_modules\electron\dist\electron.exe)) { throw 'Electron 실행 파일을 받지 못했어요' }
       - name: 프로그램이 사이트를 불러오는지 시험(설치 파일을 만들기 전)
         env:
           MB_SMOKE: ${{ runner.temp }}\smoke.json
