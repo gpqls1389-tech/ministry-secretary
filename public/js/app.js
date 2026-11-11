@@ -4,7 +4,7 @@ import { toCsv, parseTable, decodeText } from './csv.js';
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장소 사용 불가 */ } };
 
-import { initAuth, accountApi, openLoginPreview, receiptApi } from './auth.js';
+import { initAuth, accountApi, openLoginPreview, receiptApi, imageApi } from './auth.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
@@ -244,6 +244,32 @@ function eventForm(v = {}) {
         note.innerHTML = `<b>자동으로 만들어지는 준비 업무 ${t.tasks.length}개</b> (시작일 기준)<ul>${t.tasks.slice(0, 5).map(x => `<li>${x.offset < 0 ? Math.abs(x.offset) + '일 전' : x.offset + '일 후'} · ${esc(x.title)}</li>`).join('')}</ul>${t.tasks.length > 5 ? `<span class="mute">…외 ${t.tasks.length - 5}개</span>` : ''}<br><span class="mute">이 목록은 예시예요. 만든 뒤 우리 교회에 맞게 고치고 지우세요.</span>`; }; },
     onSubmit: o => { const key = o.tpl; const oldStart = v.start_date; const id = store.saveEvent({ ...v, ...o, dept_id: Number(o.dept_id) }); if (!isNew && oldStart && o.start_date && o.start_date !== oldStart) offerShift(id, oldStart, o.start_date); if (isNew && key) { const r = store.applyEventTemplate(id, key); toast(`준비 업무 ${r.tasks}개, 준비물 ${r.supplies}개를 만들었어요.`); } if (isNew) location.hash = `#event/${id}`; } });
 }
+// ----- AI 이미지 만들기(설정 화면, 로그인한 계정에서만) -----
+// [자리 이름(=img/ 파일 이름), 화면 표시, 서버에 보내는 종류]. 종류에 따라 크기가 정해진다(가로/정사각).
+const IMG_SLOTS = [['free', '자유(크기 직접 선택)', 'free'], ['login-hero', '로그인 큰 그림', 'hero'], ['logo', '로고', 'avatar'], ['banner-vbs', '행사 배너 · 성경학교', 'banner'], ['banner-retreat', '행사 배너 · 수련회', 'banner'], ['banner-christmas', '행사 배너 · 성탄', 'banner'], ['banner-outing', '행사 배너 · 소풍', 'banner'], ['banner-general', '행사 배너 · 일반', 'banner'],
+  ['season-advent', '절기 · 대림절', 'season'], ['season-christmas', '절기 · 성탄절', 'season'], ['season-lent', '절기 · 사순절', 'season'], ['season-easter', '절기 · 부활절', 'season'], ['season-thanksgiving', '절기 · 추수감사', 'season'],
+  ['empty-schedule', '빈 화면 · 일정', 'empty'], ['empty-tasks', '빈 화면 · 업무', 'empty'], ['empty-people', '빈 화면 · 인원', 'empty'], ['empty-attendance', '빈 화면 · 출석', 'empty'], ['empty-money', '빈 화면 · 회계', 'empty'], ['empty-events', '빈 화면 · 행사', 'empty'],
+  ['avatar-child', '아바타 · 아동', 'avatar'], ['avatar-teacher', '아바타 · 교사', 'avatar'], ['avatar-volunteer', '아바타 · 봉사자', 'avatar'], ['avatar-youth', '아바타 · 청년', 'avatar'], ['error-404', '오류 화면', 'empty']];
+async function initImageBox() {
+  const box = document.getElementById('imgbox'); if (!box) return; const $i = id => document.getElementById(id); const status = $i('imgstatus');
+  let st; try { st = await imageApi.status(); } catch (e) { status.textContent = '이미지 만들기 상태를 확인하지 못했어요.'; return; }
+  if (!st.enabled) { status.textContent = '이미지 만들기가 아직 켜져 있지 않아요. 관리자가 Cloudflare 비밀 변수 OPENAI_API_KEY를 설정하면 쓸 수 있어요(README 참고).'; return; }
+  if (!st.allowed) { status.textContent = '이 계정은 이미지 만들기를 쓸 수 없어요(관리자가 허용한 계정만 가능).'; return; }
+  status.textContent = `하루 ${st.limit}장까지 만들 수 있어요. 비용이 드는 기능이니 꼭 필요한 그림만 만드세요.`; $i('imgform').hidden = false; const left = $i('imgleft'); const setLeft = n => { left.textContent = `오늘 남은 횟수 ${n}/${st.limit}`; }; setLeft(st.left);
+  const slot = $i('imgslot'); slot.onchange = () => { $i('imgsizewrap').hidden = slot.value !== 'free'; }; slot.onchange();
+  $i('imggo').onclick = async () => {
+    const go = $i('imggo'); const out = $i('imgresult'); const prompt = $i('imgprompt').value.trim(); const sl = IMG_SLOTS.find(x => x[0] === slot.value) || IMG_SLOTS[0];
+    if (prompt.length < 5) { out.innerHTML = '<p class="err">그림 설명을 5자 이상 적어 주세요.</p>'; return; }
+    go.disabled = true; out.innerHTML = '<p class="mute">만드는 중이에요… (보통 20초~1분, 최대 1~2분)</p>';
+    try {
+      const r = await imageApi.generate({ prompt, kind: sl[2], size: $i('imgsize').value, quality: $i('imgq').value }); setLeft(r.left);
+      const ext = r.mime === 'image/jpeg' ? 'jpg' : r.mime === 'image/webp' ? 'webp' : 'png'; const name = `${sl[0] === 'free' ? 'image' : sl[0]}.${ext}`;
+      out.innerHTML = `<img src="${r.image}" alt="만들어진 그림 미리보기" style="max-width:100%;border-radius:var(--radius-md);border:1px solid var(--line)"><div class="row" style="margin-top:8px"><a class="btnlike pri" id="imgdl" download="${esc(name)}" href="${r.image}">내려받기 (${esc(name)})</a></div>
+        <div class="callout"><span>📝</span><div class="sp"><b>확인하세요</b><ul class="small"><li>그림 속 글자·손가락·얼굴 모양이 어색하지 않은지, 우리 교회의 표현 기준(성경 인물·예수님)에 맞는지 확인하세요.</li><li>실제 캐릭터·특정 작품과 닮은 그림은 쓰지 마세요. 사용 조건은 OpenAI 약관에서 확인하세요.</li><li>사이트의 그림을 바꾸려면 내려받은 파일을 알려 주세요(자리: ${esc(sl[1])}).</li></ul></div></div>`;
+    } catch (e) { out.innerHTML = `<p class="err">${esc(e.message || '그림을 만들지 못했어요.')}</p>`; } finally { go.disabled = false; }
+  };
+}
+
 // ----- 행사 진행 가이드 -----
 const gList = a => a && a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
 function guideHtml(key, evId) {
@@ -500,6 +526,12 @@ function vSettings() {
   <h2>백업·복원 (JSON 파일)</h2><div class="row"><button data-act="export">내보내기(.json 다운로드)</button><button data-act="import">파일에서 가져오기</button><input type="file" id="file" accept="application/json,.json" hidden></div>
   <p class="mute small">내보낸 파일에는 이름 등 개인정보가 들어 있을 수 있으니 안전한 곳에만 보관하세요. 가져오면 현재 데이터가 파일 내용으로 바뀝니다(바꾸기 전에 확인합니다).</p>
   <h2>화면 미리보기</h2><div class="row"><button data-act="loginPreview">로그인 화면 미리보기</button><span class="mute small">서버 없이 모양만 보여 줘요(실제 로그인 아님).</span></div>
+  ${acct ? `<h2>이미지 만들기 (AI)</h2><div class="box pad" id="imgbox"><p class="mute small" id="imgstatus">확인 중…</p><div id="imgform" hidden>
+    <label class="f">만들 그림 자리<select id="imgslot">${IMG_SLOTS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></label>
+    <label class="f" id="imgsizewrap" hidden>크기<select id="imgsize"><option value="1024x1024">정사각</option><option value="1536x1024">가로</option><option value="1024x1536">세로</option></select></label>
+    <label class="f">그림 설명 (5~500자)<textarea id="imgprompt" maxlength="500" placeholder="예: 구유 옆에서 양들과 함께 있는 따뜻한 성탄 장면, 부드러운 노란 불빛"></textarea><span class="hint">이름·연락처·실제 아이의 사진 같은 개인정보는 적지 마세요. 설명은 만들기 위해 OpenAI로 전송돼요. 글자는 그림 안에 넣지 않도록 요청돼요.</span></label>
+    <label class="f">품질<select id="imgq"><option value="medium">보통</option><option value="low">빠르게(낮은 품질)</option></select></label>
+    <div class="row"><button class="pri" id="imggo">그림 만들기</button><span class="mute small" id="imgleft"></span></div></div><div id="imgresult" style="margin-top:12px"></div></div>` : ''}
   <h2>앱으로 설치 (컴퓨터·휴대폰)</h2><div class="callout"><span>🖥️</span><div class="sp">${isStandalone() ? '지금 <b>설치된 앱</b>으로 실행 중이에요.' : '이 사이트를 <b>앱처럼 설치</b>하면 바탕화면·작업 표시줄에서 바로 열 수 있어요.'} 설치한 앱은 열 때마다 <b>최신 버전</b>(지금 ${esc(VERSION)})을 불러와서 <b>자동으로 업그레이드</b>돼요. ${acct ? '로그인한 계정의 데이터는 서버에 있어서 앱에서도 <b>그대로 이어져요</b>.' : '지금은 데이터가 이 브라우저에만 저장돼요. 설치 전에 아래 ‘내보내기’로 백업하세요.'}</div></div>
   <div class="row" style="margin:12px 0">${!isStandalone() && canPromptInstall() ? '<button class="pri" data-act="installApp">앱으로 설치</button>' : ''}<button data-act="checkUpdate">새 버전 확인</button></div>
   ${(() => { const dv = desktopVersion(); if (dv) { const old = cmpSemver(dv, DESKTOP.version) < 0; return `<div class="callout ${old ? 'warn' : ''}"><span>💻</span><div class="sp">지금 <b>데스크톱 프로그램 ${esc(dv)}</b>로 실행 중이에요(화면과 기능은 사이트 ${esc(VERSION)}).${old ? ` 새 설치 파일 <b>${esc(DESKTOP.version)}</b>이 있어요. <a href="${esc(DESKTOP.download)}" target="_blank" rel="noopener noreferrer">다운로드</a>` : ' 프로그램 파일도 최신이에요.'}</div></div>`; }
@@ -507,8 +539,9 @@ function vSettings() {
   <details class="small"><summary>설치 방법과 알아 둘 점</summary><ul><li><b>컴퓨터(Chrome·Edge)</b>: 주소창 오른쪽의 설치 아이콘, 또는 브라우저 메뉴에서 ‘앱으로 설치’(이름은 버전에 따라 조금 달라요)를 고르세요. 위의 ‘앱으로 설치’ 버튼이 보이면 그 버튼으로도 설치돼요.</li><li><b>Mac Safari</b>: 파일 메뉴 → ‘Dock에 추가’. <b>휴대폰</b>: 브라우저 메뉴의 ‘홈 화면에 추가’.</li><li>설치 버튼이 안 보이면 이미 설치했거나 이 브라우저가 지원하지 않는 경우예요. 그래도 사이트 주소로 그대로 쓸 수 있어요.</li><li>설치한 앱도 <b>인터넷 연결이 필요</b>해요(오프라인에서는 열리지 않아요).</li><li>설치한 앱에서 로그인 상태나 로컬 데이터가 브라우저와 따로 보이면, 설정의 ‘내보내기’·‘가져오기’로 옮기세요.</li><li>지우려면 앱 창의 메뉴(또는 운영체제의 앱 목록)에서 제거하세요. 로그인한 데이터는 지워지지 않아요.</li></ul></details>
   <h2>버전 기록 <span class="mute small">현재 ${esc(VERSION)}</span></h2><div class="changelog">${CHANGELOG.map(x => `<details ${x.v === VERSION ? 'open' : ''}><summary><b>${esc(x.v)}</b> <span class="mute small">${esc(x.date)}</span>${x.v === VERSION ? ' <span class="tag ok">현재</span>' : ''}</summary><ul class="small">${x.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`).join('')}</div>
   <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>PDF 글자 읽기에는 <b>pdf.js</b> 6.5.438(Mozilla, Apache License 2.0)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/pdfjs/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>달력·타임라인·차트·디자인 변수에는 <b>vanilla-calendar-pro</b> 3.4.0, <b>frappe-gantt</b> 1.2.2, <b>uPlot</b> 1.6.32, <b>Open Props</b> 1.7.23(모두 MIT License)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/vanilla-calendar-pro/LICENSE.txt" target="_blank" rel="noopener">달력</a> · <a href="vendor/frappe-gantt/LICENSE.txt" target="_blank" rel="noopener">타임라인</a> · <a href="vendor/uplot/LICENSE.txt" target="_blank" rel="noopener">차트</a> · <a href="vendor/open-props/LICENSE.txt" target="_blank" rel="noopener">변수</a></p>
-  <h2>개인정보 안내</h2><ul class="small"><li>이 앱은 보호자 연락처·알레르기·계좌·주민번호를 입력받지 않습니다.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
+  <h2>개인정보 안내</h2><ul class="small"><li>이 앱은 보호자 연락처·알레르기·계좌·주민번호를 입력받지 않습니다.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li><li>‘이미지 만들기(AI)’를 쓰면 입력한 그림 설명이 OpenAI로 전송됩니다(이메일·이름은 보내지 않고, 만든 그림은 서버에 저장하지 않아요). 개인정보는 설명에 적지 마세요.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
   <h2>정보</h2><dl class="props"><dt>버전</dt><dd><b>${esc(VERSION)}</b></dd><dt>저장 방식</dt><dd>${acct ? '계정별 서버 저장(Cloudflare D1)' : `localStorage (${window.__memOnly ? '사용 불가 → 임시 메모리' : '사용 중'})`}</dd><dt>통화·시간대</dt><dd>원화(정수) · Asia/Seoul</dd></dl>`);
+  if (acct) initImageBox();
 }
 
 // ----- 이벤트 -----

@@ -17,6 +17,10 @@ export const accountApi = {
   changePassword: (current, next) => req('POST', '/api/password', { current, next }),
   deleteAccount: password => req('POST', '/api/delete-account', { password }),
 };
+export const imageApi = {
+  status: () => req('GET', '/api/image/status'),
+  generate: b => req('POST', '/api/image/generate', b),
+};
 export const receiptApi = {
   put: data => req('POST', '/api/receipts', { data }),
   remove: id => req('DELETE', '/api/receipts/' + encodeURIComponent(id), {}),
