@@ -228,3 +228,5 @@ table.t tr.picked td { background:var(--primary-bg); }
 .todo.flash { background:var(--bg); outline:2px solid var(--primary); border-radius:10px; } a .sched, a.sched { cursor:pointer; } a.sched:focus-visible { outline:2px solid var(--primary); }
 
 @media (max-width:640px) { .hide-sm { display:none; } }
+
+.changelog details { border:1px solid var(--line); border-radius:10px; padding:8px 12px; margin:6px 0; } .changelog summary { cursor:pointer; } .changelog ul { margin:6px 0 2px; padding-left:20px; }
