@@ -388,3 +388,10 @@ test('행사 날짜 변경 시 마감일 이동(완료 업무 제외), 결산 �
   s.saveEvent({ ...s.ev(id), title: '성탄 발표회(수정)' }); assert.ok(s.ev(id).retro && s.ev(id).title.endsWith('(수정)')); // 행사 수정해도 회고 유지
   const s2 = mk(); s2.importJson(s.exportJson()); assert.equal(s2.ev(id).retro.good, '아이들이 즐거워함'); // 백업·복원에 포함
 });
+test('버전 표시: VERSION 은 변경 목록 맨 앞과 같고, 번호는 중복 없이 MB11 형식', async () => {
+  const { VERSION, CHANGELOG } = await import('../public/js/version.js');
+  assert.equal(VERSION, CHANGELOG[0].v); assert.match(VERSION, /^MB11(\.\d+)?$/);
+  assert.equal(new Set(CHANGELOG.map(x => x.v)).size, CHANGELOG.length);
+  for (const x of CHANGELOG) { assert.match(x.v, /^MB11(\.\d+)?$/); assert.match(x.date, /^\d{4}-\d{2}-\d{2}$/); assert.ok(x.items.length > 0 && x.items.every(i => typeof i === 'string' && i)); }
+  assert.equal(CHANGELOG.at(-1).v, 'MB11');
+});
