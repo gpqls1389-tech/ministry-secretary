@@ -13,6 +13,9 @@ import { imgSrc, emptyImgFor, bannerFor } from './images.js';
 import { GUIDES, GUIDE_CHECKED, guideKeyFor, guideTasks } from './guides.js';
 import { VERSION, CHANGELOG } from './version.js';
 import { enhanceDates, ganttChart, lineChart, escapeHtml } from './ui.js';
+import { isStandalone, canPromptInstall, promptInstall, fetchLatestVersion, watchUpdates } from './install.js';
+// 오래 켜 둔 창이 옛 버전에 머물지 않게, 새 버전이 올라오면 알려 준다.
+function showUpdateBar(v) { if (document.getElementById('update-bar')) return; const b = document.createElement('div'); b.id = 'update-bar'; b.className = 'update-bar noprint'; b.setAttribute('role', 'status'); b.innerHTML = `새 버전 <b>${esc(v)}</b>이 나왔어요. <button class="sm pri" id="update-go">새로 고침</button> <button class="sm ghost" id="update-x" aria-label="닫기">✕</button>`; document.body.appendChild(b); b.querySelector('#update-go').onclick = () => location.reload(); b.querySelector('#update-x').onclick = () => b.remove(); }
 const A = await initAuth(); { const lg = document.getElementById('logo'); if (lg && imgSrc('logo')) lg.src = imgSrc('logo'); } // 로그인 서버가 있으면 로그인 후 '내' 데이터를 불러오고, 없으면 이 브라우저(localStorage)에 저장
 let store;
 try { store = createStore(A.storage); }
@@ -124,6 +127,7 @@ function render() {
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+watchUpdates(VERSION, showUpdateBar);
 const page = (ico, title, sub, body, actions = '') => { $('#main').innerHTML = `<div class="pagehead"><div><h1 class="title"><span class="ico">${ico}</span>${esc(title)}</h1><p class="sub">${sub}</p></div>${actions ? `<div class="actions noprint">${actions}</div>` : ''}</div>${tipHtml()}${body}`; };
 const barHtml = (spent, budget) => { const p = budget ? Math.min(100, Math.round(spent / budget * 100)) : 0; return `<div class="bar ${budget && spent > budget ? 'over' : p >= 85 ? 'warn' : ''}"><i style="width:${p}%"></i></div>`; };
 const yearSel = () => `<select data-year>${[UI.year - 1, UI.year, UI.year + 1].map(y => `<option${y === UI.year ? ' selected' : ''} value="${y}">${y}년</option>`).join('')}</select>`;
@@ -471,6 +475,9 @@ function vSettings() {
   <h2>백업·복원 (JSON 파일)</h2><div class="row"><button data-act="export">내보내기(.json 다운로드)</button><button data-act="import">파일에서 가져오기</button><input type="file" id="file" accept="application/json,.json" hidden></div>
   <p class="mute small">내보낸 파일에는 이름 등 개인정보가 들어 있을 수 있으니 안전한 곳에만 보관하세요. 가져오면 현재 데이터가 파일 내용으로 바뀝니다(바꾸기 전에 확인합니다).</p>
   <h2>화면 미리보기</h2><div class="row"><button data-act="loginPreview">로그인 화면 미리보기</button><span class="mute small">서버 없이 모양만 보여 줘요(실제 로그인 아님).</span></div>
+  <h2>앱으로 설치 (컴퓨터·휴대폰)</h2><div class="callout"><span>🖥️</span><div class="sp">${isStandalone() ? '지금 <b>설치된 앱</b>으로 실행 중이에요.' : '이 사이트를 <b>앱처럼 설치</b>하면 바탕화면·작업 표시줄에서 바로 열 수 있어요.'} 설치한 앱은 열 때마다 <b>최신 버전</b>(지금 ${esc(VERSION)})을 불러와서 <b>자동으로 업그레이드</b>돼요. ${acct ? '로그인한 계정의 데이터는 서버에 있어서 앱에서도 <b>그대로 이어져요</b>.' : '지금은 데이터가 이 브라우저에만 저장돼요. 설치 전에 아래 ‘내보내기’로 백업하세요.'}</div></div>
+  <div class="row" style="margin:12px 0">${!isStandalone() && canPromptInstall() ? '<button class="pri" data-act="installApp">앱으로 설치</button>' : ''}<button data-act="checkUpdate">새 버전 확인</button></div>
+  <details class="small"><summary>설치 방법과 알아 둘 점</summary><ul><li><b>컴퓨터(Chrome·Edge)</b>: 주소창 오른쪽의 설치 아이콘, 또는 브라우저 메뉴에서 ‘앱으로 설치’(이름은 버전에 따라 조금 달라요)를 고르세요. 위의 ‘앱으로 설치’ 버튼이 보이면 그 버튼으로도 설치돼요.</li><li><b>Mac Safari</b>: 파일 메뉴 → ‘Dock에 추가’. <b>휴대폰</b>: 브라우저 메뉴의 ‘홈 화면에 추가’.</li><li>설치 버튼이 안 보이면 이미 설치했거나 이 브라우저가 지원하지 않는 경우예요. 그래도 사이트 주소로 그대로 쓸 수 있어요.</li><li>설치한 앱도 <b>인터넷 연결이 필요</b>해요(오프라인에서는 열리지 않아요).</li><li>설치한 앱에서 로그인 상태나 로컬 데이터가 브라우저와 따로 보이면, 설정의 ‘내보내기’·‘가져오기’로 옮기세요.</li><li>지우려면 앱 창의 메뉴(또는 운영체제의 앱 목록)에서 제거하세요. 로그인한 데이터는 지워지지 않아요.</li></ul></details>
   <h2>버전 기록 <span class="mute small">현재 ${esc(VERSION)}</span></h2><div class="changelog">${CHANGELOG.map(x => `<details ${x.v === VERSION ? 'open' : ''}><summary><b>${esc(x.v)}</b> <span class="mute small">${esc(x.date)}</span>${x.v === VERSION ? ' <span class="tag ok">현재</span>' : ''}</summary><ul class="small">${x.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`).join('')}</div>
   <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>PDF 글자 읽기에는 <b>pdf.js</b> 6.5.438(Mozilla, Apache License 2.0)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/pdfjs/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>달력·타임라인·차트·디자인 변수에는 <b>vanilla-calendar-pro</b> 3.4.0, <b>frappe-gantt</b> 1.2.2, <b>uPlot</b> 1.6.32, <b>Open Props</b> 1.7.23(모두 MIT License)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/vanilla-calendar-pro/LICENSE.txt" target="_blank" rel="noopener">달력</a> · <a href="vendor/frappe-gantt/LICENSE.txt" target="_blank" rel="noopener">타임라인</a> · <a href="vendor/uplot/LICENSE.txt" target="_blank" rel="noopener">차트</a> · <a href="vendor/open-props/LICENSE.txt" target="_blank" rel="noopener">변수</a></p>
   <h2>개인정보 안내</h2><ul class="small"><li>이 앱은 보호자 연락처·알레르기·계좌·주민번호를 입력받지 않습니다.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
@@ -566,6 +573,8 @@ const ACT = {
   delSchedule: async d => { if (await ask('이 일정을 삭제할까요?', '삭제')) { store.deleteSchedule(Number(d.id)); location.hash = '#plan'; toast('삭제했어요.'); } },
   delSeries: async d => { const id = Number(d.id); const n = store.seriesCount(d.kind, id); if (await ask(`이 날짜부터 같은 반복으로 만든 ${n}개를 모두 삭제할까요?${d.kind === 'service' ? '\n해당 예배의 출석 기록도 함께 지워져요.' : ''}\n되돌릴 수 없어요.`, '삭제')) { store.deleteSeries(d.kind, id); location.hash = d.kind === 'service' ? '#services' : '#plan'; toast('삭제했어요.'); } },
   printPage: () => window.print(),
+  installApp: async () => { const r = await promptInstall(); if (r === 'accepted') toast('설치했어요. 바탕화면·시작 메뉴에서 ‘목회 비서’를 열어 보세요.'); else if (r === 'unavailable') toast('이 브라우저에서는 설치 버튼을 쓸 수 없어요. 아래 설치 방법을 보세요.', true); render(); },
+  checkUpdate: async () => { const v = await fetchLatestVersion(); if (!v) { toast('새 버전을 확인하지 못했어요. 인터넷 연결을 확인하세요.', true); return; } if (v !== VERSION) showUpdateBar(v); else toast(`최신 버전이에요 (${VERSION}).`); },
   settle: d => { guard(() => store.setSettled(Number(d.id), d.on === '1')); render(); },
   finishEvent: d => { const e = store.ev(Number(d.id)); if (e) guard(() => store.saveEvent({ ...e, status: 'done' }), '행사를 완료로 표시했어요.'); render(); },
   retro: d => { const e = store.ev(Number(d.id)); if (!e) return; form({ title: '행사 회고', intro: '<p class="mute small">다음 담당자가 이 글만 읽고 시작할 수 있게 적어 주세요. 이름·연락처 같은 개인정보는 적지 마세요.</p>', values: e.retro || {}, fields: [{ k: 'good', label: '잘된 점', type: 'textarea' }, { k: 'change', label: '바꿀 점', type: 'textarea' }, { k: 'next', label: '다음 담당자가 언제 무엇부터 할지', type: 'textarea', ph: '예: 행사 8주 전에 장소 예약부터' }], onSubmit: o => { guard(() => store.saveRetro(Number(d.id), o), '회고를 저장했어요.'); render(); } }); },
