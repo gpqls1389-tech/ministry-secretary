@@ -323,6 +323,24 @@ dialog { border-radius:var(--radius-lg); } dialog::backdrop { background:rgba(20
 .auth-pane { background:var(--bg); }
 .auth-card { box-shadow:var(--shadow2); }
 
+/* ===== 홈(MB11.8): 날짜가 제목, 오늘 할 일과 브리핑을 나란히, 숫자는 한 줄 띠로 ===== */
+.vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.pagehead .sub .lcdot { margin-right:8px; }
+.today-line { margin:6px 0 0; font-size:1.05rem; color:var(--ink-2); } .today-line b { font-weight:800; color:var(--ink); } .today-line b.late { color:var(--orange); }
+.seasoncard { display:flex; align-items:center; gap:14px; padding:14px 18px; margin:0 0 16px; border-radius:var(--radius-md); background:var(--side); color:var(--side-text); }
+.seasoncard .sdot { width:12px; height:12px; border-radius:50%; flex-shrink:0; background:var(--litu,#3f9d5f); box-shadow:0 0 0 4px color-mix(in srgb, var(--litu,#3f9d5f) 30%, transparent); }
+.seasoncard b { display:block; color:#fff; font-size:1.02rem; letter-spacing:-.01em; } .seasoncard span:not(.sdot) { font-size:.92rem; color:#b6c4ba; }
+.seasoncard button { flex-shrink:0; white-space:nowrap; background:#fff; color:var(--ink); border-color:#fff; font-weight:600; }
+.homegrid { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:16px; align-items:start; margin-bottom:16px; } .homegrid > section { margin:0 !important; }
+.strip { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:#fff; border:1px solid var(--line); border-radius:var(--radius-md); margin-bottom:20px; }
+.strip > div { padding:16px 20px; border-left:1px solid var(--line); min-width:0; } .strip > div:first-child { border-left:0; }
+.strip .k { font-size:13px; font-weight:600; color:var(--mute); } .strip .v { font-size:26px; font-weight:800; letter-spacing:-.03em; line-height:1.25; margin:4px 0 2px; white-space:nowrap; font-variant-numeric:tabular-nums lining-nums; } .strip .s { font-size:13px; color:var(--mute); min-height:20px; }
+.strip .warn .v { color:var(--orange); } .strip .key { background:var(--primary-bg); border-radius:0 var(--radius-md) var(--radius-md) 0; } .strip .key .v { color:var(--primary-dk); }
+.pagehead .actions button.pri { padding:8px 20px; }
+.home-head { align-items:flex-start; } .home-head > div:first-child { flex:1 1 100%; } .home-head .actions { margin-top:2px; }
+@media (max-width:1000px) { .homegrid { grid-template-columns:1fr; } .strip { grid-template-columns:1fr 1fr; } .strip > div:nth-child(3) { border-left:0; } .strip > div:nth-child(n+3) { border-top:1px solid var(--line); } .strip .key { border-radius:0 0 var(--radius-md) 0; } .seasoncard { flex-wrap:wrap; } }
+@media (max-width:860px) { .title { font-size:27px; } .strip .v { font-size:21px; } .strip > div { padding:14px; } }
+
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }
