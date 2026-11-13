@@ -394,6 +394,20 @@ dialog { border-radius:var(--radius-lg); } dialog::backdrop { background:rgba(20
 table.lessons td { padding:6px 8px; } table.lessons .cell-in { width:100%; }
 code { background:var(--soft); padding:1px 6px; border-radius:4px; font-size:.9em; }
 
+/* ===== MB12: 중고등부(빨강)와 부서 종류별 색. 부서 번호가 아니라 종류(kid·teen·youth)로 색을 정해요 ===== */
+:root { --teen:#d62f2f; --teen-dk:#9b1c1c; --teen-bg:#fdecec; --teen-line:#f2b8b8; --teen-grad:#fff6f6; }
+body[data-theme="teen"] { --primary:var(--teen); --primary-dk:var(--teen-dk); --primary-bg:var(--teen-bg); --primary-line:var(--teen-line); --primary-grad:var(--teen-grad); --side-ac:#ff8a8a; }
+.tag.teen { background:var(--teen-bg); color:var(--teen-dk); } .tag.teen::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.7; }
+#dept-box { flex-wrap:wrap; } #side .dept-box button { flex:1 1 30%; }
+#side .dept-box button.dk-kid::before { background:var(--kid); } #side .dept-box button.dk-teen::before { background:var(--teen); } #side .dept-box button.dk-youth::before { background:var(--yth); } #side .dept-box button.dk-all::before { background:#3f9d5f; }
+#side .dept-box button.dk-kid.on { background:var(--kid); color:var(--on-kid); } #side .dept-box button.dk-teen.on { background:var(--teen); color:#fff; } #side .dept-box button.dk-youth.on { background:#1c6fc4; color:#fff; } #side .dept-box button.dk-all.on { background:#1f7a44; color:#fff; }
+#side .dept-box button.on::before { background:currentColor !important; }
+.avatar.dk-kid { background:var(--kid-bg); color:var(--kid-dk); } .avatar.dk-teen { background:var(--teen-bg); color:var(--teen-dk); } .avatar.dk-youth { background:var(--yth-bg); color:var(--yth-dk); }
+.cal a.dk-kid { border-left-color:var(--kid); background:var(--kid-bg); } .cal a.dk-teen { border-left-color:var(--teen); background:var(--teen-bg); } .cal a.dk-youth { border-left-color:var(--yth); background:var(--yth-bg); }
+.callegend .lg.dk-kid { background:var(--kid); } .callegend .lg.dk-teen { background:var(--teen); } .callegend .lg.dk-youth { background:var(--yth); }
+table.growth td.c, table.growth th.c { text-align:center; } table.growth input[type=checkbox] { width:20px; height:20px; accent-color:var(--primary); }
+.btnlike input[type=file] { display:none; } label.btnlike { cursor:pointer; font-weight:500; padding:6px 14px; border-radius:var(--radius-sm); }
+
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }

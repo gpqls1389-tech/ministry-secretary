@@ -200,7 +200,7 @@ export function repeatDates(start, rule, until) {
 }
 
 // ===== 일정(교사 기도회·회의 등) =====
-export const SCHEDULE_TYPES = ['교사 기도회', '교사 회의', '부서 회의', '교사 연수', '심방·돌봄', '준비 모임', '기타'];
+export const SCHEDULE_TYPES = ['교사 기도회', '교사 회의', '부서 회의', '교사 연수', '심방·돌봄', '준비 모임', '시험 기간', '소그룹 모임', '기타'];
 
 // ===== 심방·돌봄 기록, 비품 =====
 export const VISIT_TYPES = ['심방', '전화', '문자·메신저', '가정방문', '면담', '기타'];

@@ -10,7 +10,7 @@ test('가상 데이터: 첫 실행에 이번 주 일정·준비 업무·예산�
   const s = mk(); const h = s.home(null, TODAY);
   assert.equal(h.from, '2026-11-09'); assert.equal(h.to, '2026-11-15');
   assert.ok(h.week.some(i => i.type === 'service'), '이번 주 예배'); assert.ok(h.week.some(i => i.type === 'event'), '이번 주 행사');
-  assert.ok(h.tasks.length > 0 && h.tasks.some(t => t.overdue)); assert.equal(h.budget.length, 2);
+  assert.ok(h.tasks.length > 0 && h.tasks.some(t => t.overdue)); assert.equal(h.budget.length, 3, '아동부·중고등부·청년부');
   assert.ok(s.get().demo);
 });
 
@@ -139,4 +139,59 @@ test('교재: 틀로 만들고 목차를 붙여 넣어 한 해만 골라 주일�
   s.setServiceLesson(at('2027-01-03').id, { ...at('2027-01-03').lesson, activity: '만들기: 빛과 어둠 카드' }, ['title', 'activity']);
   assert.deepEqual(at('2027-01-03').lesson.pick, ['title', 'activity']); assert.equal(at('2027-01-03').lesson.activity, '만들기: 빛과 어둠 카드');
   assert.throws(() => s.applyCurriculum({ cid, dept_id: 1, year: 4, start: '2027-01-01', until: '2027-02-01' }), ValidationError, '없는 해');
+});
+
+test('MB12 부서: 예전 데이터에 중고등부(teen)가 아동부 다음에 생기고, 지운 뒤에는 다시 생기지 않는다', async () => {
+  const { emptyState, normalizeState, validateState } = await import('../public/js/store.js');
+  const old = emptyState('2026-11-13'); delete old.curricula; old.depts = [{ id: 1, name: '아동부' }, { id: 2, name: '청년부' }];
+  const m = mem(); m.setItem(KEY, JSON.stringify(old)); const s = createStore(m, () => TODAY);
+  assert.deepEqual(s.depts().map(d => `${d.name}:${d.kind}`), ['아동부:kid', '중고등부:teen', '청년부:youth']);
+  assert.equal(s.deptKind(3), 'teen');
+  const j = JSON.parse(JSON.stringify(s.get())); j.depts = j.depts.filter(d => d.kind !== 'teen'); validateState(j); assert.equal(normalizeState(j).depts.length, 2, '사용자가 지운 중고등부는 다시 만들지 않음');
+});
+
+test('MB12 주간 체크·달란트: 부서 종류별 기본 항목, 사람별 합계(가나다·반 순), 항목 저장 검사', () => {
+  const s = mk(); s.startEmpty();
+  assert.deepEqual(s.checks(1).map(c => c.key), ['memory', 'bible', 'home', 'bring']); assert.ok(s.checks(3).some(c => c.key === 'qt'));
+  const a = s.addPerson({ name: '나무', kind: 'child', dept_id: 1, class_name: '1반' }), b = s.addPerson({ name: '가람', kind: 'child', dept_id: 1, class_name: '1반' });
+  const v1 = s.saveService({ dept_id: 1, title: '주일예배', date: '2026-11-01' }), v2 = s.saveService({ dept_id: 1, title: '주일예배', date: '2026-11-08' });
+  s.setGrowth(v1, a, 'memory', true); s.setGrowth(v1, a, 'bible', true); s.setGrowth(v2, a, 'memory', true); s.setGrowth(v2, b, 'home', true); s.setGrowth(v2, b, 'home', false);
+  const T = s.growthTotals(1, '2026-01-01', '2026-12-31'); assert.equal(T.services, 2);
+  assert.deepEqual(T.rows.map(r => r.person.name), ['가람', '나무'], '순위가 아니라 이름 순'); assert.equal(T.rows[1].points, 5); assert.equal(T.rows[1].counts.memory, 2); assert.equal(T.rows[0].points, 0);
+  assert.throws(() => s.setGrowth(v1, a, 'qt', true), ValidationError, '아동부에 없는 항목');
+  s.saveChecks(1, [{ key: 'memory', label: '암송', points: 3 }, { key: 'memory', label: '중복', points: 1 }]); assert.equal(s.checks(1).length, 1);
+  assert.throws(() => s.saveChecks(1, Array.from({ length: 7 }, (_, i) => ({ key: 'k' + i, label: 'x' + i }))), ValidationError);
+  s.deleteService(v1); assert.ok(!s.get().growth.some(g => g.service_id === v1), '예배를 지우면 체크도 지움');
+});
+
+test('MB12 시험 기간·장기 부재·새가족: 행사 겹침 알림, 연락 주기, 다음 단계가 브리핑에 나온다', () => {
+  const s = mk(); s.startEmpty();
+  s.saveSchedule({ dept_id: 3, title: '기말고사', type: '시험 기간', date: '2026-12-07', end: '2026-12-11' });
+  assert.throws(() => s.saveSchedule({ dept_id: 3, title: 'x', type: '시험 기간', date: '2026-12-07', end: '2026-12-01' }), ValidationError);
+  const e = s.saveEvent({ dept_id: 3, title: '겨울 수련회', start_date: '2026-12-10', end_date: '2026-12-12' });
+  assert.equal(s.examOverlap(3, '2026-12-10', '2026-12-12').length, 1); assert.equal(s.examOverlap(1, '2026-12-10', '2026-12-12').length, 0, '다른 부서 시험은 무관');
+  assert.ok(s.calendar(3, '2026-12-09', '2026-12-09').some(i => i.kind === '시험 기간'), '여러 날 일정은 중간 날짜에도 보인다');
+  // 장기 부재: 출석부에서 빠지고, 연락 주기가 지나면 브리핑
+  const p = s.addPerson({ name: '청년 갑', kind: 'youth', dept_id: 2 });
+  s.setAway(p, { reason: '군 복무', start: '2026-09-01', until: '2027-12-01' }); assert.equal(s.person(p).away.every, 30);
+  assert.ok(!s.people({ deptId: 2 }).some(x => x.id === p)); let A = s.awayList(2, TODAY); assert.ok(A[0].due);
+  s.addVisit({ person_id: p, date: '2026-11-05', type: '전화', note: '안부' }); A = s.awayList(2, TODAY); assert.equal(A[0].last, '2026-11-05'); assert.equal(A[0].next, '2026-12-05'); assert.ok(!A[0].due);
+  s.returnFromAway(p); assert.equal(s.person(p).status, 'active');
+  // 새가족
+  const n = s.addPerson({ name: '새가족 을', kind: 'youth', dept_id: 2 }); s.startNewcomer(n, '2026-10-30');
+  s.setNewcomerStep(n, 'welcome', true); let N = s.newcomers(2, TODAY); assert.equal(N[0].next[0], 'class'); assert.equal(N[0].days, 11);
+  const B = s.briefing(null, TODAY); assert.ok(B.some(c => c.title === '새가족 정착')); assert.ok(B.some(c => c.id === e && /시험/.test(c.reason)));
+  s.endNewcomer(n); assert.equal(s.newcomers(2, TODAY).length, 0);
+});
+
+test('MB12 교재 파일 가져오기·내보내기, 매달 다섯째 주일 비우기', () => {
+  const s = mk(); s.startEmpty();
+  assert.throws(() => s.importCurriculum({ name: 'x' }), ValidationError);
+  const lessons = Array.from({ length: 8 }, (_, i) => ({ year: 1, no: i + 1, title: `과 ${i + 1}`, scripture: '창 1:1' }));
+  const id = s.importCurriculum({ type: 'mokhoe-curriculum', version: 1, name: '시험 교재', publisher: '히즈쇼', years: 1, lessons });
+  const ex = s.exportCurriculum(id); assert.equal(ex.type, 'mokhoe-curriculum'); assert.equal(ex.lessons.length, 8);
+  // 2026-11-01(일)부터: 11/29는 다섯째 주일이라 비운다
+  const r = s.applyCurriculum({ cid: id, dept_id: 1, year: 1, start: '2026-11-01', until: '2026-12-31', create: 'yes', skip5: 'yes' });
+  assert.equal(r.fifth, 1); const d = s.services(1).filter(x => x.lesson).map(x => x.date).sort();
+  assert.ok(!d.includes('2026-11-29')); assert.equal(d[4], '2026-12-06');
 });

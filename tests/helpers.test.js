@@ -56,7 +56,7 @@ test('가져오기 검증: 구조가 깨진 파일은 거부하고 현재 데이
   ];
   for (const b of bads) assert.throws(() => s.importJson(JSON.stringify(b)), ValidationError);
   assert.equal(s.exportJson(), before);
-  s.importJson(JSON.stringify(good)); assert.equal(s.people().length, good.people.length);
+  s.importJson(JSON.stringify(good)); assert.equal(s.people().length, good.people.filter(p => p.status === 'active').length);
 });
 
 test('손상된 저장값은 가상 데이터로 덮어쓰기 전에 원본을 따로 보관', () => {

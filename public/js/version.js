@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB11.15';
+export const VERSION = 'MB12';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '11.15.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '12.0.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB12', date: '2026-11-13', items: ['중고등부 부서 추가(빨간색). 부서마다 종류(아동부·중고등부·청년부)를 두고 색·기본 도구를 나눔', '새 메뉴 ‘부서 사역’: 주간 체크·달란트(아동부), 학교 시험 기간과 행사 겹침 알림(중고등부), 새가족 정착 단계와 군 복무·유학 등 장기 부재 연락 관리(청년부), 가정 연계 안내문', '예배 화면에 주간 체크(암송·큐티 등) 표, 명단에 장기 부재 상태', '교재 파일 가져오기·내보내기, 히즈쇼 교재 틀(바이블랜드·틴즈·성경탐험·예수님과 나·하이틴즈), 매달 다섯째 주일 비우기', '설치 프로그램 12.0.0'] },
   { v: 'MB11.15', date: '2026-11-13', items: ['교재·공과 연간 배치 추가(예배 → 교재·공과): 파이디온·히즈쇼·감리회·예장통합 교재 틀 또는 직접 만들기, 목차 붙여 넣기', '2~3년 주기 교재는 한 해만 골라 배치, 특별예배가 있는 주일은 건너뛰고 다른 예배를 넣으면 공과를 한 주씩 밀기(당기기로 되돌리기)', '예배마다 공과 항목(제목·본문·암송·활동·준비물·메모) 중 필요한 것만 고르기', '설치 프로그램 11.15.0'] },
   { v: 'MB11.14', date: '2026-11-13', items: ['연말 부서 보고서 추가(일정·계획 → 연간·절기 계획, 회계에서 열기): 출석·인원·행사·심방·결산을 한 해 단위로 자동 정리하고 인쇄·PDF 저장', '총평과 내년 사역 목표를 적어 저장, 내년 행사 일정·예산 초안 자동 제안', '설치 프로그램 11.14.0'] },
   { v: 'MB11.13', date: '2026-11-13', items: ['회계 화면 정리: 요약 숫자 5개를 한 줄 띠로 합치고 지출 사용률 막대 추가', '거래 내역 버튼을 표 위 한 줄로 정리(등록은 강조, 가져오기·CSV는 가볍게)', '설치 프로그램 11.13.0'] },

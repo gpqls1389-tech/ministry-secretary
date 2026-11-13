@@ -388,11 +388,11 @@ test('행사 날짜 변경 시 마감일 이동(완료 업무 제외), 결산 �
   s.saveEvent({ ...s.ev(id), title: '성탄 발표회(수정)' }); assert.ok(s.ev(id).retro && s.ev(id).title.endsWith('(수정)')); // 행사 수정해도 회고 유지
   const s2 = mk(); s2.importJson(s.exportJson()); assert.equal(s2.ev(id).retro.good, '아이들이 즐거워함'); // 백업·복원에 포함
 });
-test('버전 표시: VERSION 은 변경 목록 맨 앞과 같고, 번호는 중복 없이 MB11 형식', async () => {
+test('버전 표시: VERSION 은 변경 목록 맨 앞과 같고, 번호는 중복 없이 MB주번호(.부번호) 형식', async () => {
   const { VERSION, CHANGELOG } = await import('../public/js/version.js');
-  assert.equal(VERSION, CHANGELOG[0].v); assert.match(VERSION, /^MB11(\.\d+)?$/);
+  assert.equal(VERSION, CHANGELOG[0].v); assert.match(VERSION, /^MB1[1-9](\.\d+)?$/);
   assert.equal(new Set(CHANGELOG.map(x => x.v)).size, CHANGELOG.length);
-  for (const x of CHANGELOG) { assert.match(x.v, /^MB11(\.\d+)?$/); assert.match(x.date, /^\d{4}-\d{2}-\d{2}$/); assert.ok(x.items.length > 0 && x.items.every(i => typeof i === 'string' && i)); }
+  for (const x of CHANGELOG) { assert.match(x.v, /^MB1[1-9](\.\d+)?$/); assert.match(x.date, /^\d{4}-\d{2}-\d{2}$/); assert.ok(x.items.length > 0 && x.items.every(i => typeof i === 'string' && i)); }
   assert.equal(CHANGELOG.at(-1).v, 'MB11');
 });
 test('외부 UI 부품(vendor): 파일이 받은 그대로이고 라이선스가 함께 있으며, 사용자 글은 이스케이프된다', async () => {
@@ -443,9 +443,9 @@ test('데스크톱 프로그램 안내: 버전 표식 읽기·비교, 다운로�
   assert.ok(DESKTOP.download.startsWith('https://github.com/gpqls1389-tech/ministry-secretary/releases/') && DESKTOP.download.endsWith('/' + DESKTOP.file)); assert.ok(DESKTOP.page.startsWith('https://github.com/gpqls1389-tech/ministry-secretary/releases'));
   const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8'); assert.ok(app.includes('코드 서명이 없는 파일') && app.includes('스마트 앱 컨트롤'));
 });
-test('버전 연동: 사이트 MB11.N = 설치 프로그램 11.N.0, 할 일(저장·검증·알림 대상 고르기)', async () => {
+test('버전 연동: 사이트 MB주.N = 설치 프로그램 주.N.0, 할 일(저장·검증·알림 대상 고르기)', async () => {
   const { VERSION, DESKTOP } = await import('../public/js/version.js'); const pkg = JSON.parse(fs.readFileSync(new URL('../desktop/package.json', import.meta.url), 'utf8'));
-  const m = /^MB11(?:\.(\d+))?$/.exec(VERSION); assert.ok(m); const want = `11.${m[1] || 0}.0`; assert.equal(pkg.version, want, '사이트를 고칠 때마다 desktop/package.json 버전도 같은 번호로 올려야 함'); assert.equal(DESKTOP.version, want);
+  const m = /^MB(1[1-9])(?:\.(\d+))?$/.exec(VERSION); assert.ok(m); const want = `${m[1]}.${m[2] || 0}.0`; assert.equal(pkg.version, want, '사이트를 고칠 때마다 desktop/package.json 버전도 같은 번호로 올려야 함'); assert.equal(DESKTOP.version, want);
   const wf = fs.readFileSync(new URL('../.github/workflows/desktop-release.yml', import.meta.url), 'utf8'); assert.match(wf, /branches:\s*\[main\]/); assert.match(wf, /paths:\s*\['desktop\/\*\*'/);
   const { dueTodos, kstNow } = await import('../public/js/reminders.js'); const { validateState } = await import('../public/js/store.js');
   const s = mk(); const T = '2026-11-10';

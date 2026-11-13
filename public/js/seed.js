@@ -53,5 +53,13 @@ export function makeSeed(today) {
   S.plans[`2-${year}`] = { goal: '[가상] 삶으로 예배하는 청년 공동체', themes: { 1: '새해 비전', 8: '수련회', 11: '감사' } };
   let sid2 = 1; S.seasons.push({ id: sid2++, dept_id: 1, year, name: '대림절', start: `${year}-11-29`, end: `${year}-12-24`, theme: '임마누엘', scripture: '이사야 7:14 (본문 확인 필요)', plan: '대림초 점화, 4주 공과' });
   S.seasons.push({ id: sid2++, dept_id: 1, year, name: '성탄절', start: `${year}-12-25`, end: `${year}-12-25`, theme: '말씀이 육신이 되어', scripture: '요한복음 1:14 (본문 확인 필요)', plan: '성탄 발표회, 나눔' });
+  // 중고등부(MB12, 가상): 학생 몇 명, 최근 주일예배 출석, 시험 기간, 장기 부재 청년, 새가족
+  S.depts.splice(1, 0, { id: 3, name: '중고등부', kind: 'teen' }); S.depts[0].kind = 'kid'; S.depts[2].kind = 'youth'; S.teenAdded = true;
+  const teen = [P('학생 A', 'teen', 3, '중1반', 2013), P('학생 B', 'teen', 3, '중1반', 2013), P('학생 C', 'teen', 3, '고1반', 2010), P('학생 D', 'teen', 3, '고1반', 2010)];
+  let sid3 = 500; for (let i = 3; i >= 0; i--) { const id = sid3++; S.services.push({ id, dept_id: 3, title: '중고등부 예배', date: addDays(sunday, -7 * i), time: '11:00', place: '비전홀', scripture: '(본문 입력)', sermon_title: `[가상] ${titles[7 - i]}`, leader: '중고등부 담당', order_text: '찬양 · 기도 · 말씀 · 소그룹', kind: 'regular' }); if (i > 0) teen.forEach((p, k) => S.attendance.push({ service_id: id, person_id: p, present: (k + i) % 4 !== 0, class_at: '', dept_at: 3 })); }
+  SC(3, '[가상] 2학기 기말고사', '시험 기간', addDays(sunday, 15), '', ''); S.schedules[S.schedules.length - 1].end = addDays(sunday, 19);
+  S.growth = [{ service_id: kidSvc[kidSvc.length - 2], person_id: kids[0], items: ['memory', 'bible'] }, { service_id: kidSvc[kidSvc.length - 2], person_id: kids[1], items: ['memory'] }];
+  const away = S.people.find(p => p.id === yth[3]); away.status = 'away'; away.away = { reason: '군 복무', start: addDays(today, -50), until: addDays(today, 400), every: 30, note: '[가상]' };
+  S.people.find(p => p.id === yth[2]).newcomer = { reg: addDays(today, -10), steps: { welcome: addDays(today, -8) } };
   S.nextId = 1000; return S;
 }
