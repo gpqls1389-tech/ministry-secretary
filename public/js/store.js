@@ -1,5 +1,6 @@
 // 목회 비서 데이터 로직. 브라우저(localStorage)와 Node 테스트 양쪽에서 동작하도록 저장소를 주입받는다.
 import { makeSeed } from './seed.js';
+import { LESSON_KEYS, FIELD_MAX, MAX_LESSONS, MAX_CURRICULA, CURRICULUM_PRESETS, PICK_PRESETS, blankLessons, cleanLesson, sundaysBetween } from './curriculum.js';
 import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
 
 export const KEY = 'ministry-secretary:v1';
@@ -55,13 +56,16 @@ export function validateState(j) {
   for (const b of j.budgets) if (!dids.has(b.dept_id) || !Number.isSafeInteger(b.amount) || b.amount < 0) bad('예산');
   for (const t of j.transactions) if (!isId(t.id) || !dids.has(t.dept_id) || !isDate(t.date) || !['income', 'expense'].includes(t.kind) || !Number.isSafeInteger(t.amount) || t.amount <= 0 || (t.event_id != null && !eids.has(t.event_id)) || (t.receipt != null && !RECEIPT_ID.test(String(t.receipt)))) bad('거래');
   for (const s of j.seasons) if (!dids.has(s.dept_id) || typeof s.name !== 'string') bad('절기');
+  if (j.curricula !== undefined && (!Array.isArray(j.curricula) || j.curricula.length > MAX_CURRICULA)) bad('교재');
+  for (const c of (j.curricula || [])) if (!isId(c.id) || typeof c.name !== 'string' || !Number.isInteger(c.years) || c.years < 1 || c.years > 3 || !Array.isArray(c.lessons) || c.lessons.length > MAX_LESSONS || !(c.dept_id === 0 || dids.has(c.dept_id)) || c.lessons.some(l => !Number.isInteger(l.year) || !Number.isInteger(l.no) || LESSON_KEYS.some(k => typeof l[k] !== 'string' || l[k].length > FIELD_MAX[k]))) bad('교재');
+  for (const s of j.services) if (s.lesson != null && (typeof s.lesson !== 'object' || LESSON_KEYS.some(k => typeof s.lesson[k] !== 'string' || s.lesson[k].length > FIELD_MAX[k]) || !Array.isArray(s.lesson.pick) || s.lesson.pick.some(k => !LESSON_KEYS.includes(k)))) bad('예배 공과');
   return j;
 }
 
 // 비어 있는 새 데이터(부서만 있음). 새 계정과 ‘실제 데이터로 시작’에서 사용
 export function emptyState(todayStr = kstToday()) {
   const base = makeSeed(todayStr);
-  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [], visits: [], assets: [], links: [], todos: [] };
+  return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [], visits: [], assets: [], links: [], todos: [], curricula: [] };
 }
 
 export function createStore(storage, today = kstToday) {
@@ -71,10 +75,16 @@ export function createStore(storage, today = kstToday) {
     catch { throw new ValidationError('저장 공간이 부족하거나 브라우저가 저장을 막아 저장하지 못했습니다. 지금 설정에서 ‘내보내기’로 백업해 두세요.'); }
   };
   const nid = () => S.nextId++;
+  // 공과를 배치할 때 ‘예배의 본문·설교 제목이 비어 있으면 채우기’를 골랐다면 채우고, 공과를 옮기거나 지울 때 채웠던 값만 되돌린다
+  const fill = sv => { const l = sv.lesson; if (!l || !l.fill) return; l.filled = {};
+    if (!sv.scripture && l.scripture && l.pick.includes('scripture')) { sv.scripture = l.scripture; l.filled.scripture = true; }
+    if (!sv.sermon_title && l.title && l.pick.includes('title')) { sv.sermon_title = l.title; l.filled.title = true; } };
+  const unfill = sv => { const l = sv.lesson; if (!l || !l.filled) return;
+    if (l.filled.scripture && sv.scripture === l.scripture) sv.scripture = ''; if (l.filled.title && sv.sermon_title === l.title) sv.sermon_title = ''; delete l.filled; };
   let recovered = false;
   function load() {
     let raw = null;
-    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; j.todos = j.todos || []; S = j; return S; } } catch {
+    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; j.todos = j.todos || []; j.curricula = j.curricula || []; S = j; return S; } } catch {
       // 저장된 값이 손상된 경우: 가상 데이터로 덮어쓰기 전에 원본을 따로 남겨 둔다(복구 가능)
       if (raw) { try { storage.setItem(KEY + ':broken', raw); recovered = true; } catch { /* 무시 */ } }
     }
@@ -447,6 +457,90 @@ export function createStore(storage, today = kstToday) {
     monthly(deptId, year) {
       return Array.from({ length: 12 }, (_, i) => { const tx = api.transactions({ deptId, year, month: i + 1 }); const income = tx.filter(t => t.kind === 'income').reduce((a, t) => a + t.amount, 0), expense = tx.filter(t => t.kind === 'expense').reduce((a, t) => a + t.amount, 0); return { month: i + 1, income, expense, net: income - expense }; });
     },
+
+    // ----- 교재(공과): 교재 틀 → 주일예배에 한 과씩 배치, 중간에 다른 예배가 들어오면 한 주씩 밀기 -----
+    curricula() { return (S.curricula || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'ko')); },
+    curriculum: id => (S.curricula || []).find(c => c.id === id),
+    saveCurriculum(c) {
+      const years = Number(c.years); if (!Number.isInteger(years) || years < 1 || years > 3) throw new ValidationError('주기는 1~3년 중에서 고르세요.');
+      const dept_id = Number(c.dept_id) || 0; if (dept_id && !dept(dept_id)) throw new ValidationError('부서를 선택하세요.');
+      const lessons = (c.lessons || []).filter(l => Number(l.year) >= 1 && Number(l.year) <= years).map(l => ({ year: Number(l.year), no: Math.max(1, Math.min(200, Math.trunc(Number(l.no)) || 1)), ...cleanLesson(l) })).sort((a, b) => a.year - b.year || a.no - b.no);
+      if (lessons.length > MAX_LESSONS) throw new ValidationError(`교재 하나에는 ${MAX_LESSONS}과까지 넣을 수 있어요.`);
+      const rec = { name: reqText(c.name, '교재 이름').slice(0, 60), publisher: String(c.publisher || '').trim().slice(0, 60), dept_id, years, lessons, note: String(c.note || '').slice(0, 400), source: String(c.source || '').slice(0, 400) };
+      S.curricula = S.curricula || [];
+      if (c.id) { const x = S.curricula.find(v => v.id === c.id); if (!x) throw new ValidationError('교재를 찾을 수 없습니다.'); Object.assign(x, rec); save(); return c.id; }
+      if (S.curricula.length >= MAX_CURRICULA) throw new ValidationError(`교재는 ${MAX_CURRICULA}개까지 만들 수 있어요.`);
+      const id = nid(); S.curricula.push({ id, ...rec }); save(); return id;
+    },
+    // 교재 틀(출판사 구성)로 빈 교재를 만든다. 과 제목·본문은 비어 있다.
+    curriculumFromPreset(key, o = {}) {
+      const p = CURRICULUM_PRESETS.find(x => x.key === key); if (!p) throw new ValidationError('교재 틀을 찾을 수 없습니다.');
+      const years = Number(o.years) || p.years, per = Number(o.perYear) || p.perYear;
+      if (!Number.isInteger(per) || per < 1 || per > 60) throw new ValidationError('한 해 과 수는 1~60 사이로 적어 주세요.');
+      return api.saveCurriculum({ name: o.name || p.name, publisher: p.publisher, dept_id: o.dept_id, years, lessons: blankLessons(years, per), note: p.note, source: p.source || '' });
+    },
+    // 목차 붙여 넣기 등: 한 해(year) 분량의 과를 통째로 바꾼다
+    setCurriculumYear(id, year, rows) {
+      const c = api.curriculum(id); if (!c) throw new ValidationError('교재를 찾을 수 없습니다.'); if (!rows.length) throw new ValidationError('넣을 과가 없어요.');
+      return api.saveCurriculum({ ...c, lessons: [...c.lessons.filter(l => l.year !== year), ...rows.map(r => ({ ...r, year }))] });
+    },
+    deleteCurriculum(id) { S.curricula = (S.curricula || []).filter(c => c.id !== id); save(); }, // 이미 배치한 예배의 공과 내용은 그대로 남는다
+    // 연간 배치: year(몇 년차)의 과를 start~until 주일예배에 차례로 넣는다.
+    // 그 주일에 특별예배만 있으면 넘어가고(다음 주로 밀림), ‘공과 쉼’으로 표시한 주일도 넘어간다.
+    applyCurriculum(o) {
+      const c = api.curriculum(Number(o.cid)); if (!c) throw new ValidationError('교재를 찾을 수 없습니다.');
+      const deptId = Number(o.dept_id); if (!dept(deptId)) throw new ValidationError('부서를 선택하세요.'); const year = Number(o.year) || 1;
+      reqDate(o.start, '시작 주일'); reqDate(o.until, '마지막 날짜'); if (o.until < o.start) throw new ValidationError('마지막 날짜가 시작보다 앞서요.');
+      const lessons = c.lessons.filter(l => l.year === year).sort((a, b) => a.no - b.no); if (!lessons.length) throw new ValidationError(`${year}년차에 과가 없어요. 교재에서 과를 먼저 만들어 주세요.`);
+      const pick = (PICK_PRESETS[o.pick] || PICK_PRESETS.basic).pick; const dates = sundaysBetween(o.start, o.until); if (!dates.length) throw new ValidationError('그 기간에 주일이 없어요.');
+      const tpl = S.services.filter(s => s.dept_id === deptId && s.kind === 'regular').sort((a, b) => b.date.localeCompare(a.date))[0] || {};
+      const r = { assigned: 0, created: 0, special: 0, hold: 0, missing: 0, leftover: 0, first: null, last: null }; let i = 0;
+      for (const d of dates) {
+        if (i >= lessons.length) break;
+        let reg = S.services.find(s => s.dept_id === deptId && s.date === d && s.kind === 'regular');
+        if (!reg) {
+          if (S.services.some(s => s.dept_id === deptId && s.date === d)) { r.special++; continue; }
+          if (o.create !== 'yes') { r.missing++; continue; }
+          reg = { id: nid(), dept_id: deptId, title: tpl.title || '주일예배', date: d, time: tpl.time || '', place: tpl.place || '', scripture: '', sermon_title: '', leader: tpl.leader || '', order_text: tpl.order_text || '', kind: 'regular' }; S.services.push(reg); r.created++;
+        }
+        if (reg.lesson_hold) { r.hold++; continue; }
+        unfill(reg); reg.lesson = { cid: c.id, cname: c.name, year, years: c.years, no: lessons[i].no, ...cleanLesson(lessons[i]), pick: pick.slice(), fill: o.fill === 'yes' };
+        fill(reg); i++; r.assigned++; r.first = r.first || d; r.last = d;
+      }
+      r.leftover = lessons.length - i; save(); return r;
+    },
+    // 이 주일에 다른 예배·행사가 들어와서 공과를 쉰다: 이 주일의 공과부터 뒤로 한 주씩 민다(교체하지 않음).
+    // 밀리는 범위는 공과가 이어진 주일까지이고, 비어 있는 첫 주일(없으면 새로 만든 다음 주일)이 마지막 공과를 받는다.
+    shiftLesson(serviceId) {
+      const s = api.service(serviceId); if (!s || !s.lesson) throw new ValidationError('이 예배에 배치된 공과가 없어요.');
+      const slots = S.services.filter(x => x.dept_id === s.dept_id && x.kind === 'regular' && x.date > s.date && !x.lesson_hold).sort((a, b) => a.date.localeCompare(b.date));
+      const chain = []; let gap = null; for (const x of slots) { if (x.lesson) chain.push(x); else { gap = x; break; } }
+      if (!gap) { // 마지막 공과를 받을 주일예배를 새로 만든다
+        let d = addDays((chain[chain.length - 1] || s).date, 7); d = addDays(d, (7 - new Date(d + 'T00:00:00Z').getUTCDay()) % 7);
+        while (S.services.some(x => x.dept_id === s.dept_id && x.date === d && x.kind === 'regular')) d = addDays(d, 7);
+        gap = { id: nid(), dept_id: s.dept_id, title: s.title, date: d, time: s.time || '', place: s.place || '', scripture: '', sermon_title: '', leader: s.leader || '', order_text: s.order_text || '', kind: 'regular' }; S.services.push(gap);
+      }
+      const from = [s, ...chain], to = [...chain, gap]; const payloads = from.map(x => x.lesson);
+      from.forEach(unfill); to.forEach(unfill); s.lesson = null; s.lesson_hold = true;
+      to.forEach((x, k) => { x.lesson = payloads[k]; fill(x); }); save(); return { moved: payloads.length, until: gap.date };
+    },
+    // ‘공과 쉼’을 풀고 뒤의 공과를 한 주씩 당겨 온다(밀기의 반대)
+    pullLesson(serviceId) {
+      const s = api.service(serviceId); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); if (s.lesson) throw new ValidationError('이미 공과가 있어요.');
+      s.lesson_hold = false;
+      const chain = []; for (const x of S.services.filter(x => x.dept_id === s.dept_id && x.kind === 'regular' && x.date > s.date && !x.lesson_hold).sort((a, b) => a.date.localeCompare(b.date))) { if (x.lesson) chain.push(x); else break; }
+      if (chain.length) { const payloads = chain.map(x => x.lesson); const to = [s, ...chain.slice(0, -1)]; chain.forEach(unfill); to.forEach((x, k) => { x.lesson = payloads[k]; fill(x); }); chain[chain.length - 1].lesson = null; }
+      save(); return chain.length;
+    },
+    // 주마다 필요한 항목만: 내용 고치기와 ‘이 주에 쓸 항목’ 고르기. 공과가 없던 주일에도 직접 넣을 수 있다.
+    setServiceLesson(serviceId, l, pick) {
+      const s = api.service(serviceId); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); const p = (pick || []).filter(k => LESSON_KEYS.includes(k));
+      const v = cleanLesson(l); if (!LESSON_KEYS.some(k => v[k])) throw new ValidationError('한 칸 이상 적어 주세요.');
+      unfill(s); s.lesson = { cid: 0, cname: '직접 입력', year: 1, years: 1, no: 0, ...(s.lesson || {}), ...v, pick: p.length ? p : ['title'] }; s.lesson_hold = false; fill(s); save();
+    },
+    clearServiceLesson(serviceId) { const s = api.service(serviceId); if (!s) return; unfill(s); s.lesson = null; save(); },
+    // 예배 목록에서 공과 배치 현황 보기
+    lessonPlan(deptId, from, to) { return S.services.filter(s => s.dept_id === deptId && s.date >= from && s.date <= to && (s.lesson || s.lesson_hold)).sort((a, b) => a.date.localeCompare(b.date)); },
 
     // ----- 연말 부서 보고서: 한 부서의 한 해를 모은다(모두 입력된 기록에서 계산) -----
     annualReport(deptId, year, t = today()) {

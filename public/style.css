@@ -386,6 +386,14 @@ dialog { border-radius:var(--radius-lg); } dialog::backdrop { background:rgba(20
 .printonly { display:none; }
 @media print { .printonly { display:block; } .strip { break-inside:avoid; } .props, .tablewrap { break-inside:avoid; } h2 { break-after:avoid; } }
 
+/* ===== 교재·공과(MB11.15) ===== */
+.lessonbox { margin-top:14px; padding:14px 18px; border:1px solid var(--line); border-radius:var(--radius-md); background:#fff; }
+.lessonbox.hold { background:var(--orange-bg); border-color:#f3c9a4; } .lessonbox.empty { background:var(--soft); border-style:dashed; }
+.lessonbox .lessonprops { margin:10px 0 0; border:0; padding:0; box-shadow:none; background:none; }
+.lessonfield { margin:0 0 10px; } .lessonfield label.chk { display:flex; align-items:center; gap:6px; font-weight:600; font-size:14px; margin-bottom:4px; } .lessonfield input:not([type=checkbox]), .lessonfield textarea { width:100%; }
+table.lessons td { padding:6px 8px; } table.lessons .cell-in { width:100%; }
+code { background:var(--soft); padding:1px 6px; border-radius:4px; font-size:.9em; }
+
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }
