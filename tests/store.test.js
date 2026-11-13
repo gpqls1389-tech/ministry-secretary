@@ -214,3 +214,14 @@ test('MB12.1 교재 통째로 넣기: 여러 교재를 부서마다 한 번에 �
   const again = file('유치 교재', 1, 4); const r2 = s.installCurricula([again], { plan: [{ dept_id: 0 }] });
   assert.equal(r2[0].replaced, true); assert.equal(s.curricula().length, 2); assert.equal(s.curriculum(r[0].id).lessons.length, 4);
 });
+
+test('MB12.2 일정 달력의 공과: 예배를 숨기면 공과만, 함께 보면 예배에 공과 이름', () => {
+  const s = mk(); s.startEmpty();
+  const id = s.importCurriculum({ type: 'mokhoe-curriculum', version: 1, name: '달력 교재', publisher: '', years: 1, lessons: [{ year: 1, no: 1, title: '첫 과' }, { year: 1, no: 2, title: '둘째 과' }] });
+  s.applyCurriculum({ cid: id, dept_id: 1, year: 1, start: '2026-11-01', until: '2026-11-30', create: 'yes' });
+  const only = s.calendar(1, '2026-11-01', '2026-11-30', { services: false });
+  assert.deepEqual(only.filter(i => i.type === 'lesson').map(i => [i.date, i.title]), [['2026-11-01', '1과 · 첫 과'], ['2026-11-08', '2과 · 둘째 과']]);
+  const both = s.calendar(1, '2026-11-01', '2026-11-30', { services: true });
+  assert.ok(!both.some(i => i.type === 'lesson')); assert.equal(both.find(i => i.date === '2026-11-01').lesson, '1과 · 첫 과');
+  assert.equal(s.calendar(1, '2026-11-01', '2026-11-30', { services: false, lessons: false }).length, 0);
+});

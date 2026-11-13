@@ -417,3 +417,9 @@ dialog:has(.dlg.wide) { width:min(860px,96vw); }
 .dlg.wide table.t select { min-width:120px; }
 .nowrap { white-space:nowrap; }
 label.btnlike.sm { padding:4px 10px; font-size:13px; }
+
+/* MB12.2 일정 화면의 공과 */
+.cal a.les { background:transparent; border-left-style:dashed; color:var(--ink2,#3d4a42); }
+.cal a.les.hold { color:var(--warn,#a15c00); }
+.cal a .les-sub { display:block; font-size:.92em; color:var(--muted,#6b7a70); overflow:hidden; text-overflow:ellipsis; }
+table.t tr.lesrow td { color:var(--ink2,#3d4a42); } table.t tr.lesrow td b { font-weight:500; }
