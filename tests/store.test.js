@@ -108,3 +108,35 @@ test('연말 보고서: 출석 평균은 기록한 회차만, 올해 처음 출�
   const p = s.plan(1, 2026); assert.equal(p.review, '감사한 한 해'); assert.equal(p.themes[2], '사랑'); assert.equal(s.annualReport(1, 2026, '2026-11-10').review, '감사한 한 해');
   assert.throws(() => s.annualReport(99, 2026), ValidationError);
 });
+
+test('교재: 틀로 만들고 목차를 붙여 넣어 한 해만 골라 주일마다 배치, 특별예배·공과 쉼은 밀기, 당기기, 주마다 필요한 항목만', async () => {
+  const { parseLessonText, CURRICULUM_PRESETS } = await import('../public/js/curriculum.js');
+  const s = mk(); s.startEmpty();
+  assert.ok(CURRICULUM_PRESETS.every(p => p.key === 'custom' || p.source), '틀에는 출처가 있다');
+  const cid = s.curriculumFromPreset('pck-gpls', { dept_id: 1, perYear: 4 }); let c = s.curriculum(cid);
+  assert.equal(c.years, 3); assert.equal(c.lessons.length, 12);
+  const rows = parseLessonText('1과\t천지창조\t창 1:1-5\t창 1:1\n2|노아의 방주|창 6:9-22\n3. | 아브라함 | 창 12:1-4\n바벨탑|창 11:1-9');
+  assert.deepEqual(rows.map(r => r.no), [1, 2, 3, 4]); assert.equal(rows[0].memory, '창 1:1'); assert.equal(rows[3].title, '바벨탑');
+  s.setCurriculumYear(cid, 2, rows); c = s.curriculum(cid); assert.equal(c.lessons.filter(l => l.year === 2)[0].title, '천지창조');
+  // 2027-01-03(주일)부터: 1/10은 특별예배만 있어 넘어가고, 1/17엔 정기예배가 이미 있다
+  s.saveService({ dept_id: 1, title: '신년 특별예배', date: '2027-01-10', kind: 'special' });
+  const keep = s.saveService({ dept_id: 1, title: '어린이 주일예배', date: '2027-01-17', scripture: '요 3:16' });
+  const r = s.applyCurriculum({ cid, dept_id: 1, year: 2, start: '2027-01-01', until: '2027-03-31', pick: 'verse', create: 'yes', fill: 'yes' });
+  assert.equal(r.assigned, 4); assert.equal(r.special, 1); assert.equal(r.leftover, 0); assert.equal(r.first, '2027-01-03'); assert.equal(r.last, '2027-01-31');
+  const at = d => s.services(1).find(x => x.date === d && x.kind === 'regular');
+  assert.equal(at('2027-01-03').lesson.title, '천지창조'); assert.equal(at('2027-01-03').sermon_title, '천지창조', '빈 설교 제목은 공과로 채움');
+  assert.equal(at('2027-01-17').lesson.title, '노아의 방주'); assert.equal(at('2027-01-17').scripture, '요 3:16', '이미 적은 본문은 그대로');
+  assert.deepEqual(at('2027-01-03').lesson.pick, ['title', 'scripture', 'memory']);
+  // 1/17에 다른 예배가 들어와 공과를 쉰다 → 노아(1/17)·아브라함(1/24)·바벨탑(1/31)이 한 주씩 밀리고 2/7 예배가 새로 생긴다
+  const m = s.shiftLesson(at('2027-01-17').id); assert.equal(m.until, '2027-02-07');
+  assert.equal(at('2027-01-17').lesson, null); assert.ok(at('2027-01-17').lesson_hold);
+  assert.equal(at('2027-01-24').lesson.title, '노아의 방주'); assert.equal(at('2027-01-24').sermon_title, '노아의 방주');
+  assert.equal(at('2027-02-07').lesson.title, '바벨탑'); assert.equal(at('2027-01-31').sermon_title, '아브라함');
+  assert.equal(s.get().services.filter(x => x.date === '2027-01-17').length, 1, '교체가 아니라 밀기: 1/17 예배는 그대로');
+  // 당기기: 1/17 공과 쉼을 풀면 원래대로
+  s.pullLesson(at('2027-01-17').id); assert.equal(at('2027-01-17').lesson.title, '노아의 방주'); assert.equal(at('2027-02-07').lesson, null); assert.equal(at('2027-02-07').sermon_title, '');
+  // 주마다 필요한 항목만 고르기
+  s.setServiceLesson(at('2027-01-03').id, { ...at('2027-01-03').lesson, activity: '만들기: 빛과 어둠 카드' }, ['title', 'activity']);
+  assert.deepEqual(at('2027-01-03').lesson.pick, ['title', 'activity']); assert.equal(at('2027-01-03').lesson.activity, '만들기: 빛과 어둠 카드');
+  assert.throws(() => s.applyCurriculum({ cid, dept_id: 1, year: 4, start: '2027-01-01', until: '2027-02-01' }), ValidationError, '없는 해');
+});
