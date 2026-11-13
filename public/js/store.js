@@ -1,7 +1,7 @@
 // 목회 비서 데이터 로직. 브라우저(localStorage)와 Node 테스트 양쪽에서 동작하도록 저장소를 주입받는다.
 import { makeSeed } from './seed.js';
 import { DEFAULT_CHECKS, MAX_CHECKS, NEWCOMER_STEPS, AWAY_REASONS, AWAY_EVERY, EXAM_TYPE, guessDeptKind } from './ministry.js';
-import { LESSON_KEYS, FIELD_MAX, MAX_LESSONS, MAX_CURRICULA, CURRICULUM_PRESETS, PICK_PRESETS, blankLessons, cleanLesson, sundaysBetween } from './curriculum.js';
+import { LESSON_KEYS, FIELD_MAX, MAX_LESSONS, MAX_CURRICULA, CURRICULUM_PRESETS, PICK_PRESETS, blankLessons, cleanLesson, sundaysBetween, lessonLabel } from './curriculum.js';
 import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
 
 export const KEY = 'ministry-secretary:v1';
@@ -141,10 +141,12 @@ export function createStore(storage, today = kstToday) {
     depts: () => S.depts, dept, person, ev,
 
     // ----- 일정·홈 -----
-    calendar(deptId, from, to, { services = true } = {}) {
-      const out = [];
+    // 공과: 예배를 함께 보면 예배 항목에 공과 이름(lesson)을 붙이고, 예배를 숨기면 공과만 따로 보여 준다(type 'lesson', id는 예배 id).
+    calendar(deptId, from, to, { services = true, lessons = true } = {}) {
+      const out = []; const les = s => (s.lesson ? lessonLabel(s.lesson) : s.lesson_hold ? '공과 쉼' : '');
       for (const s of (S.schedules || [])) if ((!deptId || s.dept_id === deptId) && (s.end || s.date) >= from && s.date <= to) out.push({ type: 'schedule', id: s.id, date: s.date, end: s.end || s.date, title: s.title, time: s.time, dept_id: s.dept_id, kind: s.type });
-      if (services) for (const s of S.services) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to) out.push({ type: 'service', id: s.id, date: s.date, end: s.date, title: s.title, time: s.time, dept_id: s.dept_id });
+      if (services) for (const s of S.services) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to) out.push({ type: 'service', id: s.id, date: s.date, end: s.date, title: s.title, time: s.time, dept_id: s.dept_id, lesson: lessons ? les(s) : '' });
+      if (!services && lessons) for (const s of S.services) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to && (s.lesson || s.lesson_hold)) out.push({ type: 'lesson', id: s.id, date: s.date, end: s.date, title: les(s), time: s.time, dept_id: s.dept_id, hold: !s.lesson, cname: s.lesson ? s.lesson.cname : '' });
       for (const e of S.events) if ((!deptId || e.dept_id === deptId) && e.end_date >= from && e.start_date <= to && e.status !== 'cancelled') out.push({ type: 'event', id: e.id, date: e.start_date, end: e.end_date, title: e.title, dept_id: e.dept_id });
       return out.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
     },

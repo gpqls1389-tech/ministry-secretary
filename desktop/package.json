@@ -1,7 +1,7 @@
 {
   "name": "mokhoe-biseo-desktop",
   "productName": "목회 비서",
-  "version": "12.1.0",
+  "version": "12.2.0",
   "description": "목회 비서 데스크톱 프로그램(웹 사이트를 앱 창으로 여는 껍데기)",
   "main": "main.js",
   "private": true,
