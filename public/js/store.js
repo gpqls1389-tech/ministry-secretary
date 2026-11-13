@@ -587,6 +587,24 @@ export function createStore(storage, today = kstToday) {
       }
       r.leftover = lessons.length - i; save(); return r;
     },
+    // 통째로 넣기: 교재 여러 개를 한 번에 만들고(같은 이름·출판사 교재가 있으면 과를 새 것으로 바꿈) 부서마다 연간 배치한다.
+    // plan[i] = { dept_id(0이면 교재만 넣기), year, skip5 }. 하나라도 실패하면 아무것도 바꾸지 않는다.
+    installCurricula(items, o = {}) {
+      const plan = o.plan || []; const used = new Set();
+      items.forEach((c, i) => { const p = plan[i] || {}; const dId = Number(p.dept_id) || 0; if (!dId || p.skip) return;
+        if (!dept(dId)) throw new ValidationError('부서를 선택하세요.');
+        if (used.has(dId)) throw new ValidationError(`‘${(dept(dId) || {}).name}’에 교재 두 개를 같은 기간에 배치할 수 없어요. 하나는 ‘배치 안 함’으로 바꾸세요.`); used.add(dId);
+        if (Number(p.year) > Number(c.years)) throw new ValidationError(`‘${c.name}’에는 ${p.year}년차가 없어요.`); });
+      const backup = JSON.stringify({ curricula: S.curricula || [], services: S.services });
+      try {
+        return items.map((c, i) => { const p = plan[i] || {}; if (p.skip) return null; const dId = Number(p.dept_id) || 0;
+          const same = (S.curricula || []).find(x => x.name === String(c.name).trim().slice(0, 60) && x.publisher === String(c.publisher || '').trim().slice(0, 60));
+          const id = api.saveCurriculum({ ...(same || {}), name: c.name, publisher: c.publisher, dept_id: dId || (same ? same.dept_id : 0), years: c.years, lessons: c.lessons, note: c.note, source: c.source });
+          const out = { id, name: (api.curriculum(id) || {}).name, replaced: !!same, dept_id: dId, year: Number(p.year) || 1 };
+          if (dId) Object.assign(out, api.applyCurriculum({ cid: id, dept_id: dId, year: out.year, start: o.start, until: o.until, pick: o.pick || 'basic', create: o.create || 'yes', fill: o.fill || 'yes', skip5: p.skip5 || 'no' }));
+          return out; }).filter(Boolean);
+      } catch (e) { const b = JSON.parse(backup); S.curricula = b.curricula; S.services = b.services; save(); throw e; }
+    },
     // 이 주일에 다른 예배·행사가 들어와서 공과를 쉰다: 이 주일의 공과부터 뒤로 한 주씩 민다(교체하지 않음).
     // 밀리는 범위는 공과가 이어진 주일까지이고, 비어 있는 첫 주일(없으면 새로 만든 다음 주일)이 마지막 공과를 받는다.
     shiftLesson(serviceId) {

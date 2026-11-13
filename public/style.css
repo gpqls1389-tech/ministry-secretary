@@ -411,3 +411,9 @@ table.growth td.c, table.growth th.c { text-align:center; } table.growth input[t
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }
+
+/* MB12.1 교재 통째로 넣기 */
+dialog:has(.dlg.wide) { width:min(860px,96vw); }
+.dlg.wide table.t select { min-width:120px; }
+.nowrap { white-space:nowrap; }
+label.btnlike.sm { padding:4px 10px; font-size:13px; }

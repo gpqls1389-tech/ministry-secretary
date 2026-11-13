@@ -86,3 +86,15 @@ test('CSV: BOM, 따옴표·줄바꿈 처리, 수식 주입 방지, 숫자는 그
 });
 
 test('도움말 내용이 모든 화면에 있다', () => { for (const k of ['home', 'plan', 'events', 'event', 'services', 'service', 'people', 'money', 'settings']) assert.ok(TIPS[k] && TIPS[k][0] && TIPS[k][1], k); });
+
+test('MB12.1 묶음 파일 읽기와 교재 이름으로 부서 짐작', async () => {
+  const { bundleItems, guessCurriculumDept, BUNDLE_TYPE } = await import('../public/js/curriculum.js');
+  const one = { type: 'mokhoe-curriculum', name: 'a', lessons: [] };
+  assert.equal(bundleItems(one).length, 1); assert.equal(bundleItems({ type: BUNDLE_TYPE, items: [one, one] }).length, 2);
+  assert.throws(() => bundleItems({ type: BUNDLE_TYPE, items: [] })); assert.throws(() => bundleItems({ name: 'x' }));
+  const depts = [{ id: 1, name: '유치부', kind: 'kid' }, { id: 4, name: '유년부', kind: 'kid' }, { id: 3, name: '중고등부', kind: 'teen' }, { id: 2, name: '청년부', kind: 'youth' }];
+  assert.equal(guessCurriculumDept('히즈쇼 바이블랜드 (미취학, 2년)', depts), 1);
+  assert.equal(guessCurriculumDept('히즈쇼 틴즈 (취학, 2년)', depts), 4);
+  assert.equal(guessCurriculumDept('히즈쇼 하이틴즈 (청소년, 3년)', depts), 3);
+  assert.equal(guessCurriculumDept('무엇', depts), 0);
+});

@@ -195,3 +195,22 @@ test('MB12 교재 파일 가져오기·내보내기, 매달 다섯째 주일 비
   assert.equal(r.fifth, 1); const d = s.services(1).filter(x => x.lesson).map(x => x.date).sort();
   assert.ok(!d.includes('2026-11-29')); assert.equal(d[4], '2026-12-06');
 });
+
+test('MB12.1 교재 통째로 넣기: 여러 교재를 부서마다 한 번에 배치, 같은 교재는 바꾸기, 실패하면 그대로', () => {
+  const s = mk(); s.startEmpty();
+  const file = (name, years, per) => ({ type: 'mokhoe-curriculum', version: 1, name, publisher: '히즈쇼', years, lessons: Array.from({ length: years * per }, (_, i) => ({ year: Math.floor(i / per) + 1, no: (i % per) + 1, title: `${name} ${i + 1}` })) });
+  const items = [file('유치 교재', 2, 6), file('청년 교재', 1, 6)];
+  const r = s.installCurricula(items, { start: '2026-11-01', until: '2026-12-31', plan: [{ dept_id: 1, year: 2, skip5: 'yes' }, { dept_id: 2, year: 1 }] });
+  assert.equal(r.length, 2); assert.equal(r[0].assigned, 6); assert.equal(r[0].fifth, 1); assert.equal(s.curricula().length, 2);
+  const kid = s.services(1).filter(x => x.lesson).sort((a, b) => a.date.localeCompare(b.date)); assert.equal(kid[0].lesson.year, 2); assert.equal(kid[0].lesson.no, 1);
+  assert.equal(s.curriculum(r[0].id).dept_id, 1);
+  // 같은 부서 두 번 → 오류, 아무것도 바뀌지 않음
+  assert.throws(() => s.installCurricula(items, { start: '2026-11-01', until: '2026-12-31', plan: [{ dept_id: 1, year: 1 }, { dept_id: 1, year: 1 }] }), ValidationError);
+  // 중간 실패(없는 날짜) → 되돌림
+  const before = JSON.stringify(s.get().services);
+  assert.throws(() => s.installCurricula([file('새 교재', 1, 3)], { start: 'x', until: '2026-12-31', plan: [{ dept_id: 1, year: 1 }] }), ValidationError);
+  assert.equal(JSON.stringify(s.get().services), before); assert.equal(s.curricula().length, 2);
+  // 다시 넣으면 같은 교재를 새 내용으로 바꾸고, 부서 0이면 교재만
+  const again = file('유치 교재', 1, 4); const r2 = s.installCurricula([again], { plan: [{ dept_id: 0 }] });
+  assert.equal(r2[0].replaced, true); assert.equal(s.curricula().length, 2); assert.equal(s.curriculum(r[0].id).lessons.length, 4);
+});
