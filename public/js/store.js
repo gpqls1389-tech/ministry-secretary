@@ -1,5 +1,6 @@
 // 목회 비서 데이터 로직. 브라우저(localStorage)와 Node 테스트 양쪽에서 동작하도록 저장소를 주입받는다.
 import { makeSeed } from './seed.js';
+import { DEFAULT_CHECKS, MAX_CHECKS, NEWCOMER_STEPS, AWAY_REASONS, AWAY_EVERY, EXAM_TYPE, guessDeptKind } from './ministry.js';
 import { LESSON_KEYS, FIELD_MAX, MAX_LESSONS, MAX_CURRICULA, CURRICULUM_PRESETS, PICK_PRESETS, blankLessons, cleanLesson, sundaysBetween } from './curriculum.js';
 import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
 
@@ -56,6 +57,8 @@ export function validateState(j) {
   for (const b of j.budgets) if (!dids.has(b.dept_id) || !Number.isSafeInteger(b.amount) || b.amount < 0) bad('예산');
   for (const t of j.transactions) if (!isId(t.id) || !dids.has(t.dept_id) || !isDate(t.date) || !['income', 'expense'].includes(t.kind) || !Number.isSafeInteger(t.amount) || t.amount <= 0 || (t.event_id != null && !eids.has(t.event_id)) || (t.receipt != null && !RECEIPT_ID.test(String(t.receipt)))) bad('거래');
   for (const s of j.seasons) if (!dids.has(s.dept_id) || typeof s.name !== 'string') bad('절기');
+  if (j.growth !== undefined && (!Array.isArray(j.growth) || j.growth.length > 50000)) bad('주간 체크');
+  if (j.deptCfg !== undefined && (typeof j.deptCfg !== 'object' || Array.isArray(j.deptCfg) || j.deptCfg === null)) bad('부서 설정');
   if (j.curricula !== undefined && (!Array.isArray(j.curricula) || j.curricula.length > MAX_CURRICULA)) bad('교재');
   for (const c of (j.curricula || [])) if (!isId(c.id) || typeof c.name !== 'string' || !Number.isInteger(c.years) || c.years < 1 || c.years > 3 || !Array.isArray(c.lessons) || c.lessons.length > MAX_LESSONS || !(c.dept_id === 0 || dids.has(c.dept_id)) || c.lessons.some(l => !Number.isInteger(l.year) || !Number.isInteger(l.no) || LESSON_KEYS.some(k => typeof l[k] !== 'string' || l[k].length > FIELD_MAX[k]))) bad('교재');
   for (const s of j.services) if (s.lesson != null && (typeof s.lesson !== 'object' || LESSON_KEYS.some(k => typeof s.lesson[k] !== 'string' || s.lesson[k].length > FIELD_MAX[k]) || !Array.isArray(s.lesson.pick) || s.lesson.pick.some(k => !LESSON_KEYS.includes(k)))) bad('예배 공과');
@@ -66,6 +69,19 @@ export function validateState(j) {
 export function emptyState(todayStr = kstToday()) {
   const base = makeSeed(todayStr);
   return { version: 1, demo: false, nextId: 100, depts: base.depts, people: [], events: [], tasks: [], participants: [], services: [], attendance: [], budgets: [], transactions: [], plans: {}, seasons: [], supplies: [], schedules: [], visits: [], assets: [], links: [], todos: [], curricula: [] };
+}
+
+// 부서마다 종류(kid·teen·youth)를 붙이고, 중고등부가 없으면 아동부 다음에 만든다(MB12). 새 목록도 빈 배열로 채운다.
+export function normalizeState(j) {
+  for (const d of j.depts) if (!['kid', 'teen', 'youth'].includes(d.kind)) d.kind = guessDeptKind(d.name, d.id);
+  if (!j.depts.some(d => d.kind === 'teen') && !j.teenAdded) {
+    const id = Math.max(...j.depts.map(d => d.id)) + 1; const at = j.depts.findIndex(d => d.kind === 'kid');
+    j.depts.splice(at >= 0 ? at + 1 : j.depts.length, 0, { id, name: '중고등부', kind: 'teen' });
+  }
+  j.teenAdded = true; // 사용자가 중고등부를 지운 뒤에 다시 생기지 않게
+  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth']) j[k] = j[k] || [];
+  j.deptCfg = j.deptCfg || {};
+  return j;
 }
 
 export function createStore(storage, today = kstToday) {
@@ -84,11 +100,11 @@ export function createStore(storage, today = kstToday) {
   let recovered = false;
   function load() {
     let raw = null;
-    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; j.todos = j.todos || []; j.curricula = j.curricula || []; S = j; return S; } } catch {
+    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); S = normalizeState(j); return S; } } catch {
       // 저장된 값이 손상된 경우: 가상 데이터로 덮어쓰기 전에 원본을 따로 남겨 둔다(복구 가능)
       if (raw) { try { storage.setItem(KEY + ':broken', raw); recovered = true; } catch { /* 무시 */ } }
     }
-    S = makeSeed(today()); try { save(); } catch { /* 저장 불가 환경: 메모리만 사용 */ } return S;
+    S = normalizeState(makeSeed(today())); try { save(); } catch { /* 저장 불가 환경: 메모리만 사용 */ } return S;
   }
   load();
   const get = () => S;
@@ -110,14 +126,14 @@ export function createStore(storage, today = kstToday) {
 
   const api = {
     get, save, KEY, wasRecovered: () => recovered, lastSeries: () => lastSeries,
-    resetDemo() { S = makeSeed(today()); save(); },
-    startEmpty() { S = emptyState(today()); save(); },
+    resetDemo() { S = normalizeState(makeSeed(today())); save(); },
+    startEmpty() { S = normalizeState(emptyState(today())); save(); },
     exportJson() { return JSON.stringify(S, null, 1); },
     // 가져오기: 구조가 하나라도 어긋나면 현재 데이터를 건드리지 않고 거부한다(일부만 반영되는 상황 방지)
     importJson(text) {
       let j; try { j = JSON.parse(text); } catch { throw new ValidationError('JSON 형식이 아닙니다.'); }
       validateState(j);
-      j.schedules = j.schedules || []; j.visits = j.visits || []; j.assets = j.assets || []; j.links = j.links || []; j.todos = j.todos || []; const before = S; S = j;
+      normalizeState(j); const before = S; S = j;
       try { save(); } catch (e) { S = before; throw e; }
     },
     markExported() { S.lastExport = new Date().toISOString(); save(); },
@@ -127,7 +143,7 @@ export function createStore(storage, today = kstToday) {
     // ----- 일정·홈 -----
     calendar(deptId, from, to, { services = true } = {}) {
       const out = [];
-      for (const s of (S.schedules || [])) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to) out.push({ type: 'schedule', id: s.id, date: s.date, end: s.date, title: s.title, time: s.time, dept_id: s.dept_id, kind: s.type });
+      for (const s of (S.schedules || [])) if ((!deptId || s.dept_id === deptId) && (s.end || s.date) >= from && s.date <= to) out.push({ type: 'schedule', id: s.id, date: s.date, end: s.end || s.date, title: s.title, time: s.time, dept_id: s.dept_id, kind: s.type });
       if (services) for (const s of S.services) if ((!deptId || s.dept_id === deptId) && s.date >= from && s.date <= to) out.push({ type: 'service', id: s.id, date: s.date, end: s.date, title: s.title, time: s.time, dept_id: s.dept_id });
       for (const e of S.events) if ((!deptId || e.dept_id === deptId) && e.end_date >= from && e.start_date <= to && e.status !== 'cancelled') out.push({ type: 'event', id: e.id, date: e.start_date, end: e.end_date, title: e.title, dept_id: e.dept_id });
       return out.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
@@ -158,6 +174,11 @@ export function createStore(storage, today = kstToday) {
       for (const s of S.services) if (s.date >= t && s.date <= wk && (!deptId || s.dept_id === deptId) && !String(s.order_text || '').trim()) cards.push({ pri: 3, kind: 'service', id: s.id, title: s.title, reason: `${s.date} 예배 순서 미입력`, detail: '', go: `service/${s.id}` });
       const care = (S.visits || []).filter(v => v.follow_up && v.follow_up >= t && v.follow_up <= wk && (!deptId || (person(v.person_id) || {}).dept_id === deptId)).length;
       if (care) cards.push({ pri: 4, kind: 'care', id: 0, title: '돌봄 연락 예정', reason: `이번 주 ${care}건`, detail: '', go: 'people' });
+      // 시험 기간과 겹치는 행사(중고등부 등)
+      for (const e of S.events) { if (e.status !== 'planned' || (deptId && e.dept_id !== deptId) || e.end_date < t) continue; const x = api.examOverlap(e.dept_id, e.start_date, e.end_date)[0]; if (x) cards.push({ pri: 3, kind: 'event', id: e.id, title: e.title, reason: `시험 기간 ‘${x.title}’(${x.date}~${x.end || x.date})과 겹쳐요`, detail: '시험 기간에는 참석이 어려울 수 있어요', go: `event/${e.id}` }); }
+      // 장기 부재 연락, 새가족 다음 단계
+      const away = api.awayList(deptId, t).filter(a => a.due); if (away.length) cards.push({ pri: 4, kind: 'care', id: 0, title: '장기 부재 연락', reason: `연락할 때가 된 사람 ${away.length}명`, detail: away.slice(0, 3).map(a => a.person.name).join(', '), go: 'ministry' });
+      const nc = api.newcomers(deptId, t).filter(n => n.next && n.days >= 7); if (nc.length) cards.push({ pri: 4, kind: 'care', id: 0, title: '새가족 정착', reason: `다음 단계가 남은 새가족 ${nc.length}명`, detail: nc.slice(0, 3).map(n => `${n.person.name}(${n.next[1]})`).join(', '), go: 'ministry' });
       return cards.sort((a, b) => a.pri - b.pri || a.title.localeCompare(b.title, 'ko'));
     },
 
@@ -214,13 +235,13 @@ export function createStore(storage, today = kstToday) {
     // ----- 인원 -----
     addPerson(p) {
       const id = nid();
-      S.people.push({ id, name: reqText(p.name, '이름'), kind: ['child', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : 'child', dept_id: Number(p.dept_id) || null, class_name: p.class_name || '', birth_year: p.birth_year ? Number(p.birth_year) : null, status: 'active' }); save(); return id;
+      S.people.push({ id, name: reqText(p.name, '이름'), kind: ['child', 'teen', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : 'child', dept_id: Number(p.dept_id) || null, class_name: p.class_name || '', birth_year: p.birth_year ? Number(p.birth_year) : null, status: 'active' }); save(); return id;
     },
     // 명단 한꺼번에 등록: 먼저 검사만 하고(planPeopleImport) 사용자가 확인한 뒤 한 번에 저장한다(addPeopleBulk).
     // rows: [{ name, kind, dept, class_name, birth_year }] (kind는 아동/청년/교사/봉사자, dept는 부서 이름. 비우면 기본값)
     planPeopleImport(rows, defaultDeptId) {
       if (rows.length > 500) throw new ValidationError('한 번에 500명까지 등록할 수 있어요. 파일을 나눠서 올려 주세요.');
-      const KINDS = { 아동: 'child', 청년: 'youth', 교사: 'teacher', 봉사자: 'volunteer', child: 'child', youth: 'youth', teacher: 'teacher', volunteer: 'volunteer' };
+      const KINDS = { 아동: 'child', 청소년: 'teen', 학생: 'teen', teen: 'teen', 청년: 'youth', 교사: 'teacher', 봉사자: 'volunteer', child: 'child', youth: 'youth', teacher: 'teacher', volunteer: 'volunteer' };
       const key = p => `${p.name}|${p.dept_id}|${p.birth_year || ''}|${p.class_name || ''}`; const have = new Set(S.people.filter(p => p.status !== 'inactive').map(key)); const seen = new Set();
       const ok = [], dup = [], errors = [];
       rows.forEach((r, i) => {
@@ -241,7 +262,7 @@ export function createStore(storage, today = kstToday) {
       for (const p of S.people) if (set.has(p.id)) { p.dept_id = deptId; if (className) p.class_name = String(className).trim().slice(0, 30); n++; }
       if (!n) throw new ValidationError('선택한 사람이 없습니다.'); save(); return n;
     },
-    setPeopleStatus(ids, status) { if (!['active', 'graduated', 'inactive'].includes(status)) throw new ValidationError('상태 오류'); const set = new Set(ids); let n = 0; for (const p of S.people) if (set.has(p.id)) { p.status = status; n++; } if (!n) throw new ValidationError('선택한 사람이 없습니다.'); save(); return n; },
+    setPeopleStatus(ids, status) { if (!['active', 'graduated', 'inactive', 'away'].includes(status)) throw new ValidationError('상태 오류'); const set = new Set(ids); let n = 0; for (const p of S.people) if (set.has(p.id)) { p.status = status; n++; } if (!n) throw new ValidationError('선택한 사람이 없습니다.'); save(); return n; },
 
     // ----- 심방·돌봄 기록 (민감 정보는 적지 않도록 화면에서 안내) -----
     addVisit(v) {
@@ -329,7 +350,7 @@ export function createStore(storage, today = kstToday) {
     },
     deletePerson(id) {
       if (S.attendance.some(a => a.person_id === id) || S.participants.some(a => a.person_id === id) || (S.visits || []).some(v => v.person_id === id)) throw new ValidationError('출석·참가·심방 기록이 있는 사람은 삭제할 수 없습니다. 명단에서 제외하세요.');
-      S.people = S.people.filter(p => p.id !== id); save();
+      S.people = S.people.filter(p => p.id !== id); S.growth = (S.growth || []).filter(g => g.person_id !== id); save();
     },
 
     // ----- 예배·출석 -----
@@ -349,7 +370,8 @@ export function createStore(storage, today = kstToday) {
     },
     // ----- 일정(교사 기도회·회의 등. 예배·행사와 별도) -----
     saveSchedule(s) {
-      const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '일정 이름'), type: SCHEDULE_TYPES.includes(s.type) ? s.type : '기타', date: reqDate(s.date), time: s.time || '', place: s.place || '', note: s.note || '' };
+      const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '일정 이름'), type: SCHEDULE_TYPES.includes(s.type) ? s.type : '기타', date: reqDate(s.date), time: s.time || '', place: s.place || '', note: s.note || '', end: s.end ? reqDate(s.end, '끝나는 날') : '' };
+      if (rec.end && rec.end < rec.date) throw new ValidationError('끝나는 날이 시작보다 앞서요.'); if (rec.end === rec.date) rec.end = '';
       if (!dept(rec.dept_id)) throw new ValidationError('부서를 선택하세요.');
       S.schedules = S.schedules || [];
       if (s.id) { Object.assign(S.schedules.find(x => x.id === s.id), rec); save(); return s.id; }
@@ -458,6 +480,55 @@ export function createStore(storage, today = kstToday) {
       return Array.from({ length: 12 }, (_, i) => { const tx = api.transactions({ deptId, year, month: i + 1 }); const income = tx.filter(t => t.kind === 'income').reduce((a, t) => a + t.amount, 0), expense = tx.filter(t => t.kind === 'expense').reduce((a, t) => a + t.amount, 0); return { month: i + 1, income, expense, net: income - expense }; });
     },
 
+    // ----- 부서별 사역(MB12) -----
+    deptKind: id => ((dept(id) || {}).kind) || guessDeptKind((dept(id) || {}).name, id),
+    checks(deptId) { const c = (S.deptCfg[deptId] || {}).checks; return Array.isArray(c) ? c : (DEFAULT_CHECKS[api.deptKind(deptId)] || []); },
+    saveChecks(deptId, list) {
+      if (!dept(deptId)) throw new ValidationError('부서를 선택하세요.'); const seen = new Set();
+      const out = (list || []).map(c => ({ key: String(c.key || '').replace(/[^a-z0-9]/gi, '').slice(0, 16) || 'c' + Math.random().toString(36).slice(2, 7), label: String(c.label || '').trim().slice(0, 20), points: Math.max(0, Math.min(100, Math.trunc(Number(c.points)) || 0)) })).filter(c => c.label && !seen.has(c.key) && seen.add(c.key));
+      if (out.length > MAX_CHECKS) throw new ValidationError(`체크 항목은 ${MAX_CHECKS}개까지 둘 수 있어요.`);
+      S.deptCfg[deptId] = { ...(S.deptCfg[deptId] || {}), checks: out }; save(); return out;
+    },
+    growthOf(serviceId) { const m = new Map(); for (const g of S.growth) if (g.service_id === serviceId) m.set(g.person_id, g.items); return m; },
+    setGrowth(serviceId, personId, key, on) {
+      const sv = api.service(serviceId); if (!sv || !person(personId)) throw new ValidationError('예배 또는 사람을 찾을 수 없습니다.');
+      if (!api.checks(sv.dept_id).some(c => c.key === key)) throw new ValidationError('없는 체크 항목이에요.');
+      let g = S.growth.find(x => x.service_id === serviceId && x.person_id === personId); if (!g) { g = { service_id: serviceId, person_id: personId, items: [] }; S.growth.push(g); }
+      g.items = on ? [...new Set([...g.items, key])] : g.items.filter(k => k !== key); if (!g.items.length) S.growth = S.growth.filter(x => x !== g); save();
+    },
+    // 기간 동안 사람별 체크 횟수와 달란트 합계(가나다순. 순위를 매기지 않는다)
+    growthTotals(deptId, from, to) {
+      const checks = api.checks(deptId); const pts = Object.fromEntries(checks.map(c => [c.key, c.points])); const svc = new Map(S.services.filter(s => s.dept_id === deptId && s.date >= from && s.date <= to).map(s => [s.id, s]));
+      const rows = new Map(); for (const g of S.growth) { if (!svc.has(g.service_id)) continue; const r = rows.get(g.person_id) || { person: person(g.person_id), counts: {}, points: 0 }; for (const k of g.items) { if (!(k in pts)) continue; r.counts[k] = (r.counts[k] || 0) + 1; r.points += pts[k]; } rows.set(g.person_id, r); }
+      for (const p of S.people) if (p.dept_id === deptId && p.status === 'active' && !rows.has(p.id)) rows.set(p.id, { person: p, counts: {}, points: 0 });
+      return { checks, services: svc.size, rows: [...rows.values()].filter(r => r.person).sort((a, b) => (a.person.class_name || '').localeCompare(b.person.class_name || '', 'ko') || a.person.name.localeCompare(b.person.name, 'ko')) };
+    },
+    examPeriods(deptId, from = '0000-01-01', to = '9999-12-31') { return (S.schedules || []).filter(s => s.type === EXAM_TYPE && (!deptId || s.dept_id === deptId) && (s.end || s.date) >= from && s.date <= to).sort((a, b) => a.date.localeCompare(b.date)); },
+    examOverlap(deptId, from, to) { return api.examPeriods(deptId, from, to); },
+    // 장기 부재: 사유·기간·연락 주기. 마지막 연락은 심방·돌봄 기록에서 찾는다.
+    setAway(personId, a) {
+      const p = person(personId); if (!p) throw new ValidationError('사람을 찾을 수 없습니다.'); const reason = AWAY_REASONS.includes(a.reason) ? a.reason : '기타';
+      const start = reqDate(a.start || today(), '시작일'); const until = a.until ? reqDate(a.until, '돌아올 예정일') : ''; if (until && until < start) throw new ValidationError('돌아올 예정일이 시작보다 앞서요.');
+      const every = Math.max(7, Math.min(180, Math.trunc(Number(a.every)) || AWAY_EVERY[reason]));
+      p.away = { reason, start, until, every, note: String(a.note || '').slice(0, 120) }; p.status = 'away'; save();
+    },
+    returnFromAway(personId) { const p = person(personId); if (!p) return; p.status = 'active'; if (p.away) p.away.back = today(); save(); },
+    awayList(deptId, t = today()) {
+      const last = new Map(); for (const v of (S.visits || [])) if (!last.has(v.person_id) || v.date > last.get(v.person_id)) last.set(v.person_id, v.date);
+      return S.people.filter(p => p.status === 'away' && p.away && (!deptId || p.dept_id === deptId)).map(p => { const l = last.get(p.id) && last.get(p.id) >= p.away.start ? last.get(p.id) : null; const base = l || p.away.start; const next = addDays(base, p.away.every);
+        return { person: p, last: l, next, due: next <= t, back: p.away.until && p.away.until <= addDays(t, 30) }; }).sort((a, b) => a.next.localeCompare(b.next));
+    },
+    // 새가족 정착: 등록일과 단계별 완료일. 다음 단계와 등록 후 지난 날을 돌려준다.
+    startNewcomer(personId, date = today()) { const p = person(personId); if (!p) throw new ValidationError('사람을 찾을 수 없습니다.'); p.newcomer = { reg: reqDate(date), steps: {} }; save(); },
+    setNewcomerStep(personId, key, on) {
+      const p = person(personId); if (!p || !p.newcomer) throw new ValidationError('새가족으로 등록된 사람이 아니에요.'); if (!NEWCOMER_STEPS.some(([k]) => k === key)) throw new ValidationError('없는 단계예요.');
+      if (on) p.newcomer.steps[key] = today(); else delete p.newcomer.steps[key]; save();
+    },
+    endNewcomer(personId) { const p = person(personId); if (p && p.newcomer) { p.newcomer.done = today(); save(); } },
+    newcomers(deptId, t = today()) {
+      return S.people.filter(p => p.newcomer && !p.newcomer.done && p.status === 'active' && (!deptId || p.dept_id === deptId)).map(p => ({ person: p, next: NEWCOMER_STEPS.find(([k]) => !p.newcomer.steps[k]) || null, days: Math.round((Date.parse(t + 'T00:00:00Z') - Date.parse(p.newcomer.reg + 'T00:00:00Z')) / 864e5) })).sort((a, b) => a.person.newcomer.reg.localeCompare(b.person.newcomer.reg));
+    },
+
     // ----- 교재(공과): 교재 틀 → 주일예배에 한 과씩 배치, 중간에 다른 예배가 들어오면 한 주씩 밀기 -----
     curricula() { return (S.curricula || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'ko')); },
     curriculum: id => (S.curricula || []).find(c => c.id === id),
@@ -484,6 +555,12 @@ export function createStore(storage, today = kstToday) {
       const c = api.curriculum(id); if (!c) throw new ValidationError('교재를 찾을 수 없습니다.'); if (!rows.length) throw new ValidationError('넣을 과가 없어요.');
       return api.saveCurriculum({ ...c, lessons: [...c.lessons.filter(l => l.year !== year), ...rows.map(r => ({ ...r, year }))] });
     },
+    // 교재 파일(JSON): 교회 안에서 교재 목차를 나눠 쓰기. 형식이 맞지 않으면 아무것도 바꾸지 않는다.
+    importCurriculum(obj) {
+      if (!obj || obj.type !== 'mokhoe-curriculum' || !Array.isArray(obj.lessons)) throw new ValidationError('목회 비서 교재 파일이 아니에요.');
+      return api.saveCurriculum({ name: obj.name, publisher: obj.publisher, dept_id: 0, years: obj.years, lessons: obj.lessons, note: obj.note, source: obj.source });
+    },
+    exportCurriculum(id) { const c = api.curriculum(id); if (!c) throw new ValidationError('교재를 찾을 수 없습니다.'); return { type: 'mokhoe-curriculum', version: 1, name: c.name, publisher: c.publisher, years: c.years, note: c.note, source: c.source, lessons: c.lessons }; },
     deleteCurriculum(id) { S.curricula = (S.curricula || []).filter(c => c.id !== id); save(); }, // 이미 배치한 예배의 공과 내용은 그대로 남는다
     // 연간 배치: year(몇 년차)의 과를 start~until 주일예배에 차례로 넣는다.
     // 그 주일에 특별예배만 있으면 넘어가고(다음 주로 밀림), ‘공과 쉼’으로 표시한 주일도 넘어간다.
@@ -494,9 +571,10 @@ export function createStore(storage, today = kstToday) {
       const lessons = c.lessons.filter(l => l.year === year).sort((a, b) => a.no - b.no); if (!lessons.length) throw new ValidationError(`${year}년차에 과가 없어요. 교재에서 과를 먼저 만들어 주세요.`);
       const pick = (PICK_PRESETS[o.pick] || PICK_PRESETS.basic).pick; const dates = sundaysBetween(o.start, o.until); if (!dates.length) throw new ValidationError('그 기간에 주일이 없어요.');
       const tpl = S.services.filter(s => s.dept_id === deptId && s.kind === 'regular').sort((a, b) => b.date.localeCompare(a.date))[0] || {};
-      const r = { assigned: 0, created: 0, special: 0, hold: 0, missing: 0, leftover: 0, first: null, last: null }; let i = 0;
+      const r = { assigned: 0, created: 0, special: 0, hold: 0, missing: 0, fifth: 0, leftover: 0, first: null, last: null }; let i = 0;
       for (const d of dates) {
         if (i >= lessons.length) break;
+        if (o.skip5 === 'yes' && Number(d.slice(8)) > 28) { r.fifth++; continue; } // 매달 다섯째 주일은 복습·특별 프로그램으로 비운다
         let reg = S.services.find(s => s.dept_id === deptId && s.date === d && s.kind === 'regular');
         if (!reg) {
           if (S.services.some(s => s.dept_id === deptId && s.date === d)) { r.special++; continue; }
@@ -573,7 +651,7 @@ export function createStore(storage, today = kstToday) {
       const p = api.plan(deptId, year);
       return { dept: d, year, asOf: t, partial: t < `${Y}-12-31`, goal: p.goal, review: p.review || '', themes: p.themes || {}, nextGoal: api.plan(deptId, year + 1).goal,
         attendance: { held: regular.length, recorded: rec.length, avg: avg(rec), top, low, months, special },
-        people: { active: active.length, child: byKind('child'), youth: byKind('youth'), teacher: byKind('teacher'), volunteer: byKind('volunteer'), newcomers },
+        people: { active: active.length, child: byKind('child'), teen: byKind('teen'), youth: byKind('youth'), teacher: byKind('teacher'), volunteer: byKind('volunteer'), newcomers },
         events, visits: { count: vis.length, people: new Set(vis.map(v => v.person_id)).size, byType },
         money, monthly, draft: { events: draftEvents, budget: draftBudget, total: draftBudget.reduce((a, x) => a + x.suggest, 0) } };
     },
@@ -591,10 +669,10 @@ export function createStore(storage, today = kstToday) {
     // ----- 수정·삭제 보강 -----
     updatePerson(id, p) {
       const x = person(id); if (!x) throw new ValidationError('사람을 찾을 수 없습니다.');
-      x.name = reqText(p.name, '이름'); x.kind = ['child', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : x.kind;
+      x.name = reqText(p.name, '이름'); x.kind = ['child', 'teen', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : x.kind;
       x.birth_year = p.birth_year ? Number(p.birth_year) : null; x.class_name = p.class_name || ''; if (p.dept_id) x.dept_id = Number(p.dept_id); save();
     },
-    deleteService(id) { S.attendance = S.attendance.filter(a => a.service_id !== id); S.services = S.services.filter(s => s.id !== id); save(); },
+    deleteService(id) { S.attendance = S.attendance.filter(a => a.service_id !== id); S.growth = (S.growth || []).filter(g => g.service_id !== id); S.services = S.services.filter(s => s.id !== id); save(); },
     updateTransaction(id, t) {
       const x = S.transactions.find(v => v.id === id); if (!x || x.voided) throw new ValidationError('수정할 수 없는 거래입니다.');
       const old = { ...x }; const id0 = x.id;
