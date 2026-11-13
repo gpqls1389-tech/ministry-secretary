@@ -371,6 +371,12 @@ dialog { border-radius:var(--radius-lg); } dialog::backdrop { background:rgba(20
 .svhero .sv-main { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px 28px; margin-top:12px; } .svhero .k { font-size:13px; font-weight:600; color:var(--mute); } .svhero .v { font-size:1.35rem; font-weight:800; letter-spacing:-.025em; line-height:1.35; }
 @media (max-width:860px) { .nextsv { flex-wrap:wrap; gap:8px 12px; } .nextsv .dd { font-size:20px; min-width:3.6em; } .svhero .v { font-size:1.15rem; } }
 
+/* ===== 인원·출석(MB11.12): 출석 요약 띠, 출석률이 낮은 사람은 왼쪽 표시 ===== */
+.att tr.low td:first-child { box-shadow:inset 3px 0 0 var(--orange), 1px 0 0 var(--line); }
+.att tbody tr:hover td { background:#f7faf6; } .att tbody tr:hover td:first-child { background:#f7faf6; }
+.att .p .mk { box-shadow:none; }
+.att thead th small { font-weight:500; }
+
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }

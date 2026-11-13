@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB11.11';
+export const VERSION = 'MB11.12';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '11.11.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '11.12.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB11.12', date: '2026-11-13', items: ['인원·출석 화면 정리: 출석부 위에 요약 띠(가장 최근 예배 출석·평균 출석·출석률 50% 미만·명단 수), 출석률이 낮은 사람은 왼쪽에 표시', '명단 화면의 버튼 정리(주요 행동 하나, 나머지는 가볍게)', '설치 프로그램 11.12.0'] },
   { v: 'MB11.11', date: '2026-11-13', items: ['예배 화면 정리: 가장 가까운 예배를 맨 위 카드(D-day·교회력·비어 있는 항목)로 표시', '예배 상세에 전례 색 머리글(교회력·성경 본문·설교 제목)과 반 거르기 버튼 묶음', '설치 프로그램 11.11.0'] },
   { v: 'MB11.10', date: '2026-11-13', items: ['행사 화면 정리: 가장 가까운 행사를 맨 위 카드(D-day·남은 업무)로 보여 주고, 거르기 버튼을 한 묶음으로 정리', '행사 상세 맨 위에 요약 띠(행사까지·신청·남은 준비 업무·지출) 추가', '설치 프로그램 11.10.0'] },
   { v: 'MB11.9', date: '2026-11-13', items: ['일정·계획 화면 정리: 달 이름을 큰 머리글로, 주일 칸을 전례 색으로 은은하게 구분, 오늘 칸은 테두리로 강조', '달력 아래에 부서 색·전례 색 안내 추가, 연간 교회력 표에 전례 색 점 표시', '설치 프로그램 11.9.0'] },
