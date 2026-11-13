@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB11.8';
+export const VERSION = 'MB11.9';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '11.8.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '11.9.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB11.9', date: '2026-11-13', items: ['일정·계획 화면 정리: 달 이름을 큰 머리글로, 주일 칸을 전례 색으로 은은하게 구분, 오늘 칸은 테두리로 강조', '달력 아래에 부서 색·전례 색 안내 추가, 연간 교회력 표에 전례 색 점 표시', '설치 프로그램 11.9.0'] },
   { v: 'MB11.8', date: '2026-11-13', items: ['홈 화면 정리: 제목 자리에 오늘 날짜·교회력·오늘 요약, 오늘 할 일과 목회 브리핑을 나란히 배치', '이번 주 요약 숫자 4개를 한 줄 띠로 합침, 대림절 시작 한 달 전부터 대림절 안내 카드 표시', '설치 프로그램 11.8.0'] },
   { v: 'MB11.7', date: '2026-11-13', items: ['화면 전반 디자인 정리: 왼쪽 메뉴를 먹빛 초록으로 바꾸고, 오늘의 교회력(절기·전례 색)을 메뉴 위와 화면 맨 위 띠에 표시', '카드는 선으로만 나누고 그림자는 핵심 수치·알림에만 사용, 제목은 더 굵게, 버튼 모서리 통일, 로그인 화면 색 정리', '움직임 줄이기 설정을 따름', '설치 프로그램 11.7.0'] },
   { v: 'MB11.6', date: '2026-11-11', items: ['설정에 ‘이미지 만들기(AI)’ 추가: 그림 자리를 고르고 설명을 적으면 OpenAI로 그림을 만들어 미리보기·내려받기(로그인한 계정, 하루 한도, 관리자가 API 키를 설정해야 켜짐)', '설치 프로그램 11.6.0'] },

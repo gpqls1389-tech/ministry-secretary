@@ -341,6 +341,16 @@ dialog { border-radius:var(--radius-lg); } dialog::backdrop { background:rgba(20
 @media (max-width:1000px) { .homegrid { grid-template-columns:1fr; } .strip { grid-template-columns:1fr 1fr; } .strip > div:nth-child(3) { border-left:0; } .strip > div:nth-child(n+3) { border-top:1px solid var(--line); } .strip .key { border-radius:0 0 var(--radius-md) 0; } .seasoncard { flex-wrap:wrap; } }
 @media (max-width:860px) { .title { font-size:27px; } .strip .v { font-size:21px; } .strip > div { padding:14px; } }
 
+/* ===== 일정·계획(MB11.9): 달 이름이 머리글, 주일 칸은 은은하게 구분, 오늘 칸은 테두리 ===== */
+.monthbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 12px; } .mnav { display:flex; align-items:center; gap:8px; }
+.mtitle { margin:0 6px; font-size:26px; font-weight:800; letter-spacing:-.03em; min-width:7.2em; text-align:center; white-space:nowrap; }
+.cal .h.sun, .cal .sun { background:color-mix(in srgb, var(--litu,#3f9d5f) 7%, #fff); } .cal .h.sun { color:var(--ink-2); }
+.cal > div { position:relative; } .cal .today { box-shadow:inset 0 0 0 2px var(--primary); } .cal .today > b { background:var(--primary); color:var(--on-primary,#fff); }
+.cal > div > b { font-size:.9rem; font-variant-numeric:tabular-nums; }
+.callegend { display:flex; align-items:center; gap:6px 14px; flex-wrap:wrap; margin:10px 2px 0; } .callegend .lg { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:-6px; } .callegend .lg.d1 { background:var(--kid); } .callegend .lg.d2 { background:var(--yth); } .callegend .lcdot { background:var(--litu,#3f9d5f); margin-right:-8px; }
+.tabs a { padding:10px 16px; } .tabs a.on { font-weight:800; }
+@media (max-width:860px) { .mtitle { font-size:21px; min-width:0; } .monthbar { gap:8px; } .cal .sun { background:color-mix(in srgb, var(--litu,#3f9d5f) 7%, #fff); } }
+
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }
