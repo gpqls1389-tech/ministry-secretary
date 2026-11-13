@@ -77,3 +77,34 @@ test('동명이인 구분 표시, 사람 삭제는 기록 없을 때만', () => 
 test('작업 중인 데이터에는 보호자 연락처·알레르기 필드가 없다(웹앱 v1은 수집하지 않음)', () => {
   const s = mk(); for (const p of s.get().people) { assert.ok(!('guardian_phone' in p) && !('allergy_note' in p)); }
 });
+
+test('연말 보고서: 출석 평균은 기록한 회차만, 올해 처음 출석·행사·심방·결산·내년 초안을 모은다', () => {
+  const s = mk(); s.startEmpty();
+  const a = s.addPerson({ name: '가람', kind: 'child', dept_id: 1, class_name: '1반' }), b = s.addPerson({ name: '나래', kind: 'child', dept_id: 1, class_name: '1반' });
+  s.addPerson({ name: '다솜', kind: 'teacher', dept_id: 1 });
+  const old = s.saveService({ dept_id: 1, title: '주일예배', date: '2025-12-28' }); s.setAttendance(old, a, true); // 지난해 출석 → 올해 처음 출석에서 빠짐
+  const s1 = s.saveService({ dept_id: 1, title: '주일예배', date: '2026-03-01' }), s2 = s.saveService({ dept_id: 1, title: '주일예배', date: '2026-03-08' });
+  s.saveService({ dept_id: 1, title: '주일예배', date: '2026-03-15' }); // 출석 미기록 → 평균에서 제외
+  s.setAttendance(s1, a, true); s.setAttendance(s1, b, true); s.setAttendance(s2, a, true); s.setAttendance(s2, b, false);
+  s.saveService({ dept_id: 1, title: '성탄 축하 예배', date: '2026-12-24', kind: 'special' });
+  s.saveBudget(1, 2026, '간식', 100_000);
+  const e = s.saveEvent({ dept_id: 1, title: '2026 성탄 발표회', start_date: '2026-12-20', end_date: '2026-12-20', expected_budget: 200_000 });
+  s.addTransaction({ dept_id: 1, date: '2026-12-20', kind: 'expense', amount: 123_400, category: '행사', event_id: e });
+  s.addTransaction({ dept_id: 1, date: '2026-05-03', kind: 'expense', amount: 80_000, category: '간식' });
+  s.saveRetro(e, { good: '모두 참여', change: '연습 시간을 늘리기' });
+  s.addVisit({ person_id: b, date: '2026-03-10', type: '전화', note: '결석 안부' });
+  const R = s.annualReport(1, 2026, '2026-11-10');
+  assert.equal(R.attendance.held, 3); assert.equal(R.attendance.recorded, 2); assert.equal(R.attendance.avg, 1.5); assert.equal(R.attendance.special, 1);
+  assert.equal(R.attendance.top.present, 2); assert.equal(R.attendance.months[2].count, 2);
+  assert.equal(R.people.active, 3); assert.equal(R.people.teacher, 1); assert.equal(R.people.newcomers, 1, '나래만 올해 처음');
+  assert.equal(R.events.length, 1); assert.equal(R.visits.count, 1); assert.equal(R.visits.byType['전화'], 1);
+  assert.equal(R.money.expense, 203_400); assert.ok(R.partial);
+  assert.equal(R.draft.events[0].title, '2027 성탄 발표회'); assert.equal(R.draft.events[0].date, '2027-12-19'); assert.equal(R.draft.events[0].change, '연습 시간을 늘리기');
+  const snack = R.draft.budget.find(x => x.category === '간식'), ev = R.draft.budget.find(x => x.category === '행사');
+  assert.equal(snack.suggest, 100_000, '예산이 지출보다 크면 예산'); assert.equal(ev.suggest, 130_000, '지출을 만 원 단위로 올림');
+  // 총평 저장이 목표·주제를 지우지 않고, 목표 저장도 총평을 지우지 않는다
+  s.savePlan(1, 2026, '말씀 안에서 자라는 아이들', { 1: '창조' }); s.saveReview(1, 2026, '감사한 한 해');
+  s.savePlan(1, 2026, '말씀 안에서 자라는 아이들', { 1: '창조', 2: '사랑' });
+  const p = s.plan(1, 2026); assert.equal(p.review, '감사한 한 해'); assert.equal(p.themes[2], '사랑'); assert.equal(s.annualReport(1, 2026, '2026-11-10').review, '감사한 한 해');
+  assert.throws(() => s.annualReport(99, 2026), ValidationError);
+});

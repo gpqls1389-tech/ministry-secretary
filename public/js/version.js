@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB11.13';
+export const VERSION = 'MB11.14';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '11.13.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '11.14.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB11.14', date: '2026-11-13', items: ['연말 부서 보고서 추가(일정·계획 → 연간·절기 계획, 회계에서 열기): 출석·인원·행사·심방·결산을 한 해 단위로 자동 정리하고 인쇄·PDF 저장', '총평과 내년 사역 목표를 적어 저장, 내년 행사 일정·예산 초안 자동 제안', '설치 프로그램 11.14.0'] },
   { v: 'MB11.13', date: '2026-11-13', items: ['회계 화면 정리: 요약 숫자 5개를 한 줄 띠로 합치고 지출 사용률 막대 추가', '거래 내역 버튼을 표 위 한 줄로 정리(등록은 강조, 가져오기·CSV는 가볍게)', '설치 프로그램 11.13.0'] },
   { v: 'MB11.12', date: '2026-11-13', items: ['인원·출석 화면 정리: 출석부 위에 요약 띠(가장 최근 예배 출석·평균 출석·출석률 50% 미만·명단 수), 출석률이 낮은 사람은 왼쪽에 표시', '명단 화면의 버튼 정리(주요 행동 하나, 나머지는 가볍게)', '설치 프로그램 11.12.0'] },
   { v: 'MB11.11', date: '2026-11-13', items: ['예배 화면 정리: 가장 가까운 예배를 맨 위 카드(D-day·교회력·비어 있는 항목)로 표시', '예배 상세에 전례 색 머리글(교회력·성경 본문·설교 제목)과 반 거르기 버튼 묶음', '설치 프로그램 11.11.0'] },

@@ -395,7 +395,7 @@ export function createStore(storage, today = kstToday) {
     importMonthThemes(deptId, year, themes) { // themes: { 1: '주제', ... } — 선택한 달의 주제를 덮어쓴다
       if (!dept(Number(deptId))) throw new ValidationError('부서를 선택하세요.'); const ks = Object.keys(themes || {}); if (!ks.length) throw new ValidationError('등록할 주제가 없어요.');
       const p = api.plan(Number(deptId), year); const next = { ...p.themes }; for (const k of ks) { const m = Number(k); if (!Number.isInteger(m) || m < 1 || m > 12) throw new ValidationError('달은 1~12여야 해요.'); next[m] = reqText(themes[k], `${m}월 주제`).slice(0, 60); }
-      S.plans[`${Number(deptId)}-${year}`] = { goal: p.goal, themes: next }; save(); return ks.length;
+      S.plans[`${Number(deptId)}-${year}`] = { ...p, goal: p.goal, themes: next }; save(); return ks.length;
     },    schedule: id => (S.schedules || []).find(s => s.id === id),
     schedules(deptId) { return (S.schedules || []).filter(s => !deptId || s.dept_id === deptId).sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')); },
     deleteSchedule(id) { S.schedules = (S.schedules || []).filter(s => s.id !== id); save(); },
@@ -448,9 +448,45 @@ export function createStore(storage, today = kstToday) {
       return Array.from({ length: 12 }, (_, i) => { const tx = api.transactions({ deptId, year, month: i + 1 }); const income = tx.filter(t => t.kind === 'income').reduce((a, t) => a + t.amount, 0), expense = tx.filter(t => t.kind === 'expense').reduce((a, t) => a + t.amount, 0); return { month: i + 1, income, expense, net: income - expense }; });
     },
 
+    // ----- 연말 부서 보고서: 한 부서의 한 해를 모은다(모두 입력된 기록에서 계산) -----
+    annualReport(deptId, year, t = today()) {
+      const d = dept(deptId); if (!d) throw new ValidationError('부서를 선택하세요.'); const Y = String(year);
+      const inYear = s => String(s || '').startsWith(Y);
+      // 출석: 정기예배 중 출석을 기록한 회차만 평균에 넣는다
+      const regular = S.services.filter(s => s.dept_id === deptId && s.kind === 'regular' && inYear(s.date)).sort((a, b) => a.date.localeCompare(b.date));
+      const special = S.services.filter(s => s.dept_id === deptId && s.kind !== 'regular' && inYear(s.date)).length;
+      const rec = regular.map(s => ({ s, c: api.attendanceCount(s.id) })).filter(x => x.c.recorded > 0).map(x => ({ date: x.s.date, present: x.c.present }));
+      const avg = arr => arr.length ? Math.round(arr.reduce((a, x) => a + x.present, 0) / arr.length * 10) / 10 : null;
+      const months = Array.from({ length: 12 }, (_, i) => { const mm = String(i + 1).padStart(2, '0'); const r = rec.filter(x => x.date.slice(5, 7) === mm); return { month: i + 1, count: r.length, avg: avg(r) }; });
+      const top = rec.reduce((m, x) => (!m || x.present > m.present ? x : m), null), low = rec.reduce((m, x) => (!m || x.present < m.present ? x : m), null);
+      // 올해 처음 출석한 사람: 이 부서 예배에서 처음 ‘출석’으로 기록된 날이 올해인 사람
+      const svcDate = new Map(S.services.filter(s => s.dept_id === deptId).map(s => [s.id, s.date])); const first = new Map();
+      for (const a of S.attendance) { const dt = svcDate.get(a.service_id); if (!dt || !a.present) continue; if (!first.has(a.person_id) || dt < first.get(a.person_id)) first.set(a.person_id, dt); }
+      const newcomers = [...first.entries()].filter(([, dt]) => inYear(dt)).length;
+      const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active'); const byKind = k => active.filter(p => p.kind === k).length;
+      // 행사
+      const events = S.events.filter(e => e.dept_id === deptId && inYear(e.start_date)).sort((a, b) => a.start_date.localeCompare(b.start_date)).map(e => ({ e, s: api.eventSummary(e.id) }));
+      // 심방·돌봄
+      const vis = (S.visits || []).filter(v => inYear(v.date) && (person(v.person_id) || {}).dept_id === deptId); const byType = {}; vis.forEach(v => (byType[v.type] = (byType[v.type] || 0) + 1));
+      // 회계
+      const money = api.deptSummary(deptId, year); const monthly = api.monthly(deptId, year);
+      const spentBy = {}; api.transactions({ deptId, year }).filter(x => x.kind === 'expense').forEach(x => { const c = x.category || '(항목 없음)'; spentBy[c] = (spentBy[c] || 0) + x.amount; });
+      // 내년 초안: 올해 한 행사는 52주 뒤 같은 요일로, 예산은 올해 지출(만 원 단위 올림)과 올해 예산 중 큰 값
+      const next = String(year + 1); const shift = s => new Date(Date.parse(s + 'T00:00:00Z') + 364 * 864e5).toISOString().slice(0, 10);
+      const draftEvents = events.filter(({ e }) => e.status !== 'cancelled').map(({ e }) => ({ title: e.title.replace(new RegExp(Y, 'g'), next), type: e.type, date: shift(e.start_date), change: (e.retro && e.retro.change) || '' }));
+      const cats = new Set([...money.byCategory.map(c => c.category), ...Object.keys(spentBy)]);
+      const draftBudget = [...cats].map(c => { const b = (money.byCategory.find(x => x.category === c) || {}).budget || 0; const sp = spentBy[c] || 0; return { category: c, budget: b, spent: sp, suggest: Math.max(b, Math.ceil(sp / 10000) * 10000) }; }).sort((a, b) => b.suggest - a.suggest);
+      const p = api.plan(deptId, year);
+      return { dept: d, year, asOf: t, partial: t < `${Y}-12-31`, goal: p.goal, review: p.review || '', themes: p.themes || {}, nextGoal: api.plan(deptId, year + 1).goal,
+        attendance: { held: regular.length, recorded: rec.length, avg: avg(rec), top, low, months, special },
+        people: { active: active.length, child: byKind('child'), youth: byKind('youth'), teacher: byKind('teacher'), volunteer: byKind('volunteer'), newcomers },
+        events, visits: { count: vis.length, people: new Set(vis.map(v => v.person_id)).size, byType },
+        money, monthly, draft: { events: draftEvents, budget: draftBudget, total: draftBudget.reduce((a, x) => a + x.suggest, 0) } };
+    },
+    saveReview(deptId, year, text) { if (!dept(deptId)) throw new ValidationError('부서를 선택하세요.'); const k = `${deptId}-${year}`; const p = S.plans[k] || { goal: '', themes: {} }; S.plans[k] = { ...p, review: String(text || '').slice(0, 3000) }; save(); },
     // ----- 연간·절기 계획 -----
     plan(deptId, year) { const k = `${deptId}-${year}`; return S.plans[k] || { goal: '', themes: {} }; },
-    savePlan(deptId, year, goal, themes) { S.plans[`${deptId}-${year}`] = { goal: goal || '', themes: themes || {} }; save(); },
+    savePlan(deptId, year, goal, themes) { const k = `${deptId}-${year}`; S.plans[k] = { ...(S.plans[k] || {}), goal: goal || '', themes: themes || {} }; save(); },
     seasons(deptId, year) { return S.seasons.filter(s => (!deptId || s.dept_id === deptId) && s.year === year).sort((a, b) => (a.start || '').localeCompare(b.start || '')); },
     saveSeason(s) {
       const rec = { dept_id: Number(s.dept_id), year: Number(s.year), name: reqText(s.name, '절기명'), start: s.start ? reqDate(s.start, '시작일') : null, end: s.end ? reqDate(s.end, '종료일') : null, theme: s.theme || '', scripture: s.scripture || '', plan: s.plan || '' };
@@ -497,7 +533,7 @@ export function createStore(storage, today = kstToday) {
     loadMonthThemes(deptId, year) { // 비어 있는 달만 채운다
       const p = api.plan(deptId, year); const themes = { ...p.themes }; let n = 0;
       MONTH_THEMES.forEach((t, i) => { if (!themes[i + 1]) { themes[i + 1] = t; n++; } });
-      S.plans[`${deptId}-${year}`] = { goal: p.goal, themes }; save(); return n;
+      S.plans[`${deptId}-${year}`] = { ...p, goal: p.goal, themes }; save(); return n;
     },
     // 홈의 시작 체크리스트: 데이터에서 자동으로 완료 여부를 계산
     guideProgress() {
