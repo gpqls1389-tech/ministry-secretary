@@ -382,6 +382,10 @@ dialog { border-radius:var(--radius-lg); } dialog::backdrop { background:rgba(20
 .strip.five .key.warn .v { color:var(--orange); } .strip.five .bar { max-width:100%; }
 @media (max-width:1100px) { .strip.five { grid-template-columns:1fr 1fr; } .strip.five > div:nth-child(n) { border-left:1px solid var(--line); border-top:1px solid var(--line); } .strip.five > div:nth-child(odd) { border-left:0; } .strip.five > div:nth-child(-n+2) { border-top:0; } .strip.five > div:nth-child(5) { grid-column:1 / -1; border-left:0; } .strip.five .key { border-radius:0; } }
 
+/* ===== 연말 보고서(MB11.14): 입력 칸은 화면에서만, 인쇄에는 적은 글만 ===== */
+.printonly { display:none; }
+@media print { .printonly { display:block; } .strip { break-inside:avoid; } .props, .tablewrap { break-inside:avoid; } h2 { break-after:avoid; } }
+
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }

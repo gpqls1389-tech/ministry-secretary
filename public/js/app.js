@@ -124,7 +124,7 @@ function paintSeason() {
   el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
 }
 function render() {
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' ? 'services' : view === 'schedule' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name]), ['all', '전체']].map(([v, l]) => `<button data-dept="${v}" class="${UI.dept === v ? 'on' : ''}">${l}</button>`).join('');
   paintAcct();
@@ -132,7 +132,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : (did() === 1 ? 'kid' : did() === 2 ? 'youth' : 'all'); // 아동부 노랑 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, annual: vAnnual, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -223,7 +223,7 @@ function vPlan() {
     if (UI.planTab === 'list') return vScheduleList(tabs);
     const d = workDept(); const P = store.plan(d, UI.year); const autoSeasons = !store.seasons(d, UI.year).length ? guard(() => store.loadSeasonTemplate(d, UI.year)) : 0; const seasons = store.seasons(d, UI.year);
     const evs = store.get().events.filter(e => e.dept_id === d && e.start_date.startsWith(String(UI.year))).sort((a, b) => a.start_date.localeCompare(b.start_date));
-    page('🗓️', '일정·계획', `${deptTag(d)} ${UI.dept === 'all' ? '<span class="mute small">(전체 보기에서는 첫 부서를 표시합니다)</span>' : ''}`, `${tabs}<div class="row"><b>${store.dept(d).name}</b>${yearSel()}</div>
+    page('🗓️', '일정·계획', `${deptTag(d)} ${UI.dept === 'all' ? '<span class="mute small">(전체 보기에서는 첫 부서를 표시합니다)</span>' : ''}`, `${tabs}<div class="row"><b>${store.dept(d).name}</b>${yearSel()}<span class="sp"></span><button class="pri noprint" data-go="#annual">📑 ${UI.year}년 연말 보고서</button></div>
     <h2>교회력 <span class="mute small">${UI.year}년 · 자동 계산</span></h2><div class="tablewrap"><table class="t"><thead><tr><th>절기</th><th>전례 색</th><th>기간</th><th>설명</th></tr></thead><tbody>${churchYear(UI.year).map(s => `<tr><td><b>${esc(s.name)}</b></td><td><span class="lcdot" style="background:${LITU_HEX[s.color] || '#2f8f4e'}"></span>${esc(s.color)}</td><td>${esc(s.start)} ~ ${esc(s.end)}</td><td class="mute small">${esc(s.note)}</td></tr>`).join('')}</tbody></table></div><p class="mute small">서방 교회력의 일반 규칙으로 계산한 값이에요. 교단·교회마다 절기 이름과 주차 세는 방법이 조금 다를 수 있으니 확인해서 쓰세요. 달력과 예배 목록에는 이 계산 결과가 자동으로 표시돼요.${autoSeasons ? ` 아래 ‘절기 계획’에는 ${UI.year}년 기본 절기 ${autoSeasons}개를 자동으로 넣었어요.` : ''}</p>
     <h2>사역 목표</h2><textarea id="goal" placeholder="올해 사역 목표">${esc(P.goal)}</textarea>
     <h2>월별 교육 주제 <button class="sm noprint" data-act="themeTpl">예시 넣기</button> <button class="sm noprint" data-act="pdfThemes">PDF에서 가져오기</button></h2><p class="mute small noprint" style="margin:-6px 0 10px">비어 있는 달만 예시로 채웁니다. 이미 적은 달은 바뀌지 않아요. 채운 뒤 우리 교회에 맞게 고쳐 쓰세요.</p><div class="tablewrap"><table class="t"><tbody>${Array.from({ length: 12 }, (_, i) => `<tr><td style="width:60px">${i + 1}월</td><td><input class="cell-in" data-theme="${i + 1}" value="${esc(P.themes[i + 1] || '')}" placeholder="교육 주제"></td></tr>`).join('')}</tbody></table></div>
@@ -436,7 +436,7 @@ function vMoney() {
   page('💰', '회계', `${yearSel()} <span class="mute small">행사 지출은 부서 합계에 한 번만 포함됩니다.</span>`, `<div class="strip five" role="group" aria-label="회계 요약"><div><div class="k">예산</div><div class="v">${won(tot.b)}</div><div class="s">${UI.year}년 항목 합계</div></div><div><div class="k">지출</div><div class="v">${won(tot.e)}</div><div class="s">${tot.b ? `예산의 ${Math.round(tot.e / tot.b * 100)}% 사용` : '예산 없음'}</div>${tot.b ? `<div style="margin-top:6px">${barHtml(tot.e, tot.b)}</div>` : ''}</div><div class="key ${tot.b - tot.e < 0 ? 'warn' : ''}"><div class="k">예산 잔액</div><div class="v">${won(tot.b - tot.e)}</div><div class="s">예산 − 지출${tot.b - tot.e < 0 ? ' <span class="tag bad">초과</span>' : ''}</div></div><div><div class="k">수입</div><div class="v">${won(tot.i)}</div><div class="s">참가비·후원 등</div></div><div class="${tot.i - tot.e < 0 ? 'warn' : ''}"><div class="k">수입·지출 차액</div><div class="v" style="${tot.i - tot.e >= 0 ? 'color:var(--good)' : ''}">${won(tot.i - tot.e)}</div><div class="s">수입 − 지출 (예산 잔액과는 다른 값)</div></div></div>
   <h2>예산 대비 집행 <button class="sm noprint" data-act="editBudget">+ 예산 항목</button> <button class="sm ghost noprint" data-act="pdfBudget">PDF에서 가져오기</button></h2>${sums.map(({ d, s }) => `<h3 style="margin-top:14px">${deptTag(d.id)} <span class="mute small">행사 지출 ${won(s.event_expense)} · 행사 외 ${won(s.non_event_expense)}</span></h3><div class="tablewrap"><table class="t"><thead><tr><th>항목</th><th class="num">예산</th><th class="num">지출</th><th class="num">예산 잔액</th><th style="width:22%">집행률</th></tr></thead><tbody>${s.byCategory.map(c => `<tr><td>${esc(c.category)}</td><td class="num">${won(c.budget)}</td><td class="num">${won(c.spent)}</td><td class="num" style="color:${c.remaining < 0 ? 'var(--orange)' : 'inherit'};font-weight:600">${won(c.remaining)}</td><td><div class="row small" style="gap:6px;margin-bottom:4px"><b>${c.budget ? Math.round(c.spent / c.budget * 100) + '%' : '-'}</b>${c.remaining < 0 ? '<span class="tag bad">초과</span>' : ''}</div>${barHtml(c.spent, c.budget)}</td></tr>`).join('') || `<tr><td colspan="5">${emptyState('예산 항목이 없어요', `${UI.year}년 예산을 항목별로 넣으면 예산 잔액이 계산돼요. 예: ${BUDGET_SUGGESTIONS.slice(0, 4).join(' · ')}`, '<button class="sm pri" data-act="editBudget">+ 예산 항목 입력</button>')}</td></tr>`}</tbody><tfoot><tr><td>합계</td><td class="num">${won(s.budget)}</td><td class="num">${won(s.expense)}</td><td class="num">${won(s.budget_remaining)}</td><td>${barHtml(s.expense, s.budget)}</td></tr></tfoot></table></div>`).join('')}
   <h2>월별 수입·지출 <span class="mute small">${esc(store.dept(wd).name)}</span></h2><div class="tablewrap"><table class="t"><thead><tr><th>월</th><th class="num">수입</th><th class="num">지출</th><th class="num">차액</th></tr></thead><tbody>${mo.map(m => `<tr><td>${m.month}월</td><td class="num">${m.income ? won(m.income) : '-'}</td><td class="num">${m.expense ? won(m.expense) : '-'}</td><td class="num" style="color:${m.net < 0 ? 'var(--red)' : 'inherit'}">${m.income || m.expense ? won(m.net) : '-'}</td></tr>`).join('')}</tbody><tfoot><tr><td>합계</td><td class="num">${won(mo.reduce((a, m) => a + m.income, 0))}</td><td class="num">${won(mo.reduce((a, m) => a + m.expense, 0))}</td><td class="num">${won(mo.reduce((a, m) => a + m.net, 0))}</td></tr></tfoot></table></div>
-  <h2>거래 내역</h2><div class="row noprint" style="margin-bottom:10px"><button class="pri" data-act="newTx">+ 지출·수입 등록</button><button data-go="#report">월 결산 보고서</button><select data-mmonth aria-label="월 선택"><option value="">전체 월</option>${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}"${String(month) === String(i + 1) ? ' selected' : ''}>${i + 1}월</option>`).join('')}</select><span class="sp"></span><button class="ghost" data-act="pdfTx">PDF에서 가져오기</button><button class="ghost" data-act="csvTx">엑셀(CSV)</button></div>${txTable(store.transactions({ deptId: did(), year: UI.year, month: month || undefined }))}`);
+  <h2>거래 내역</h2><div class="row noprint" style="margin-bottom:10px"><button class="pri" data-act="newTx">+ 지출·수입 등록</button><button data-go="#report">월 결산 보고서</button><button data-go="#annual">연말 보고서</button><select data-mmonth aria-label="월 선택"><option value="">전체 월</option>${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}"${String(month) === String(i + 1) ? ' selected' : ''}>${i + 1}월</option>`).join('')}</select><span class="sp"></span><button class="ghost" data-act="pdfTx">PDF에서 가져오기</button><button class="ghost" data-act="csvTx">엑셀(CSV)</button></div>${txTable(store.transactions({ deptId: did(), year: UI.year, month: month || undefined }))}`);
 }
 function txForm(v = {}) {
   const wd = Number(v.dept_id || workDept()); const evs = store.get().events.filter(e => e.dept_id === wd);
@@ -499,6 +499,57 @@ function vReport() {
   <div class="sign"><div><span>작성</span></div><div><span>검토</span></div><div><span>승인</span></div></div>
   ${UI.rep.rc && withRc.length ? `<h2 class="pagebreak">영수증 첨부</h2><div class="rc-grid">${withRc.map(t => { const s = RCP.src(t.receipt); return `<figure>${s ? `<img src="${esc(s)}" alt="영수증">` : '<div class="mute small">사진 없음</div>'}<figcaption>${md(t.date)} · ${esc(t.memo || t.category)} · ${won(t.amount)}</figcaption></figure>`; }).join('')}</div>` : ''}
   <p class="mute small noprint">이 보고서는 입력한 거래로 자동 계산돼요. 인쇄 화면에서 ‘PDF로 저장’을 고르면 파일로 보관할 수 있어요.</p>`);
+}
+
+// ----- 연말 부서 보고서(인쇄용) -----
+function vAnnual() {
+  const d = workDept(); const y = UI.year; const R = store.annualReport(d, y, today()); const A = R.attendance, P = R.people, M = R.money;
+  const pct = (a, b) => (b ? Math.round(a / b * 100) + '%' : '-'); const none = '<span class="mute">입력 안 함</span>';
+  const evRows = R.events.map(({ e, s }) => `<tr><td>${esc(range(md(e.start_date), md(e.end_date)))}</td><td><b>${esc(e.title)}</b><br><span class="mute small">${esc(e.type)}</span></td><td>${e.status === 'done' ? '완료' : e.status === 'cancelled' ? '취소' : '예정'}</td><td class="num">${e.target_count || '-'}</td><td class="num">${s.registered}</td><td class="num">${s.attended}</td><td class="num">${won(s.expense)}<br><span class="mute small">예산 ${won(e.expected_budget)}</span></td></tr>`).join('');
+  const retros = R.events.filter(({ e }) => e.retro && (e.retro.good || e.retro.change));
+  const moRows = R.monthly.filter(m => m.income || m.expense);
+  const themes = Object.entries(R.themes).filter(([, v]) => v).sort((a, b) => a[0] - b[0]);
+  page('📑', `${y}년 ${R.dept.name} 연말 보고서`, `작성 기준일 ${md(R.asOf)}${R.partial ? ' · 아직 한 해가 끝나지 않아 지금까지의 기록만 담겨요' : ''}${UI.dept === 'all' ? ' <span class="mute small">(전체 보기에서는 첫 부서)</span>' : ''}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#plan">◀ 일정·계획</button>${yearSel()}<span class="sp"></span><button class="pri" data-act="print">인쇄·PDF 저장</button></div>
+  <div class="callout noprint" style="margin-bottom:16px"><span>📑</span><div class="sp">입력한 출석·행사·심방·회계 기록으로 자동으로 만든 보고서예요. <b>총평</b>과 <b>내년 사역 목표</b>만 직접 적으면 돼요. 제출 양식은 교회마다 다르니 필요한 부분만 골라 쓰세요.</div></div>
+  <div class="strip" role="group" aria-label="한 해 요약"><div class="key"><div class="k">정기예배 평균 출석</div><div class="v">${A.avg === null ? '-' : A.avg + '명'}</div><div class="s">출석 기록 ${A.recorded}회 / 예배 ${A.held}회</div></div><div><div class="k">현재 명단</div><div class="v">${P.active}명</div><div class="s">올해 처음 출석 ${P.newcomers}명</div></div><div><div class="k">행사</div><div class="v">${R.events.length}건</div><div class="s">완료 ${R.events.filter(x => x.e.status === 'done').length} · 취소 ${R.events.filter(x => x.e.status === 'cancelled').length}</div></div><div class="${M.budget && M.expense > M.budget ? 'warn' : ''}"><div class="k">지출</div><div class="v">${won(M.expense)}</div><div class="s">예산 ${won(M.budget)} 중 ${pct(M.expense, M.budget)}</div></div></div>
+
+  <h2>1. 사역 목표와 총평</h2>
+  <dl class="props"><dt>올해 사역 목표</dt><dd style="white-space:pre-wrap">${esc(R.goal) || none}</dd></dl>
+  <label class="f noprint" style="margin-top:12px">총평 (한 해를 돌아보며 감사한 일, 아쉬운 점, 함께 기도할 일)<textarea id="review" maxlength="3000" rows="5" placeholder="예: 새친구 초청 주일 이후 출석이 늘었습니다. 교사가 부족해 두 반을 합쳐 운영했습니다.">${esc(R.review)}</textarea></label>
+  <div class="row noprint"><button data-act="saveReview">총평 저장</button></div>
+  <div class="printonly"><p style="white-space:pre-wrap"><b>총평</b><br>${esc(R.review) || '(작성 안 함)'}</p></div>
+
+  <h2>2. 예배와 출석</h2>
+  <dl class="props"><dt>정기예배</dt><dd>${A.held}회 (출석 기록 ${A.recorded}회)</dd><dt>특별예배</dt><dd>${A.special}회</dd><dt>평균 출석</dt><dd>${A.avg === null ? '-' : A.avg + '명'} <span class="mute small">(출석을 기록한 예배만 계산)</span></dd><dt>가장 많이 온 주일</dt><dd>${A.top ? `${md(A.top.date)} · ${A.top.present}명` : '-'}</dd><dt>가장 적게 온 주일</dt><dd>${A.low ? `${md(A.low.date)} · ${A.low.present}명` : '-'}</dd></dl>
+  <div class="tablewrap" style="margin-top:12px"><table class="t"><thead><tr><th>월</th>${A.months.map(m => `<th class="num">${m.month}월</th>`).join('')}</tr></thead><tbody><tr><td>평균 출석</td>${A.months.map(m => `<td class="num">${m.avg === null ? '-' : m.avg}</td>`).join('')}</tr><tr><td class="mute small">기록 회수</td>${A.months.map(m => `<td class="num mute small">${m.count || '-'}</td>`).join('')}</tr></tbody></table></div>
+
+  <h2>3. 인원 현황 <span class="mute small">작성 기준일 현재</span></h2>
+  <dl class="props"><dt>현재 명단</dt><dd>${P.active}명 (아동 ${P.child} · 청년 ${P.youth} · 교사 ${P.teacher} · 봉사자 ${P.volunteer})</dd><dt>올해 처음 출석</dt><dd>${P.newcomers}명 <span class="mute small">(이 부서 예배에 처음 ‘출석’으로 기록된 날이 올해인 사람)</span></dd></dl>
+
+  <h2>4. 행사</h2>
+  <div class="tablewrap"><table class="t"><thead><tr><th>일정</th><th>행사</th><th>상태</th><th class="num">목표</th><th class="num">신청</th><th class="num">참석</th><th class="num">지출</th></tr></thead><tbody>${evRows || '<tr><td colspan="7" class="mute">올해 등록한 행사가 없어요.</td></tr>'}</tbody></table></div>
+  ${retros.length ? `<h3 style="margin-top:16px">행사 회고</h3>${retros.map(({ e }) => `<dl class="props" style="margin-bottom:10px"><dt>행사</dt><dd><b>${esc(e.title)}</b></dd><dt>잘된 점</dt><dd style="white-space:pre-wrap">${esc(e.retro.good) || '-'}</dd><dt>바꿀 점</dt><dd style="white-space:pre-wrap">${esc(e.retro.change) || '-'}</dd></dl>`).join('')}` : ''}
+
+  <h2>5. 심방·돌봄</h2>
+  <dl class="props"><dt>기록</dt><dd>${R.visits.count}건 · ${R.visits.people}명</dd><dt>방법별</dt><dd>${Object.entries(R.visits.byType).map(([k, n]) => `${esc(k)} ${n}건`).join(' · ') || '-'}</dd></dl>
+
+  <h2>6. 결산</h2>
+  <dl class="props"><dt>예산</dt><dd>${won(M.budget)}</dd><dt>지출</dt><dd>${won(M.expense)} (예산의 ${pct(M.expense, M.budget)}) · 행사 지출 ${won(M.event_expense)} · 행사 외 ${won(M.non_event_expense)}</dd><dt>예산 잔액</dt><dd>${won(M.budget_remaining)}</dd><dt>수입</dt><dd>${won(M.income)}</dd><dt>수입 − 지출</dt><dd>${won(M.net)}</dd></dl>
+  <div class="tablewrap" style="margin-top:12px"><table class="t"><thead><tr><th>예산 항목</th><th class="num">예산</th><th class="num">지출</th><th class="num">잔액</th><th class="num">집행률</th></tr></thead><tbody>${M.byCategory.map(c => `<tr><td>${esc(c.category)}</td><td class="num">${won(c.budget)}</td><td class="num">${won(c.spent)}</td><td class="num">${won(c.remaining)}</td><td class="num">${pct(c.spent, c.budget)}</td></tr>`).join('') || '<tr><td colspan="5" class="mute">예산 항목이 없어요.</td></tr>'}</tbody></table></div>
+  ${moRows.length ? `<div class="tablewrap" style="margin-top:12px"><table class="t"><thead><tr><th>월</th><th class="num">수입</th><th class="num">지출</th><th class="num">차액</th></tr></thead><tbody>${moRows.map(m => `<tr><td>${m.month}월</td><td class="num">${won(m.income)}</td><td class="num">${won(m.expense)}</td><td class="num">${won(m.net)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  ${themes.length ? `<h2>7. 월별 교육 주제</h2><div class="tablewrap"><table class="t"><tbody>${themes.map(([m, v]) => `<tr><td style="width:60px">${m}월</td><td>${esc(v)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+
+  <h2 class="pagebreak">${themes.length ? 8 : 7}. ${y + 1}년 계획 초안</h2>
+  <p class="mute small">올해 기록으로 만든 <b>초안</b>이에요. 날짜·예산은 교회 일정과 재정 계획에 맞게 꼭 고쳐 쓰세요.</p>
+  <label class="f noprint">${y + 1}년 사역 목표<textarea id="nextgoal" maxlength="1000" rows="3" placeholder="예: 말씀을 삶으로 살아내는 어린이">${esc(R.nextGoal)}</textarea></label>
+  <div class="row noprint"><button data-act="saveNextGoal">${y + 1}년 목표 저장</button><span class="mute small">‘일정·계획 → 연간·절기 계획’의 ${y + 1}년 사역 목표에 저장돼요.</span></div>
+  <div class="printonly"><p style="white-space:pre-wrap"><b>${y + 1}년 사역 목표</b><br>${esc(R.nextGoal) || '(작성 안 함)'}</p></div>
+  <h3 style="margin-top:16px">행사 일정 초안 <span class="mute small">올해 날짜에서 52주 뒤 같은 요일</span></h3>
+  <div class="tablewrap"><table class="t"><thead><tr><th>예상 날짜</th><th>행사</th><th>올해 회고에서 바꿀 점</th></tr></thead><tbody>${R.draft.events.map(x => `<tr><td>${md(x.date)}</td><td>${esc(x.title)} <span class="mute small">${esc(x.type)}</span></td><td class="small" style="white-space:pre-wrap">${esc(x.change) || '-'}</td></tr>`).join('') || '<tr><td colspan="3" class="mute">올해 행사가 없어요.</td></tr>'}</tbody></table></div>
+  <h3 style="margin-top:16px">예산 초안 <span class="mute small">올해 예산과 실제 지출(만 원 단위 올림) 중 큰 값</span></h3>
+  <div class="tablewrap"><table class="t"><thead><tr><th>항목</th><th class="num">${y}년 예산</th><th class="num">${y}년 지출</th><th class="num">${y + 1}년 제안</th></tr></thead><tbody>${R.draft.budget.map(c => `<tr><td>${esc(c.category)}</td><td class="num">${c.budget ? won(c.budget) : '-'}</td><td class="num">${c.spent ? won(c.spent) : '-'}</td><td class="num"><b>${won(c.suggest)}</b></td></tr>`).join('') || '<tr><td colspan="4" class="mute">예산·지출 기록이 없어요.</td></tr>'}</tbody><tfoot><tr><td>합계</td><td></td><td></td><td class="num">${won(R.draft.total)}</td></tr></tfoot></table></div>
+  <div class="sign"><div><span>작성</span></div><div><span>검토</span></div><div><span>승인</span></div></div>
+  <p class="mute small noprint">사용 전에 확인하세요: 출석·인원 숫자는 입력한 기록만 센 것이라 실제와 다를 수 있어요. 아이 이름이나 심방 내용은 보고서에 넣지 않았어요. 제출 전에 담당 교역자와 함께 확인하세요.</p>`);
 }
 
 // ----- 안내 문구(복사용) -----
@@ -685,6 +736,8 @@ const ACT = {
   movePerson: d => { const p = store.person(Number(d.id)); form({ title: `${p.name} 이동`, intro: '<p class="mute small">이동 후에도 과거 출석 기록은 남습니다.</p>', values: { dept_id: p.dept_id, cls: p.class_name }, fields: [{ k: 'dept_id', label: '새 부서', type: 'select', options: deptOpts() }, { k: 'cls', label: '새 반·조' }], onSubmit: o => store.movePerson(p.id, Number(o.dept_id), o.cls) }); },
   retire: async d => { if (await ask('현재 명단에서 제외합니다. 과거 출석·참가 기록은 그대로 남습니다.', '명단 제외')) { store.setPersonStatus(Number(d.id), 'graduated'); render(); } },
   reactivate: d => { store.setPersonStatus(Number(d.id), 'active'); render(); },
+  saveReview: () => { guard(() => store.saveReview(workDept(), UI.year, $('#review').value), '총평을 저장했어요.'); render(); },
+  saveNextGoal: () => { const d = workDept(); const y = UI.year + 1; guard(() => store.savePlan(d, y, $('#nextgoal').value, store.plan(d, y).themes), `${y}년 사역 목표를 저장했어요.`); render(); },
   savePlan: () => { const d = workDept(); const th = {}; $$('[data-theme]').forEach(i => { if (i.value.trim()) th[i.dataset.theme] = i.value.trim(); }); store.savePlan(d, UI.year, $('#goal').value, th); toast('저장했습니다.'); },
   editSeason: d => { const s = d.id ? store.get().seasons.find(x => x.id === Number(d.id)) : { dept_id: workDept(), year: UI.year }; form({ title: '절기 계획', values: s, fields: [{ k: 'name', label: '절기명', req: true }, { k: 'start', label: '시작일', type: 'date' }, { k: 'end', label: '종료일', type: 'date' }, { k: 'theme', label: '주제' }, { k: 'scripture', label: '성경 본문 (개역개정 · 인용 전 확인)' }, { k: 'plan', label: '예배·교육·행사 계획', type: 'textarea' }], onSubmit: o => store.saveSeason({ ...s, ...o, start: o.start || null, end: o.end || null }) }); },
   delSeason: async d => { if (await ask('이 절기 계획을 삭제할까요?', '삭제')) { store.deleteSeason(Number(d.id)); render(); } },
