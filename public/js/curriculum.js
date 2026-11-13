@@ -69,3 +69,22 @@ export function sundaysBetween(start, until) {
 }
 
 export const lessonLabel = l => (l ? `${l.year > 1 || l.years > 1 ? `${l.year}년차 ` : ''}${l.no}과${l.title ? ' · ' + l.title : ''}` : '');
+
+// ----- 통째로 넣기: 교재 파일 하나 또는 여러 교재를 담은 묶음 파일을 읽는다 -----
+export const BUNDLE_TYPE = 'mokhoe-curriculum-bundle';
+export const MAX_BUNDLE = 12;
+export function bundleItems(obj) {
+  const list = obj && obj.type === BUNDLE_TYPE && Array.isArray(obj.items) ? obj.items : [obj];
+  if (!list.length || list.length > MAX_BUNDLE) throw new Error(`묶음 파일에는 교재를 1~${MAX_BUNDLE}개 넣을 수 있어요.`);
+  list.forEach(c => { if (!c || c.type !== 'mokhoe-curriculum' || !Array.isArray(c.lessons) || !String(c.name || '').trim()) throw new Error('목회 비서 교재 파일이 아니에요.'); });
+  return list;
+}
+// 교재 이름(대상 연령)으로 어느 부서에 넣을지 짐작한다. 맞는 부서가 없으면 0(배치하지 않음).
+export function guessCurriculumDept(name, depts) {
+  const n = String(name || ''); const find = re => (depts.find(d => re.test(d.name)) || {}).id || 0;
+  if (/하이틴|청소년|중고등|중등|고등/.test(n)) return find(/중고등|청소년|중등|고등|학생/) || (depts.find(d => d.kind === 'teen') || {}).id || 0;
+  if (/청년|대학/.test(n)) return find(/청년|대학/) || (depts.find(d => d.kind === 'youth') || {}).id || 0;
+  if (/미취학|유치|유아|영아|바이블랜드/.test(n)) return find(/유치|유아|영아|미취학/) || find(/아동|어린이|주일학교|교회학교/) || (depts.find(d => d.kind === 'kid') || {}).id || 0;
+  if (/키즈|주니어|취학|초등|유년|소년|아동|틴즈|탐험|예수님과/.test(n)) return find(/유년|초등|소년|아동|어린이|주일학교|교회학교/) || (depts.find(d => d.kind === 'kid') || {}).id || 0;
+  return 0;
+}

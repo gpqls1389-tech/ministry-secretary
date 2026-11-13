@@ -13,7 +13,7 @@ import { imgSrc, emptyImgFor, bannerFor } from './images.js';
 import { GUIDES, GUIDE_CHECKED, guideKeyFor, guideTasks } from './guides.js';
 import { VERSION, CHANGELOG, DESKTOP } from './version.js';
 import { DEPT_KINDS, NEWCOMER_STEPS, AWAY_REASONS, AWAY_EVERY, EXAM_TYPE, MAX_CHECKS } from './ministry.js';
-import { CURRICULUM_PRESETS, PICK_PRESETS, LESSON_FIELDS, parseLessonText, lessonLabel } from './curriculum.js';
+import { CURRICULUM_PRESETS, PICK_PRESETS, LESSON_FIELDS, parseLessonText, lessonLabel, bundleItems, guessCurriculumDept } from './curriculum.js';
 import { enhanceDates, ganttChart, lineChart, escapeHtml } from './ui.js';
 import { isStandalone, canPromptInstall, promptInstall, fetchLatestVersion, watchUpdates, desktopVersion, cmpSemver } from './install.js';
 import { kstNow, startReminders, snoozeTodo, notifyPermission, askNotifyPermission, desktopNotify } from './reminders.js';
@@ -159,8 +159,8 @@ document.addEventListener('submit', e => { const f = e.target.closest && e.targe
 document.addEventListener('change', async e => { const t = e.target; if (!t.matches) return;
   if (t.matches('[data-growth]')) { const [sid, pid, key] = t.dataset.growth.split('/'); guard(() => store.setGrowth(Number(sid), Number(pid), key, t.checked)); render(); return; }
   if (t.matches('[data-ncstep]')) { const [pid, key] = t.dataset.ncstep.split('/'); guard(() => store.setNewcomerStep(Number(pid), key, t.checked)); render(); return; }
-  if (t.matches('[data-currfile]') && t.files && t.files[0]) { const file = t.files[0]; t.value = ''; if (file.size > 2e6) { toast('파일이 너무 커요(2MB 이하).', true); return; }
-    try { const id = store.importCurriculum(JSON.parse(await file.text())); toast('교재를 가져왔어요. 과를 확인하고 ‘연간 배치’를 누르세요.'); location.hash = `#curriculum/${id}`; } catch (err) { toast(err instanceof SyntaxError ? '교재 파일(JSON)을 읽지 못했어요.' : err.message, true); } return; }
+  if (t.matches('[data-currfile]') && t.files && t.files.length) { const files = [...t.files]; t.value = ''; if (files.some(f => f.size > 3e6)) { toast('파일이 너무 커요(3MB 이하).', true); return; }
+    try { const items = []; for (const f of files) items.push(...bundleItems(JSON.parse(await f.text()))); if (items.length > 12) throw new Error('한 번에 교재 12개까지 넣을 수 있어요.'); installForm(items); } catch (err) { toast(err instanceof SyntaxError ? '교재 파일(JSON)을 읽지 못했어요.' : err.message, true); } return; }
 });
 document.addEventListener('change', e => { const t = e.target; if (t.matches && t.matches('[data-todo]')) { guard(() => store.setTodoDone(Number(t.dataset.todo), t.checked)); render(); } });
 const page = (ico, title, sub, body, actions = '') => { $('#main').innerHTML = `<div class="pagehead"><div><h1 class="title"><span class="ico">${ico}</span>${esc(title)}</h1><p class="sub">${sub}</p></div>${actions ? `<div class="actions noprint">${actions}</div>` : ''}</div>${tipHtml()}${body}`; };
@@ -469,9 +469,41 @@ function curriculumForm(v = {}) {
     onSubmit: o => { if (isNew) { const id = store.curriculumFromPreset(o.preset, { name: o.name.trim(), dept_id: Number(o.dept_id), years: Number(o.years) || 0, perYear: Number(o.perYear) || 0 }); toast('교재를 만들었어요. 과 제목·본문을 채워 주세요.'); location.hash = `#curriculum/${id}`; }
       else { store.saveCurriculum({ ...v, name: o.name, dept_id: Number(o.dept_id), years: Number(o.years) || v.years }); toast('저장했어요.'); render(); } } });
 }
+// 통째로 넣기: 교재 파일(여러 개 또는 묶음 파일)을 한 번에 만들고 부서마다 한 해 분량을 배치한다
+function installForm(items) {
+  const t = today(); const y0 = Number(t.slice(5, 7)) >= 11 ? Number(t.slice(0, 4)) + 1 : Number(t.slice(0, 4)); const start = y0 > Number(t.slice(0, 4)) ? `${y0}-01-01` : t;
+  const depts = store.depts(); const used = new Set();
+  const guess = items.map(c => { const g = guessCurriculumDept(c.name, depts); if (!g || used.has(g)) return 0; used.add(g); return g; });
+  const exist = c => store.curricula().some(x => x.name === String(c.name).trim() && x.publisher === String(c.publisher || '').trim());
+  const opt = (v, cur, lab) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${esc(lab)}</option>`;
+  const d = modal(`<form method="dialog" class="dlg wide"><h3>📦 교재 통째로 넣기 (${items.length}개)</h3>
+    <p class="mute small">교재마다 넣을 부서와 몇 년차를 고르면 교재를 만들고 그 부서 주일예배에 한 해 분량을 한 번에 배치해요. 넣은 뒤 교재 화면이나 예배마다 고칠 수 있어요. 부서를 ‘배치 안 함’으로 두면 교재만 넣어요.</p>
+    <div class="tablewrap"><table class="t"><thead><tr><th>넣기</th><th>교재</th><th>부서</th><th>몇 년차</th><th>다섯째 주일 비우기</th></tr></thead><tbody>${items.map((c, i) => `<tr><td><input type="checkbox" name="on${i}" checked aria-label="${esc(c.name)} 넣기"></td><td><b>${esc(c.name)}</b><br><span class="mute small">${esc(c.publisher || '')} · ${Number(c.years) || 1}년 주기 · ${c.lessons.length}과 · 제목 ${c.lessons.filter(l => l.title).length}과${exist(c) ? ' · <span class="tag warn">같은 교재가 있어 새 내용으로 바꿔요</span>' : ''}</span></td>
+      <td><select name="dept${i}" aria-label="부서">${opt(0, guess[i], '배치 안 함(교재만)')}${depts.map(x => opt(x.id, guess[i], x.name)).join('')}</select></td>
+      <td><select name="year${i}" aria-label="몇 년차">${Array.from({ length: Number(c.years) || 1 }, (_, k) => opt(k + 1, 1, `${k + 1}년차 (${c.lessons.filter(l => Number(l.year) === k + 1).length}과)`)).join('')}</select></td>
+      <td><input type="checkbox" name="skip${i}"${c.publisher === '히즈쇼' && c.lessons.filter(l => Number(l.year) === 1).length <= 48 ? ' checked' : ''} aria-label="다섯째 주일 비우기"></td></tr>`).join('')}</tbody></table></div>
+    ${fld({ k: 'start', label: '시작 (이 날짜 이후 첫 주일부터)', type: 'date', req: true }, start)}${fld({ k: 'until', label: '마지막 날짜', type: 'date', req: true }, `${y0}-12-31`)}
+    ${fld({ k: 'pick', label: '주마다 넣을 항목', type: 'select', options: Object.entries(PICK_PRESETS).map(([k, p]) => [k, p.label]) }, 'basic')}
+    ${fld({ k: 'create', label: '주일예배가 없는 주일', type: 'select', options: [['yes', '주일예배를 새로 만들어 넣기'], ['no', '건너뛰기(이미 있는 예배에만 넣기)']] }, 'yes')}
+    ${fld({ k: 'fill', label: '예배의 성경 본문·설교 제목 칸', type: 'select', options: [['yes', '비어 있으면 공과 본문·제목으로 채우기'], ['no', '그대로 두기']] }, 'yes')}
+    <p class="mute small">2~3년 주기 교재는 올해 쓸 한 해만 골라 끊어 넣어요. 그 주일에 특별예배만 있거나 ‘공과 쉼’인 주일은 건너뛰고 다음 주로 밀어요. 이미 공과가 있던 주일은 새 공과로 바뀌어요.</p>
+    <div class="err"></div><div class="dlg-foot"><button type="button" data-x>취소</button><button class="pri">통째로 넣기</button></div></form>`);
+  $('[data-x]', d).onclick = () => d.close(); enhanceDates(d);
+  $('form', d).onsubmit = e => { e.preventDefault(); const f = e.target; const v = k => f.elements[k].value;
+    const plan = items.map((_, i) => ({ skip: !f.elements['on' + i].checked, dept_id: Number(v('dept' + i)), year: Number(v('year' + i)), skip5: f.elements['skip' + i].checked ? 'yes' : 'no' }));
+    if (plan.every(p => p.skip)) { $('.err', d).textContent = '넣을 교재를 하나 이상 고르세요.'; return; }
+    try { const res = store.installCurricula(items, { plan, start: v('start'), until: v('until'), pick: v('pick'), create: v('create'), fill: v('fill') }); d.close(); location.hash = '#curricula'; render(); installDone(res); }
+    catch (err) { $('.err', d).textContent = err.message; } };
+}
+function installDone(res) {
+  const line = r => r.dept_id ? `${esc((store.dept(r.dept_id) || {}).name || '')} · ${r.year}년차 · ${r.assigned}주 배치${r.first ? ` (${md(r.first)}~${md(r.last)})` : ''}${r.created ? ` · 주일예배 ${r.created}개 새로 만듦` : ''}${r.special ? ` · 특별예배 주일 ${r.special}번 건너뜀` : ''}${r.fifth ? ` · 다섯째 주일 ${r.fifth}번 비움` : ''}${r.leftover ? ` · <b>남은 과 ${r.leftover}개는 기간이 모자라 못 넣음</b>` : ''}` : '교재만 넣었어요(배치 안 함)';
+  const d = modal(`<div class="dlg"><h3>✅ 교재를 넣었어요</h3><ul class="small">${res.map(r => `<li><a href="#curriculum/${r.id}" data-x>${esc(r.name)}</a>${r.replaced ? ' <span class="tag">새 내용으로 바꿈</span>' : ''}<br><span class="mute">${line(r)}</span></li>`).join('')}</ul>
+    <p class="mute small">고치는 방법: 교재 이름을 누르면 과 제목·본문을 표에서 고칠 수 있어요(고친 뒤 다시 ‘연간 배치’하면 예배에 반영돼요). 한 주만 바꾸려면 ‘공과 배치 현황’에서 ✏️ 수정을, 다른 예배가 끼면 ⤵ 한 주 밀기를 누르세요.</p><div class="dlg-foot"><button class="pri" data-x>확인</button></div></div>`);
+  d.querySelectorAll('[data-x]').forEach(b => b.onclick = () => d.close());
+}
 function applyForm(cid) {
   const c = store.curriculum(cid); if (!c) return; const t = today(); const y0 = Number(t.slice(5, 7)) >= 11 ? Number(t.slice(0, 4)) + 1 : Number(t.slice(0, 4)); const start = y0 > Number(t.slice(0, 4)) ? `${y0}-01-01` : t;
-  form({ title: `‘${c.name}’ 연간 배치`, submit: '배치하기', values: { dept_id: c.dept_id || workDept(), year: 1, start, until: `${y0}-12-31`, pick: 'basic', create: 'yes', fill: 'yes', skip5: c.publisher === '히즈쇼' ? 'yes' : 'no' },
+  form({ title: `‘${c.name}’ 연간 배치`, submit: '배치하기', values: { dept_id: c.dept_id || workDept(), year: 1, start, until: `${y0}-12-31`, pick: 'basic', create: 'yes', fill: 'yes', skip5: c.publisher === '히즈쇼' && c.lessons.filter(l => l.year === 1).length <= 48 ? 'yes' : 'no' },
     intro: '<p class="mute small">고른 해의 과를 시작 주일부터 주일예배마다 한 과씩 넣어요. 그 주일에 <b>특별예배만</b> 있거나 ‘공과 쉼’으로 표시한 주일은 건너뛰고 다음 주로 밀어요. 이미 공과가 있던 주일은 새 공과로 바뀌어요.</p>',
     fields: [{ k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'year', label: '몇 년차를 쓸까요', type: 'select', options: Array.from({ length: c.years }, (_, i) => [i + 1, `${i + 1}년차 (${c.lessons.filter(l => l.year === i + 1).length}과)`]), hint: c.years > 1 ? `${c.years}년 주기 교재예요. 올해 쓸 한 해만 골라 끊어 배치해요.` : '' },
       { k: 'start', label: '시작 (이 날짜 이후 첫 주일부터)', type: 'date', req: true }, { k: 'until', label: '마지막 날짜', type: 'date', req: true }, { k: 'pick', label: '주마다 넣을 항목', type: 'select', options: Object.entries(PICK_PRESETS).map(([k, p]) => [k, p.label]), hint: '배치한 뒤 예배마다 ‘항목 고르기’로 필요한 것만 다시 고를 수 있어요.' },
@@ -480,11 +512,13 @@ function applyForm(cid) {
 }
 function vCurricula() {
   const list = store.curricula().filter(c => !did() || !c.dept_id || c.dept_id === did()); const t = today(); const d = workDept();
-  const plan = store.lessonPlan(d, t, `${Number(t.slice(0, 4)) + 1}-12-31`).slice(0, 16);
-  page('📚', '교재·공과', '교재 틀을 만들고 한 해 분량을 주일예배에 자동으로 배치해요.', `<div class="row noprint" style="margin-bottom:12px"><button data-go="#services">◀ 예배</button><button class="pri" data-act="newCurr">+ 새 교재</button><label class="btnlike">📂 교재 파일 가져오기<input type="file" accept=".json,application/json" data-currfile hidden></label></div>
-  <div class="res-grid">${list.map(c => { const filled = c.lessons.filter(l => l.title).length; return `<div class="res-card"><a class="res-name" href="#curriculum/${c.id}">${esc(c.name)}</a><p class="res-host mute small">${esc(c.publisher || '직접 만든 교재')} · ${c.years}년 주기 · ${c.lessons.length}과 ${c.dept_id ? '· ' + esc((store.dept(c.dept_id) || {}).name || '') : ''}</p><p class="res-desc small">제목을 적은 과 ${filled}/${c.lessons.length}</p><div class="row"><button class="sm" data-go="#curriculum/${c.id}">과 편집</button><button class="sm pri" data-act="applyCurr" data-id="${c.id}">연간 배치</button></div></div>`; }).join('') || emptyState('아직 교재가 없어요', '‘+ 새 교재’에서 파이디온·히즈쇼·감리회·통합 공과 틀이나 직접 만들기를 고르세요. 과 제목·본문은 교재 목차를 보고 붙여 넣으면 돼요.', '<button class="sm pri" data-act="newCurr">+ 새 교재</button>')}</div>
+  const planAll = store.lessonPlan(d, t, `${Number(t.slice(0, 4)) + 1}-12-31`); const plan = UI.planAll ? planAll : planAll.slice(0, 16);
+  page('📚', '교재·공과', '교재 틀을 만들고 한 해 분량을 주일예배에 자동으로 배치해요.', `<div class="row noprint" style="margin-bottom:12px"><button data-go="#services">◀ 예배</button><label class="btnlike pri">📦 교재 통째로 넣기<input type="file" accept=".json,application/json" multiple data-currfile hidden></label><button data-act="newCurr">+ 새 교재(빈 틀)</button></div>
+  <p class="mute small noprint">교재 파일(.json) 여러 개나 묶음 파일 하나를 고르면 교재를 만들고 부서마다 한 해 분량을 주일에 바로 배치해요. 넣은 뒤 아래에서 고치면 돼요.</p>
+  <div class="res-grid">${list.map(c => { const filled = c.lessons.filter(l => l.title).length; return `<div class="res-card"><a class="res-name" href="#curriculum/${c.id}">${esc(c.name)}</a><p class="res-host mute small">${esc(c.publisher || '직접 만든 교재')} · ${c.years}년 주기 · ${c.lessons.length}과 ${c.dept_id ? '· ' + esc((store.dept(c.dept_id) || {}).name || '') : ''}</p><p class="res-desc small">제목을 적은 과 ${filled}/${c.lessons.length}</p><div class="row"><button class="sm" data-go="#curriculum/${c.id}">과 편집</button><button class="sm pri" data-act="applyCurr" data-id="${c.id}">연간 배치</button></div></div>`; }).join('') || emptyState('아직 교재가 없어요', '교재 파일이 있으면 ‘📦 교재 통째로 넣기’로 한 해 분량을 한 번에 넣으세요. 파일이 없으면 ‘+ 새 교재(빈 틀)’에서 파이디온·히즈쇼·감리회·통합 공과 틀을 골라 목차를 붙여 넣으면 돼요.', '<label class="btnlike sm pri">📦 교재 통째로 넣기<input type="file" accept=".json,application/json" multiple data-currfile hidden></label>')}</div>
   <h2>공과 배치 현황 <span class="mute small">${esc((store.dept(d) || {}).name || '')} · 오늘 이후</span></h2>
-  <div class="tablewrap"><table class="t"><thead><tr><th>주일</th><th>예배</th><th>공과</th></tr></thead><tbody>${plan.map(s => `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)}</td><td>${esc(s.title)}</td><td>${s.lesson ? `<b>${esc(lessonLabel(s.lesson))}</b> <span class="mute small">${esc(s.lesson.cname)}</span>` : '<span class="tag warn">공과 쉼</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="mute">아직 배치한 공과가 없어요.</td></tr>'}</tbody></table></div>
+  <div class="tablewrap"><table class="t"><thead><tr><th>주일</th><th>예배</th><th>공과</th><th class="noprint">고치기</th></tr></thead><tbody>${plan.map(s => `<tr><td><a href="#service/${s.id}">${md(s.date)}</a></td><td>${esc(s.title)}</td><td>${s.lesson ? `<b>${esc(lessonLabel(s.lesson))}</b> <span class="mute small">${esc(s.lesson.cname)}</span>` : '<span class="tag warn">공과 쉼</span>'}</td><td class="noprint nowrap">${s.lesson ? `<button class="sm ghost" data-act="lessonEdit" data-id="${s.id}" title="이 주 공과 내용·항목 고치기">✏️ 수정</button> <button class="sm ghost" data-act="lessonShift" data-id="${s.id}" title="이 주는 쉬고 뒤로 한 주씩 밀기">⤵ 한 주 밀기</button>` : `<button class="sm ghost" data-act="lessonPull" data-id="${s.id}">⤴ 다시 넣기</button>`}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">아직 배치한 공과가 없어요.</td></tr>'}</tbody></table></div>
+  ${planAll.length > 16 ? `<div class="row noprint" style="margin-top:8px"><button class="sm" data-act="togglePlanAll">${UI.planAll ? '16주만 보기' : `전체 ${planAll.length}주 보기`}</button></div>` : ''}
   <p class="mute small">출판사 교재의 과 제목·본문은 저작권이 있어 앱에 미리 넣어 두지 않았어요. 교재 틀의 주기·과 수는 공개 자료로 확인한 값이고, ‘확인 필요’로 적힌 값은 교재 목차를 보고 고쳐 주세요.</p>`);
 }
 function vCurriculum(id) {
@@ -801,6 +835,7 @@ const ACT = {
   pasteCurr: async d => { const rows = parseLessonText($('#cpaste').value); if (!rows.length) { toast('넣을 줄을 찾지 못했어요. 한 줄에 한 과씩 적어 주세요.', true); return; }
     if (await ask(`${d.year}년차를 아래 ${rows.length}과로 바꿀까요?\n\n${rows.slice(0, 5).map(r => `${r.no}과 ${r.title} ${r.scripture}`).join('\n')}${rows.length > 5 ? `\n…외 ${rows.length - 5}과` : ''}`, '넣기')) { guard(() => store.setCurriculumYear(Number(d.id), Number(d.year), rows), `${rows.length}과를 넣었어요.`); render(); } },
   lessonEdit: d => lessonEditor(Number(d.id)),
+  togglePlanAll: () => { UI.planAll = !UI.planAll; render(); },
   lessonShift: async d => { if (await ask('이 주일은 공과를 쉬고, 이 주 공과부터 뒤의 공과를 한 주씩 뒤로 밀까요?\n\n이 예배는 그대로 두고(교체하지 않음), 마지막 공과는 비어 있는 다음 주일(없으면 새로 만든 주일예배)에 들어가요. ‘공과 다시 넣기’로 되돌릴 수 있어요.', '한 주씩 밀기')) { const r = store.shiftLesson(Number(d.id)); toast(`공과 ${r.moved}개를 한 주씩 밀었어요. 마지막 공과는 ${md(r.until)}에 들어갔어요.`); render(); } },
   lessonPull: d => { const n = guard(() => store.pullLesson(Number(d.id))); if (n !== undefined) toast(n ? `뒤의 공과 ${n}개를 한 주씩 당겼어요.` : '공과 쉼을 풀었어요.'); render(); },
   lessonClear: async d => { if (await ask('이 예배에서 공과를 뺄까요? 뒤의 공과는 움직이지 않아요.', '빼기')) { store.clearServiceLesson(Number(d.id)); render(); } },
