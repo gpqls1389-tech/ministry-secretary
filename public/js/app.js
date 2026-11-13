@@ -115,11 +115,20 @@ function openHelp(tab = 'start') {
 
 // ----- 라우터 -----
 const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['money', '💰', '회계'], ['assets', '🧰', '비품'], ['resources', '📚', '자료실'], ['settings', '⚙️', '설정']];
+// 왼쪽 메뉴 위 ‘오늘의 교회력’ 띠: 절기 이름과 전례 색(흰색 절기는 금색으로 표시)
+const LITU_HEX = { 보라: '#7d5bc0', 흰색: '#d4a72c', 초록: '#3f9d5f', 빨강: '#d4513f' };
+function paintSeason() {
+  const el = $('#season'); if (!el) return; const t = today(); const i = churchInfo(t);
+  const hex = LITU_HEX[i.color] || '#3f9d5f'; document.body.style.setProperty('--litu', hex);
+  el.innerHTML = `<span class="sdot" aria-hidden="true"></span><span class="stxt"><b>${esc(i.label)}</b><small>${esc(i.special ? i.special + ' · ' : '')}전례 색 ${esc(i.color)}</small></span>`;
+  el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
+}
 function render() {
   const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' ? 'services' : view === 'schedule' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name]), ['all', '전체']].map(([v, l]) => `<button data-dept="${v}" class="${UI.dept === v ? 'on' : ''}">${l}</button>`).join('');
   paintAcct();
+  paintSeason();
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : (did() === 1 ? 'kid' : did() === 2 ? 'youth' : 'all'); // 아동부 노랑 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';

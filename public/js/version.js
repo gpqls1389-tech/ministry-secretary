@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB11.6';
+export const VERSION = 'MB11.7';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '11.6.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '11.7.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB11.7', date: '2026-11-13', items: ['화면 전반 디자인 정리: 왼쪽 메뉴를 먹빛 초록으로 바꾸고, 오늘의 교회력(절기·전례 색)을 메뉴 위와 화면 맨 위 띠에 표시', '카드는 선으로만 나누고 그림자는 핵심 수치·알림에만 사용, 제목은 더 굵게, 버튼 모서리 통일, 로그인 화면 색 정리', '움직임 줄이기 설정을 따름', '설치 프로그램 11.7.0'] },
   { v: 'MB11.6', date: '2026-11-11', items: ['설정에 ‘이미지 만들기(AI)’ 추가: 그림 자리를 고르고 설명을 적으면 OpenAI로 그림을 만들어 미리보기·내려받기(로그인한 계정, 하루 한도, 관리자가 API 키를 설정해야 켜짐)', '설치 프로그램 11.6.0'] },
   { v: 'MB11.5', date: '2026-11-11', items: ['홈에 ‘오늘 할 일’ 추가(적기·시간 정하기·완료·수정·삭제, 지난 할 일을 오늘로 옮기기)', '시간이 되면 팝업 알림(완료·10분 뒤 다시·닫기)과 바탕화면 알림(허용 시)', '데스크톱 설치 프로그램 11.5.0(알림 허용). 앞으로 사이트를 고칠 때마다 설치 프로그램도 같은 번호로 새로 올림'] },
   { v: 'MB11.4', date: '2026-11-11', items: ['설정에 Windows 데스크톱 프로그램 다운로드 링크 추가(설치 파일, 코드 서명 없음)', '데스크톱 프로그램으로 실행 중이면 프로그램 버전을 보여 주고 새 설치 파일이 있으면 알림'] },
