@@ -362,6 +362,15 @@ dialog { border-radius:var(--radius-lg); } dialog::backdrop { background:rgba(20
 .row.noprint + .strip { margin-top:14px; }
 @media (max-width:860px) { .nextev { flex-wrap:wrap; gap:8px 12px; } .nextev .dd { font-size:20px; min-width:3.6em; } .seg { flex-wrap:wrap; } }
 
+/* ===== 예배(MB11.11): 다음 주일을 맨 위에, 상세는 전례 색 머리글 ===== */
+.nextsv { display:flex; align-items:center; gap:16px; padding:14px 18px; margin:0 0 14px; border-radius:var(--radius-md); background:#fff; border:1px solid var(--line); border-left:6px solid var(--lc,#3f9d5f); color:var(--ink); text-decoration:none; }
+.nextsv:hover { border-color:var(--lc,#3f9d5f); } .nextsv .dd { flex-shrink:0; min-width:4.2em; text-align:center; font-size:24px; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+.nextsv b { display:block; font-size:1.05rem; } .nextsv span.sp > span { display:block; font-size:.92rem; color:var(--ink-2); } .nextsv .miss { color:var(--orange) !important; font-weight:600; } .nextsv .go { flex-shrink:0; font-weight:700; color:var(--ink-2); }
+.svhero { margin-top:14px; padding:16px 20px; border-radius:var(--radius-md); background:color-mix(in srgb, var(--lc,#3f9d5f) 8%, #fff); border:1px solid var(--line); border-left:6px solid var(--lc,#3f9d5f); }
+.svhero .lc { font-weight:700; } .svhero .lcdot { width:11px; height:11px; margin-right:8px; }
+.svhero .sv-main { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px 28px; margin-top:12px; } .svhero .k { font-size:13px; font-weight:600; color:var(--mute); } .svhero .v { font-size:1.35rem; font-weight:800; letter-spacing:-.025em; line-height:1.35; }
+@media (max-width:860px) { .nextsv { flex-wrap:wrap; gap:8px 12px; } .nextsv .dd { font-size:20px; min-width:3.6em; } .svhero .v { font-size:1.15rem; } }
+
 /* 움직임을 줄이는 설정을 따릅니다 */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none !important; animation:none !important; scroll-behavior:auto !important; } }
 @media print { #season { display:none !important; } #content { border-top:0; } }
