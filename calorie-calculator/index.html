@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16a34a">
+<title>칼로리 노트</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <nav class="nav" aria-label="메뉴">
+    <div class="brand">🥗 <span>칼로리 노트</span></div>
+    <button class="tab active" data-view="dash"><i>📊</i><span>대시보드</span></button>
+    <button class="tab" data-view="food"><i>🍚</i><span>식단</span></button>
+    <button class="tab" data-view="ex"><i>🏃</i><span>운동</span></button>
+    <button class="tab" data-view="me"><i>👤</i><span>내 정보</span></button>
+  </nav>
+
+  <main>
+    <header class="topbar">
+      <h1 id="title">대시보드</h1>
+      <div class="datebox">
+        <button id="prevDay" aria-label="전날">‹</button>
+        <input type="date" id="date">
+        <button id="nextDay" aria-label="다음날">›</button>
+      </div>
+    </header>
+    <div id="warn" class="banner" hidden></div>
+
+    <!-- 대시보드 -->
+    <section class="view active" id="v-dash">
+      <div class="grid">
+        <div class="card ring-card">
+          <div class="ring-wrap">
+            <svg viewBox="0 0 120 120" class="ring" aria-hidden="true">
+              <circle cx="60" cy="60" r="54" class="ring-bg"/>
+              <circle cx="60" cy="60" r="54" class="ring-fg" id="ringFg"/>
+            </svg>
+            <div class="ring-text"><b id="remain">0</b><small id="remainLabel">남은 kcal</small></div>
+          </div>
+          <dl class="stats">
+            <div><dt>목표</dt><dd id="sBudget">-</dd></div>
+            <div><dt>섭취</dt><dd id="sEaten">-</dd></div>
+            <div><dt>운동 소모</dt><dd id="sBurn">-</dd></div>
+          </dl>
+        </div>
+        <div class="card">
+          <h2>탄·단·지</h2>
+          <div id="macros"></div>
+        </div>
+        <div class="card span2">
+          <h2>오늘 필요한 음식</h2>
+          <div id="reco"></div>
+        </div>
+        <div class="card span2">
+          <h2>최근 7일</h2>
+          <div id="week" class="week"></div>
+          <p class="hint">막대 = 섭취 kcal, 가로선 = 그날 목표</p>
+        </div>
+        <div class="card span2" id="planCard">
+          <h2>내 기준 요약</h2>
+          <div id="plan"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 식단 -->
+    <section class="view" id="v-food">
+      <div class="grid">
+        <div class="card">
+          <h2>음식 추가</h2>
+          <label>식사
+            <select id="fMeal"><option>아침</option><option>점심</option><option>저녁</option><option>간식</option></select>
+          </label>
+          <label>음식 검색
+            <input id="fSearch" type="search" placeholder="예: 닭가슴살, 김밥" autocomplete="off">
+          </label>
+          <div id="fList" class="pick"></div>
+          <div id="fSel" class="sel" hidden>
+            <div><b id="fSelName"></b> <small id="fSelInfo"></small></div>
+            <label>섭취량(인분)
+              <input id="fQty" type="number" inputmode="decimal" step="0.25" min="0.25" value="1">
+            </label>
+            <button class="btn" id="fAdd">식단에 추가</button>
+          </div>
+          <details>
+            <summary>목록에 없는 음식 직접 입력</summary>
+            <label>이름 <input id="cName" type="text" maxlength="40"></label>
+            <div class="row4">
+              <label>kcal <input id="cK" type="number" inputmode="decimal" min="0"></label>
+              <label>탄수(g) <input id="cC" type="number" inputmode="decimal" min="0"></label>
+              <label>단백질(g) <input id="cP" type="number" inputmode="decimal" min="0"></label>
+              <label>지방(g) <input id="cF" type="number" inputmode="decimal" min="0"></label>
+            </div>
+            <button class="btn ghost" id="cAdd">직접 입력한 음식 추가</button>
+          </details>
+        </div>
+        <div class="card">
+          <h2>이 날의 식단 <small id="foodTotal"></small></h2>
+          <div id="foodLog"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 운동 -->
+    <section class="view" id="v-ex">
+      <div class="grid">
+        <div class="card">
+          <h2>운동 추가</h2>
+          <label>종류 <select id="eType"></select></label>
+          <div id="eFields" class="row2"></div>
+          <p class="hint" id="ePreview"></p>
+          <button class="btn" id="eAdd">운동 기록</button>
+          <p class="hint">칼로리는 체중과 횟수로 계산한 <b>추정치</b>입니다. 개인차(자세, 속도, 체력)에 따라 ±30% 정도 달라질 수 있어요.</p>
+        </div>
+        <div class="card">
+          <h2>이 날의 운동 <small id="exTotal"></small></h2>
+          <div id="exLog"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 내 정보 -->
+    <section class="view" id="v-me">
+      <div class="grid">
+        <div class="card">
+          <h2>기본 정보</h2>
+          <div class="row2">
+            <label>성별 <select data-k="sex"><option value="m">남성</option><option value="f">여성</option></select></label>
+            <label>나이 <input data-k="age" type="number" inputmode="numeric" min="10" max="100" placeholder="세"></label>
+            <label>키(cm) <input data-k="height" type="number" inputmode="decimal" min="100" max="230"></label>
+            <label>체중(kg) <input data-k="weight" type="number" inputmode="decimal" min="25" max="250" step="0.1"></label>
+          </div>
+          <label>평소 활동량 <small>(운동 기록은 제외 — 따로 더해져요)</small>
+            <select data-k="activity">
+              <option value="1.2">거의 앉아서 생활 (사무직, 학생)</option>
+              <option value="1.375">가벼운 활동 (통학·통근 걷기, 서서 일함)</option>
+              <option value="1.55">활동 많음 (하루 종일 움직이는 일)</option>
+            </select>
+          </label>
+          <label>목표
+            <select data-k="goal">
+              <option value="lose">체지방 감량 (−500kcal/일)</option>
+              <option value="maintain">체중 유지</option>
+              <option value="gain">근육 증량 (+300kcal/일)</option>
+            </select>
+          </label>
+          <label>운동 소모 칼로리를 먹는 양에 반영하는 비율
+            <select data-k="burnRate">
+              <option value="1">100% (그대로 더 먹기)</option>
+              <option value="0.7">70% (추정 오차 감안, 추천)</option>
+              <option value="0.5">50% (감량 중 보수적)</option>
+              <option value="0">0% (반영 안 함)</option>
+            </select>
+          </label>
+        </div>
+        <div class="card">
+          <h2>인바디 결과</h2>
+          <label class="file">
+            <span>📄 인바디 PDF 불러오기</span>
+            <input type="file" id="pdf" accept="application/pdf">
+          </label>
+          <p class="hint">PDF는 이 기기 브라우저 안에서만 읽고 서버로 전송하지 않아요. 글자 인식에 실패하면 아래에 직접 입력하세요.</p>
+          <div id="pdfResult"></div>
+          <div class="row2">
+            <label>골격근량(kg) <input data-k="smm" type="number" inputmode="decimal" step="0.1"></label>
+            <label>제지방량(kg) <input data-k="lbm" type="number" inputmode="decimal" step="0.1"></label>
+            <label>체지방량(kg) <input data-k="fatmass" type="number" inputmode="decimal" step="0.1"></label>
+            <label>체지방률(%) <input data-k="fatpct" type="number" inputmode="decimal" step="0.1"></label>
+            <label>기초대사량(kcal) <input data-k="ibBmr" type="number" inputmode="numeric"></label>
+          </div>
+          <p class="hint">기초대사량 → 제지방량 → 키·나이·체중 공식 순서로, 입력된 가장 정확한 값을 사용해요.</p>
+        </div>
+        <div class="card span2">
+          <h2>데이터 관리</h2>
+          <p class="hint">모든 기록은 이 브라우저(localStorage)에만 저장돼요. 기기를 바꾸거나 브라우저 데이터를 지우면 사라지니, 가끔 백업하세요.</p>
+          <div class="btnrow">
+            <button class="btn ghost" id="exp">백업 파일 내려받기</button>
+            <label class="btn ghost" style="cursor:pointer">백업 파일 불러오기<input type="file" id="imp" accept="application/json" hidden></label>
+            <button class="btn danger" id="reset">전체 초기화</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="foods.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
