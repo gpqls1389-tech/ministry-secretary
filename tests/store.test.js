@@ -226,16 +226,26 @@ test('MB12.2 일정 달력의 공과: 예배를 숨기면 공과만, 함께 보�
   assert.equal(s.calendar(1, '2026-11-01', '2026-11-30', { services: false, lessons: false }).length, 0);
 });
 
-test('MB12.3 인수인계: 칸 저장(길이 제한·날짜 검사), 기록에서 초안(학생 이름은 넣지 않음)', () => {
+test('MB12.3 인수인계: 칸 저장(길이 제한·날짜 검사), 기록에서 초안', () => {
   const s = mk();
   const h = s.saveHandover(1, { meta: { from: '김가상', to: '이예시', date: '2026-12-20', evil: 'x' }, fields: { overview: '가'.repeat(3000), pending: '당부', hack: 'x' } });
   assert.equal(h.fields.overview.length, 2000); assert.equal(h.fields.pending, '당부'); assert.ok(!('hack' in h.fields)); assert.ok(!('evil' in h.meta));
   assert.deepEqual(s.handover(1).meta.to, '이예시'); assert.throws(() => s.saveHandover(1, { meta: { date: '2026-13-40' } }), ValidationError);
   assert.equal(s.handover(2).fields.overview, undefined, '부서마다 따로');
   const out = s.handoverDraft(1, TODAY); assert.match(out.overview[0], /학생 \d+명, 교사·봉사자 \d+명/);
-  const kids = s.get().people.filter(p => p.dept_id === 1 && p.kind === 'child').map(p => p.name);
-  const all = JSON.stringify(out); assert.ok(kids.every(n => !all.includes(n)), '학생 이름 없음');
   assert.ok(out.schedule.length > 0, '앞으로 3달 행사'); assert.ok(out.money.length > 0);
   // 내보내기·가져오기 후에도 유지
   const j = s.exportJson(); const s2 = mk(); s2.importJson(j); assert.equal(s2.handover(1).meta.from, '김가상');
+});
+
+test('MB12.4 사람 상세 정보: 형식 검사, 빈 칸 삭제, 인수인계 초안에 교사 연락처·건강 주의, 내보내기 유지', () => {
+  const s = mk(); const id = s.addPerson({ name: '시험 학생', kind: 'child', dept_id: 1 });
+  assert.throws(() => s.setPersonInfo(id, { phone: '공일공' }), ValidationError); assert.throws(() => s.setPersonInfo(id, { birth: '2018/03/01' }), ValidationError); assert.throws(() => s.setPersonInfo(id, { email: 'x' }), ValidationError);
+  const v = s.setPersonInfo(id, { phone: ' 010-0000-0009 ', guardian_phone: '010-0000-0010', health: '우유 알레르기', unknown: 'x', address: '가'.repeat(300) });
+  assert.equal(v.phone, '010-0000-0009'); assert.ok(!('unknown' in v)); assert.equal(v.address.length, 120);
+  const out = s.handoverDraft(1, TODAY); assert.ok(out.people.some(x => /김교사\(가상\).*010-0000-0001/.test(x)), '교사 연락처');
+  assert.ok(out.care.some(x => /시험 학생: 우유 알레르기/.test(x))); assert.ok(out.pending.some(x => /동의가 기록되지 않은 사람 1명/.test(x)));
+  const s2 = mk(); s2.importJson(s.exportJson()); assert.equal(s2.person(id).info.guardian_phone, '010-0000-0010');
+  s.setPersonInfo(id, {}); assert.equal(s.person(id).info, undefined, '모두 비우면 정보 삭제');
+  assert.throws(() => s.importJson(JSON.stringify({ ...JSON.parse(s.exportJson()), people: [{ id: 1, name: 'x', dept_id: 1, info: [1] }] })), ValidationError);
 });

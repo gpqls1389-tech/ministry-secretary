@@ -434,3 +434,8 @@ ol.hosteps .hwhen { font-weight:700; color:var(--primary); font-size:.9rem; } ol
 .hoex { background:#fffbea; padding:6px 10px; border-radius:6px; margin:4px 0; }
 .hosign { display:none; } .pinbox { letter-spacing:.5em; font-size:22px; text-align:center; }
 @media print { .hofield textarea { display:none; } .hoprint { white-space:pre-wrap; border:1px solid #999; padding:8px; min-height:60px; } .hosign { display:flex; justify-content:space-between; margin-top:28px; gap:12px; } .hosign span { display:inline-block; min-width:90px; border-bottom:1px solid #000; } }
+
+/* MB12.4 사람 상세 정보 */
+a.plink { cursor:pointer; color:inherit; text-decoration:underline dotted; text-underline-offset:3px; }
+fieldset.infogrp { border:1px solid var(--line,#e2e0d8); border-radius:8px; padding:8px 12px; margin:0 0 10px; } fieldset.infogrp legend { font-weight:700; padding:0 4px; }
+a.btnlike.sm { padding:2px 8px; font-size:12px; }

@@ -98,3 +98,11 @@ test('MB12.1 묶음 파일 읽기와 교재 이름으로 부서 짐작', async (
   assert.equal(guessCurriculumDept('히즈쇼 하이틴즈 (청소년, 3년)', depts), 3);
   assert.equal(guessCurriculumDept('무엇', depts), 0);
 });
+
+test('MB12.4 연락처 도구: 전화 링크, 가리기, 생일 달', async () => {
+  const { telHref, smsHref, maskPhone, birthdayIn, mainPhone } = await import('../public/js/people.js');
+  assert.equal(telHref('010-0000-0001, 02-000-0000'), 'tel:01000000001'); assert.equal(smsHref('010 0000 0001'), 'sms:01000000001');
+  assert.equal(maskPhone('010-1234-5678'), '010-****-5678'); assert.equal(maskPhone('02-123-4567'), '02-***-4567');
+  assert.ok(birthdayIn({ birth: '2018-11-15' }, '2026-11-16')); assert.ok(!birthdayIn({}, '2026-11-16'));
+  assert.equal(mainPhone({ guardian_phone: '010-0000-0002' }), '010-0000-0002'); assert.equal(mainPhone(undefined), '');
+});
