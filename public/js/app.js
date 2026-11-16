@@ -7,6 +7,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장�
 import { initAuth, accountApi, openLoginPreview, receiptApi, imageApi, desktopCred, deviceLabel } from './auth.js';
 import { HANDOVER_STEPS, HANDOVER_FIELDS, HANDOVER_META, HANDOVER_MAX } from './handover.js';
 import { INFO_FIELDS, telHref, smsHref, mainPhone, maskPhone, birthdayIn } from './people.js';
+import { familyMessage, briefingText } from './weekly.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
@@ -129,7 +130,7 @@ function paintSeason() {
   el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
 }
 function render() {
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
@@ -137,7 +138,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -387,7 +388,7 @@ function vServices() {
   const nextSv = store.services(did()).filter(s => s.date >= today()).sort((a, b) => a.date.localeCompare(b.date) || String(a.time).localeCompare(String(b.time)))[0];
   const nextSvHtml = nextSv ? (() => { const ci = churchInfo(nextSv.date); const n = Math.round((Date.parse(nextSv.date + 'T00:00:00Z') - Date.parse(today() + 'T00:00:00Z')) / 864e5); const miss = [!nextSv.scripture ? '성경 본문' : '', !nextSv.sermon_title ? '설교 제목' : '', !String(nextSv.order_text || '').trim() ? '순서' : ''].filter(Boolean);
     return `<a class="nextsv noprint" href="#service/${nextSv.id}" style="--lc:${LITU_HEX[ci.color] || '#3f9d5f'}"><span class="dd">${n === 0 ? '오늘' : 'D-' + n}</span><span class="sp"><b>${esc(nextSv.title)}</b><span>${esc(md(nextSv.date))} ${esc(nextSv.time || '')} · ${esc(churchLabel(nextSv.date))}${nextSv.sermon_title ? ' · ' + esc(nextSv.sermon_title) : ''}</span>${miss.length ? `<span class="miss">비어 있는 항목: ${miss.join(', ')}</span>` : ''}</span><span class="go">예배 열기</span></a>`; })() : '';
-  page('⛪', '예배', `${yearSel()}`, `${nextSvHtml}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button><button data-go="#curricula">📚 교재·공과 연간 배치</button><button class="ghost" data-act="pdfServices">PDF에서 가져오기</button></div>${attPts.length >= 2 ? '<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>출석 추이</h3><span class="sub">출석을 기록한 정기예배 최근 ' + attPts.length + '회' + (UI.dept === 'all' ? ' · 같은 날 예배는 합계' : '') + '</span></div><div class="cardb"><div id="attchart"></div><details class="noprint" style="margin-top:8px"><summary class="small">표로 보기</summary><table class="t"><thead><tr><th>날짜</th><th class="num">출석(명)</th></tr></thead><tbody>' + attPts.map(p => '<tr><td>' + md(p.date) + '</td><td class="num">' + p.value + '</td></tr>').join('') + '</tbody></table></details></div></section>' : ''}<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>교회력</th><th>부서</th><th>설교 제목</th><th class="hide-sm">공과</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="hide-sm small">${s.lesson ? esc(lessonLabel(s.lesson)) : s.lesson_hold ? '<span class="tag warn">공과 쉼</span>' : ''}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="7">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 예배 순서가 채워지고, ‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
+  page('⛪', '예배', `${yearSel()}`, `${nextSvHtml}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button><button data-act="briefNext">🧑‍🏫 이번 주 교사 브리핑</button><button data-act="familyNext">📣 가정 메시지</button><button data-go="#curricula">📚 교재·공과 연간 배치</button><button class="ghost" data-act="pdfServices">PDF에서 가져오기</button></div>${attPts.length >= 2 ? '<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>출석 추이</h3><span class="sub">출석을 기록한 정기예배 최근 ' + attPts.length + '회' + (UI.dept === 'all' ? ' · 같은 날 예배는 합계' : '') + '</span></div><div class="cardb"><div id="attchart"></div><details class="noprint" style="margin-top:8px"><summary class="small">표로 보기</summary><table class="t"><thead><tr><th>날짜</th><th class="num">출석(명)</th></tr></thead><tbody>' + attPts.map(p => '<tr><td>' + md(p.date) + '</td><td class="num">' + p.value + '</td></tr>').join('') + '</tbody></table></details></div></section>' : ''}<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>교회력</th><th>부서</th><th>설교 제목</th><th class="hide-sm">공과</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="hide-sm small">${s.lesson ? esc(lessonLabel(s.lesson)) : s.lesson_hold ? '<span class="tag warn">공과 쉼</span>' : ''}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="7">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 예배 순서가 채워지고, ‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
   if (attPts.length >= 2) lineChart(document.getElementById('attchart'), attPts, { label: '출석', color: getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#2f7d4f' });
 }
 const AT = { cls: '' };
@@ -395,7 +396,7 @@ function vService(id) {
   const s = store.service(id); if (!s) { page('⛪', '예배', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
   const people = store.people({ deptId: s.dept_id }); const classes = [...new Set(people.map(p => p.class_name).filter(Boolean))]; const att = new Map(store.get().attendance.filter(a => a.service_id === id).map(a => [a.person_id, a.present]));
   const shown = people.filter(p => !AT.cls || p.class_name === AT.cls); const c = store.attendanceCount(id);
-  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button data-act="print">인쇄</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><span class="sp"></span><button class="dng" data-act="delService" data-id="${id}">삭제</button></div>
+  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button data-act="print">인쇄</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><button data-go="#brief/${id}">🧑‍🏫 교사 브리핑</button><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><span class="sp"></span><button class="dng" data-act="delService" data-id="${id}">삭제</button></div>
   <section class="svhero" style="--lc:${LITU_HEX[churchInfo(s.date).color] || '#3f9d5f'}"><div class="lc"><span class="lcdot" style="background:var(--lc)"></span>${esc(churchLabel(s.date))} <span class="mute small">(자동 계산 · 전례 색 ${esc(churchInfo(s.date).color)})</span></div><div class="sv-main"><div><div class="k">성경 본문</div><div class="v">${esc(s.scripture) || '<span class="mute">미정</span>'}</div></div><div><div class="k">설교 제목</div><div class="v">${esc(s.sermon_title) || '<span class="mute">미정</span>'}</div></div></div></section>
   ${lessonBlock(s)}
   ${growthBlock(s)}
@@ -414,11 +415,6 @@ function growthBlock(s) {
   <div class="tablewrap"><table class="t growth"><thead><tr><th>이름 (반)</th>${checks.map(c => `<th class="c">${esc(c.label)}</th>`).join('')}${pts ? '<th class="num">이번 주</th>' : ''}</tr></thead><tbody>${people.map(p => { const items = g.get(p.id) || []; const sum = checks.filter(c => items.includes(c.key)).reduce((a, c) => a + c.points, 0);
     return `<tr><td><b>${esc(p.display)}</b> <span class="mute small">${esc(p.class_name)}</span></td>${checks.map(c => `<td class="c"><input type="checkbox" data-growth="${s.id}/${p.id}/${c.key}"${items.includes(c.key) ? ' checked' : ''} aria-label="${esc(p.name)} ${esc(c.label)}"></td>`).join('')}${pts ? `<td class="num">${sum ? sum + '점' : '-'}</td>` : ''}</tr>`; }).join('')}</tbody></table></div>`;
 }
-function homeNoteText(deptId) {
-  const t = today(); const sv = store.services(deptId).filter(s => s.date >= t && s.kind === 'regular' && s.lesson).sort((a, b) => a.date.localeCompare(b.date))[0];
-  if (!sv) return null; const l = sv.lesson; const has = k => l.pick.includes(k) && l[k];
-  return [`[${(store.dept(deptId) || {}).name} 가정 안내] ${md(sv.date)} ${churchLabel(sv.date)}`, '', `이번 주에 함께 배울 말씀이에요.`, has('title') ? `· 공과: ${l.title}` : '', has('scripture') ? `· 성경 본문: ${l.scripture}` : '', has('memory') ? `· 암송 말씀: ${l.memory}` : '', has('activity') ? `· 활동: ${l.activity}` : '', has('supplies') ? `· 준비물: ${l.supplies}` : '', '', '가정에서 이렇게 함께해 주세요.', '· 위 본문을 아이와 함께 소리 내어 읽어 주세요.', l.memory ? '· 암송 말씀을 하루 한 번 같이 말해 보세요.' : '· 오늘 배운 이야기를 아이에게 들려 달라고 해 주세요.', '· 이번 주 기도 제목을 하나씩 나누고 함께 기도해 주세요.', '', '(본문은 개역개정 성경으로 확인해 주세요)'].filter((x, i, a) => x !== '' || a[i - 1] !== '').join('\n');
-}
 function vMinistry() {
   const d = workDept(); const kind = dk(d); const t = today(); const y = t.slice(0, 4); const T = store.growthTotals(d, `${y}-01-01`, `${y}-12-31`); const pts = T.checks.some(c => c.points);
   const deptTabs = `<div class="tabs">${store.depts().map(x => `<a data-dept="${x.id}" class="${x.id === d ? 'on' : ''}">${esc(x.name)}</a>`).join('')}</div>`;
@@ -432,7 +428,7 @@ function vMinistry() {
     <p class="mute small" style="margin:8px 12px">연락은 ‘연락 기록’(심방·돌봄)에 남기면 다음 연락일이 다시 계산돼요. 군 복무 중인 청년에게는 부모님과 함께 파송 기도를 하고, 정기적으로 안부·위문을 보내는 교회가 많아요.</p></div></section>`;
   const exams = store.examPeriods(d, `${y}-01-01`, `${Number(y) + 1}-12-31`); const examSec = `<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>학교 시험 기간</h3><span class="tag">${exams.length}</span><span class="sp"></span><button class="sm pri" data-act="newExam" data-id="${d}">+ 시험 기간</button></div><div class="cardb">
     ${exams.length ? exams.map(x => { const clash = store.get().events.filter(e => e.dept_id === d && e.status === 'planned' && e.end_date >= x.date && e.start_date <= (x.end || x.date)); return `<div class="sched" data-open="schedule/${x.id}"><div class="datebox"><small>${dow(x.date)}</small><b>${Number(x.date.slice(8))}</b></div><div class="what"><b>${esc(x.title)}</b><span>${md(x.date)} ~ ${md(x.end || x.date)}${clash.length ? ` · 겹치는 행사: ${clash.map(e => esc(e.title)).join(', ')}` : ''}</span></div>${clash.length ? '<span class="tag bad">행사 겹침</span>' : ''}</div>`; }).join('') : emptyState('등록한 시험 기간이 없어요', '학교 중간·기말고사 기간을 넣어 두면 달력에 표시되고, 행사가 겹치면 저장할 때와 홈 브리핑에서 알려 줘요.', '')}</div></section>`;
-  const homeSec = `<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>가정 연계 안내문</h3><span class="sub">다가오는 주일 공과로 만들어요</span><span class="sp"></span><button class="sm pri" data-act="homeNote" data-id="${d}">안내문 만들기</button></div><div class="pad"><p class="mute small" style="margin:0">공과 제목·본문·암송 말씀과 가정에서 함께할 일을 복사해서 부모님께 보내요(이름·연락처는 넣지 않아요). 공과는 ‘예배 → 교재·공과 연간 배치’로 넣어요.</p></div></section>`;
+  const homeSec = `<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>주간 가정 메시지</h3><span class="sub">다가오는 주일 공과로 만들어요</span><span class="sp"></span><button class="sm" data-act="briefNext">교사 브리핑</button><button class="sm pri" data-act="familyNext">메시지 만들기</button></div><div class="pad"><p class="mute small" style="margin:0">공과 제목·본문·암송 말씀, 대화 질문, 가정 미션, 다음 주 공과, 다가오는 행사를 한 번에 만들어요. 보호자 연락처(명단 상세 정보)가 있으면 한 사람씩 문자로 보내거나 번호를 모아 단체 문자로 보낼 수 있어요.</p></div></section>`;
   const order = { kid: [checkSec, homeSec, ncSec], teen: [checkSec, examSec, homeSec, ncSec, awaySec], youth: [checkSec, ncSec, awaySec] }[kind] || [checkSec, ncSec];
   page('🌱', '부서 사역', `${deptTag(d)} ${esc(DEPT_KINDS[kind] || '')}에 맞춘 도구예요. 부서를 바꾸려면 아래 탭을 누르세요.`, `${deptTabs}${order.join('')}
   <details class="guide"><summary>참고한 자료</summary><div class="guidebody small"><ul>
@@ -803,6 +799,52 @@ function personInfoForm(id) {
     try { store.setPersonInfo(id, v); if (v.birth && /^\d{4}/.test(v.birth) && !p.birth_year) store.updatePerson(id, { ...p, birth_year: Number(v.birth.slice(0, 4)) }); d.close(); toast('상세 정보를 저장했어요.'); render(); } catch (err) { $('.err', d).textContent = err.message; } };
 }
 
+// ----- 주간 가정 메시지 -----
+async function copyText(text, area) { try { await navigator.clipboard.writeText(text); toast('복사했어요.'); } catch { if (area) area.select(); toast('복사하지 못했어요. 글을 선택해 Ctrl+C로 복사하세요.', true); } }
+function familyForm(serviceId) {
+  const data = store.weeklyData(serviceId); const s = data.service; const season = churchLabel(s.date); const mode = s.date < today() ? 'after' : 'before';
+  const withPhone = data.recipients.filter(r => r.phone); const noPhone = data.recipients.length - withPhone.length;
+  const d = modal(`<div class="dlg wide"><h3>📣 ${esc(data.dept.name)} 가정 메시지 <span class="mute small">${md(s.date)} ${esc(s.title)}</span></h3>
+    ${!s.lesson ? '<div class="callout warn small"><span>📚</span><div>이 예배에는 공과가 없어서 예배의 본문·설교 제목으로 만들었어요.</div></div>' : ''}
+    <div class="row" style="margin-bottom:8px"><label class="small">보낼 때 <select id="fmMode"><option value="before"${mode === 'before' ? ' selected' : ''}>예배 전(미리 안내)</option><option value="after"${mode === 'after' ? ' selected' : ''}>예배 후(오늘 배운 말씀)</option></select></label><span class="sp"></span><button class="sm" data-reset>다시 만들기</button></div>
+    <textarea id="fmText" rows="16" style="width:100%"></textarea><p class="mute small">질문·미션은 일반 틀이에요. 우리 부서 말투로 고쳐 쓰세요. 고친 글이 아래 문자 보내기에도 그대로 쓰여요.</p>
+    <h4 style="margin:12px 0 6px">받는 사람 ${withPhone.length}명${noPhone ? ` <span class="mute small">(연락처 없는 사람 ${noPhone}명: 명단에서 이름을 눌러 ${data.kind === 'youth' ? '휴대폰' : '보호자 연락처'}를 적으세요)</span>` : ''}</h4>
+    ${withPhone.length ? `<div class="row" style="margin-bottom:8px"><label class="small"><input type="checkbox" id="fmName" checked> 한 사람씩 보낼 때 이름 넣기</label><span class="sp"></span><button class="sm" data-allnum>번호 모두 복사(단체 문자용)</button></div>
+      <div class="tablewrap" style="max-height:220px;overflow:auto"><table class="t"><tbody>${withPhone.map(r => `<tr><td><b>${esc(r.name)}</b> <span class="mute small">${esc(r.who)}</span></td><td>${esc(r.phone)}</td><td class="nowrap"><a class="btnlike sm" data-sms="${r.id}" href="#">문자 보내기</a></td></tr>`).join('')}</tbody></table></div>
+      <p class="mute small">‘문자 보내기’는 휴대폰(또는 문자 앱이 있는 기기)에서 문자 앱을 열어요. 컴퓨터에서는 ‘복사’ 후 단체방에 붙여 넣으세요.</p>` : ''}
+    <div class="dlg-foot"><button data-x>닫기</button><button class="pri" data-copy>글 복사</button></div></div>`);
+  const ta = $('#fmText', d); const make = () => { ta.value = familyMessage(data, { mode: $('#fmMode', d).value, season }); }; make();
+  $('#fmMode', d).onchange = make; $('[data-reset]', d).onclick = make; $('[data-x]', d).onclick = () => d.close(); $('[data-copy]', d).onclick = () => copyText(ta.value, ta);
+  const all = $('[data-allnum]', d); if (all) all.onclick = () => copyText(withPhone.map(r => r.phone.split(/[,/]/)[0].trim()).join(', '));
+  d.querySelectorAll('[data-sms]').forEach(a => { a.onclick = e => { e.preventDefault(); const r = withPhone.find(x => x.id === Number(a.dataset.sms)); let body = ta.value;
+    if ($('#fmName', d).checked) body = body.replace(/\n(오늘 함께 나눈|이번 주일에 함께 배울)/, `\n${data.kind === 'youth' ? r.name + '님' : r.name + ' 보호자님'}, $1`);
+    location.href = `${smsHref(r.phone)}?body=${encodeURIComponent(body)}`; }; });
+}
+
+// ----- 교사 브리핑(한 장) -----
+function vBrief(id) {
+  const sv = store.service(id); if (!sv) { page('🧑‍🏫', '교사 브리핑', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
+  const b = store.weeklyData(id); const s = b.service; const l = s.lesson; const season = churchLabel(s.date);
+  const others = store.services(s.dept_id).filter(x => x.kind === 'regular').sort((a, c) => a.date.localeCompare(c.date)); const i = others.findIndex(x => x.id === id);
+  const li = (arr, f) => arr.length ? `<ul>${arr.map(x => `<li>${f(x)}</li>`).join('')}</ul>` : '<p class="mute small">없음</p>';
+  page('🧑‍🏫', `${esc(b.dept.name)} 교사 브리핑`, `${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(season)}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#service/${id}">◀ 예배</button>${i > 0 ? `<button data-go="#brief/${others[i - 1].id}">◀ 지난주</button>` : ''}${i >= 0 && i < others.length - 1 ? `<button data-go="#brief/${others[i + 1].id}">다음 주 ▶</button>` : ''}<span class="sp"></span><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><button data-act="briefCopy" data-id="${id}">글 복사(단체방용)</button><button class="pri" data-act="print">인쇄</button></div>
+  <div class="briefgrid">
+    <section class="box pad"><h3>⛪ 예배</h3><dl class="props"><dt>예배</dt><dd>${esc(s.title)}</dd><dt>인도</dt><dd>${esc(s.leader) || '-'}</dd><dt>본문</dt><dd>${esc(s.scripture) || '-'}</dd><dt>설교</dt><dd>${esc(s.sermon_title) || '-'}</dd></dl>${s.order_text ? `<h4>순서</h4><div class="small" style="white-space:pre-wrap">${esc(s.order_text)}</div>` : ''}</section>
+    <section class="box pad"><h3>📚 공과</h3>${l ? `<p><b>${esc(lessonLabel(l))}</b><br><span class="mute small">${esc(l.cname || '')}</span></p><dl class="props">${l.scripture ? `<dt>본문</dt><dd>${esc(l.scripture)}</dd>` : ''}${l.memory ? `<dt>암송</dt><dd>${esc(l.memory)}</dd>` : ''}${l.activity ? `<dt>활동</dt><dd>${esc(l.activity)}</dd>` : ''}${l.supplies ? `<dt>준비물</dt><dd><b>${esc(l.supplies)}</b></dd>` : ''}${l.note ? `<dt>메모</dt><dd>${esc(l.note)}</dd>` : ''}</dl>` : s.lesson_hold ? '<p>이번 주는 <b>공과 쉼</b>이에요.</p>' : '<p class="mute small">배치된 공과가 없어요.</p>'}${b.next && b.next.lesson ? `<p class="small mute">다음 주(${md(b.next.date)}): ${esc(lessonLabel(b.next.lesson))}</p>` : ''}</section>
+    <section class="box pad"><h3>✅ 준비할 일 <span class="mute small">2주 안</span></h3>${li(b.tasks, k => `${k.overdue ? '<span class="tag bad">지남</span> ' : ''}${k.due ? md(k.due) + ' ' : ''}<b>${esc(k.title)}</b> <span class="mute small">${esc(k.event)}${k.assignee ? ' · ' + esc(k.assignee) : ''}</span>`)}
+      ${b.schedules.length ? `<h4>이번 주 모임</h4>${li(b.schedules, x => `${md(x.date)} ${esc(x.time || '')} ${esc(x.title)}${x.place ? ' <span class="mute small">' + esc(x.place) + '</span>' : ''}`)}` : ''}
+      ${b.events.length ? `<h4>다가오는 행사</h4>${li(b.events.slice(0, 4), e => `${md(e.start_date)} ${esc(e.title)}`)}` : ''}</section>
+    <section class="box pad"><h3>💛 돌봄 <span class="tag warn">교사만</span></h3>
+      ${b.lastAtt ? `<p class="small">지난 예배(${md(b.lastAtt.date)}) 출석 <b>${b.lastAtt.present}명</b></p>` : ''}
+      ${b.health.length ? `<h4>건강 주의</h4>${li(b.health, h => `<b>${esc(h.name)}</b>: ${esc(h.health)}`)}` : ''}
+      ${b.birthdays.length ? `<h4>🎂 이번 주 생일</h4>${li(b.birthdays, x => `${esc(x.name)} ${md(x.date)}`)}` : ''}
+      ${b.newcomers.length ? `<h4>새친구·새가족</h4>${li(b.newcomers, n => `${esc(n.name)}${n.next ? ' <span class="mute small">다음: ' + esc(n.next) + '</span>' : ''}`)}` : ''}
+      ${b.low.length ? `<h4>연락해 볼 사람 <span class="mute small">최근 출석률 50% 미만</span></h4><p>${b.low.map(esc).join(', ')}</p>` : ''}
+      ${!b.lastAtt && !b.health.length && !b.birthdays.length && !b.newcomers.length && !b.low.length ? '<p class="mute small">표시할 내용이 없어요.</p>' : ''}</section>
+  </div>
+  <p class="mute small noprint">돌봄 칸에는 개인정보가 있어요. 단체방에 올릴 때는 ‘글 복사’ 후 필요 없는 부분을 지우고, 인쇄물은 교사 모임 뒤 정리하세요.</p>`);
+}
+
 // ----- 인수인계 도우미 -----
 function vHandover() {
   const d = workDept(); const h = store.handover(d); const meta = h.meta || {}, fields = h.fields || {}; const facts = UI.hoFacts && UI.hoFacts.dept === d ? UI.hoFacts.out : null;
@@ -871,9 +913,6 @@ const ACT = {
     $('[data-reset]', m).onclick = () => { const S0 = store.get(); delete (S0.deptCfg[id] || {}).checks; store.save(); m.close(); toast('기본 항목으로 되돌렸어요.'); render(); };
     $('form', m).onsubmit = e => { e.preventDefault(); const F = e.target.elements; const list = rows.map((_, i) => ({ key: F['key' + i].value, label: F['label' + i].value, points: F['points' + i].value })).filter(c => c.label.trim());
       try { store.saveChecks(id, list); m.close(); toast('체크 항목을 저장했어요.'); render(); } catch (err) { $('.err', m).textContent = err.message; } }; },
-  homeNote: d => { const text = homeNoteText(Number(d.id)); if (!text) { toast('다가오는 주일예배에 공과가 없어요. 예배 → 교재·공과 연간 배치로 먼저 넣어 주세요.', true); return; }
-    const m = modal(`<div class="dlg"><h3>가정 연계 안내문</h3><p class="mute small">고쳐서 복사해 보내세요. 아이 이름·연락처는 넣지 마세요.</p><textarea rows="14" style="width:100%">${esc(text)}</textarea><div class="dlg-foot"><button data-x>닫기</button><button class="pri" data-copy>복사</button></div></div>`);
-    $('[data-x]', m).onclick = () => m.close(); $('[data-copy]', m).onclick = async () => { try { await navigator.clipboard.writeText($('textarea', m).value); toast('복사했어요.'); } catch { $('textarea', m).select(); toast('글을 선택했어요. Ctrl+C로 복사하세요.'); } }; },
   newExam: d => scheduleForm({ dept_id: Number(d.id), type: EXAM_TYPE, title: '중간고사' }),
   ncStart: d => { const id = Number(d.id); const cand = store.people({ deptId: id }).filter(p => !p.newcomer || p.newcomer.done);
     form({ title: '새가족(새친구) 등록', values: { who: '', reg: today() }, intro: '<p class="mute small">이미 명단에 있으면 고르고, 처음이면 이름을 적으세요. 연락처 같은 민감 정보는 적지 마세요.</p>',
@@ -897,6 +936,10 @@ const ACT = {
     if (await ask(`${d.year}년차를 아래 ${rows.length}과로 바꿀까요?\n\n${rows.slice(0, 5).map(r => `${r.no}과 ${r.title} ${r.scripture}`).join('\n')}${rows.length > 5 ? `\n…외 ${rows.length - 5}과` : ''}`, '넣기')) { guard(() => store.setCurriculumYear(Number(d.id), Number(d.year), rows), `${rows.length}과를 넣었어요.`); render(); } },
   lessonEdit: d => lessonEditor(Number(d.id)),
   personCard: d => personCard(Number(d.id)),
+  familyMsg: d => familyForm(Number(d.id)),
+  familyNext: () => { const sv = store.upcomingService(workDept()); if (!sv) { toast('다가오는 주일예배가 없어요. 예배를 먼저 만들어 주세요.', true); return; } familyForm(sv.id); },
+  briefNext: () => { const sv = store.upcomingService(workDept()); if (!sv) { toast('다가오는 주일예배가 없어요. 예배를 먼저 만들어 주세요.', true); return; } location.hash = `#brief/${sv.id}`; },
+  briefCopy: async d => copyText(briefingText(store.weeklyData(Number(d.id)), churchLabel(store.service(Number(d.id)).date))),
   personInfo: d => personInfoForm(Number(d.id)),
   hoSave: () => { guard(() => store.saveHandover(workDept(), hoCollect()), '인수인계서를 저장했어요.'); render(); },
   hoFacts: () => { const d = workDept(); const out = store.handoverDraft(d); UI.hoFacts = { dept: d, out }; let n = 0; const cur = hoCollect();

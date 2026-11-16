@@ -446,7 +446,7 @@ export function createStore(storage, today = kstToday) {
     attendanceCount(serviceId) { const rows = S.attendance.filter(a => a.service_id === serviceId); return { present: rows.filter(a => a.present).length, recorded: rows.length }; },
     // 출석부: 행=사람, 열=최근 회차. 부서 이동·명단 제외 후에도 과거 기록이 있는 사람은 포함한다.
     attendanceMatrix(deptId, { last = 8 } = {}) {
-      const svcs = S.services.filter(s => s.dept_id === deptId && s.kind === 'regular').sort((a, b) => b.date.localeCompare(a.date)).slice(0, last).reverse();
+      const svcs = S.services.filter(s => s.dept_id === deptId && s.kind === 'regular' && s.date <= today()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, last).reverse(); // 공과 배치로 미리 만든 앞날 예배는 빼고 오늘까지
       const ids = new Set(svcs.map(s => s.id)); const involved = new Set(S.attendance.filter(a => ids.has(a.service_id)).map(a => a.person_id));
       const rows = S.people.filter(p => (p.dept_id === deptId && p.status === 'active') || involved.has(p.id)).map(p => {
         const cells = svcs.map(s => { const a = S.attendance.find(x => x.service_id === s.id && x.person_id === p.id); return a ? (a.present ? 1 : 0) : null; });
@@ -486,6 +486,29 @@ export function createStore(storage, today = kstToday) {
 
     // ----- 부서별 사역(MB12) -----
     deptKind: id => ((dept(id) || {}).kind) || guessDeptKind((dept(id) || {}).name, id),
+    // ----- 주간 가정 메시지·교사 브리핑에 쓸 자료 모으기 -----
+    weeklyData(serviceId, t = today()) {
+      const s = api.service(serviceId); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); const deptId = s.dept_id; const kind = api.deptKind(deptId);
+      const [mon, sun] = api.weekRange(addDays(s.date, -1)); // 주일이 끝인 그 주(월~주일)
+      const next = S.services.filter(x => x.dept_id === deptId && x.kind === 'regular' && x.date > s.date && x.lesson).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+      const events = S.events.filter(e => e.dept_id === deptId && e.status !== 'cancelled' && e.end_date >= s.date && e.start_date <= addDays(s.date, 28)).sort((a, b) => a.start_date.localeCompare(b.start_date));
+      const evMap = new Map(S.events.filter(e => e.dept_id === deptId && e.status !== 'cancelled' && e.end_date >= t).map(e => [e.id, e])); // 이미 끝난 행사의 남은 업무는 빼기
+      const tasks = S.tasks.filter(k => k.status !== 'done' && evMap.has(k.event_id) && (!k.due || k.due <= addDays(s.date, 14))).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'))
+        .slice(0, 12).map(k => ({ title: k.title, due: k.due, assignee: k.assignee || '', event: evMap.get(k.event_id).title, overdue: !!(k.due && k.due < t) }));
+      const schedules = (S.schedules || []).filter(x => x.dept_id === deptId && x.date >= mon && x.date <= sun).sort((a, b) => a.date.localeCompare(b.date));
+      const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active'); const learners = active.filter(p => ['child', 'teen', 'youth'].includes(p.kind));
+      const M = api.attendanceMatrix(deptId, { last: 8 }); const low = M.rows.filter(r => !r.former && r.rate !== null && r.rate < 50 && ['child', 'teen', 'youth'].includes(r.person.kind)).map(r => r.person.name);
+      const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)); const birthdays = [];
+      for (const p of active) { const b = p.info && p.info.birth; if (!b) continue; const day = days.find(d => d.slice(5) === b.slice(5)); if (day) birthdays.push({ name: p.name, date: day }); }
+      const health = active.filter(p => p.info && p.info.health).map(p => ({ name: p.name, health: p.info.health }));
+      const newcomers = api.newcomers(deptId, t).map(n => ({ name: n.person.name, next: n.next ? n.next[1] : '' }));
+      const prev = S.services.filter(x => x.dept_id === deptId && x.kind === 'regular' && x.date < s.date).sort((a, b) => b.date.localeCompare(a.date)).find(x => api.attendanceCount(x.id).recorded > 0);
+      const lastAtt = prev ? { date: prev.date, present: api.attendanceCount(prev.id).present } : null;
+      const recipients = learners.map(p => { const i = p.info || {}; const phone = kind === 'youth' ? (i.phone || '') : (i.guardian_phone || i.phone || ''); return { id: p.id, name: p.name, phone, who: kind === 'youth' ? '' : (i.guardian ? `${i.guardian}${i.guardian_rel ? '(' + i.guardian_rel + ')' : ''}` : '보호자') }; });
+      return { service: s, dept: dept(deptId), kind, next, events, tasks, schedules, low, birthdays, health, newcomers, lastAtt, recipients };
+    },
+    // 다가오는(오늘 이후 첫) 정기예배: 브리핑·가정 메시지의 기본값
+    upcomingService(deptId, t = today()) { return S.services.filter(s => s.dept_id === deptId && s.kind === 'regular' && s.date >= t).sort((a, b) => a.date.localeCompare(b.date))[0] || null; },
     // ----- 인수인계: 부서마다 인수인계서(칸별 글)를 저장하고, 기록에서 초안을 만든다 -----
     handover(deptId) { const h = (S.deptCfg[deptId] || {}).handover; return h && typeof h === 'object' ? h : { meta: {}, fields: {} }; },
     saveHandover(deptId, h) {
