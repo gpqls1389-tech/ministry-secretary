@@ -2,9 +2,11 @@
 import { makeSeed } from './seed.js';
 import { DEFAULT_CHECKS, MAX_CHECKS, NEWCOMER_STEPS, AWAY_REASONS, AWAY_EVERY, EXAM_TYPE, guessDeptKind } from './ministry.js';
 import { LESSON_KEYS, FIELD_MAX, MAX_LESSONS, MAX_CURRICULA, CURRICULUM_PRESETS, PICK_PRESETS, blankLessons, cleanLesson, sundaysBetween, lessonLabel } from './curriculum.js';
-import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
+import { churchYear, EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
 import { HANDOVER_FIELDS, HANDOVER_META, HANDOVER_MAX } from './handover.js';
 import { cleanInfo, mainPhone } from './people.js';
+import { formByKey, blankValues, PRIVACY_ROWS } from './admin.js';
+import { cleanOrder, orderText } from './order.js';
 
 export const KEY = 'ministry-secretary:v1';
 export class ValidationError extends Error {}
@@ -60,6 +62,8 @@ export function validateState(j) {
   for (const t of j.transactions) if (!isId(t.id) || !dids.has(t.dept_id) || !isDate(t.date) || !['income', 'expense'].includes(t.kind) || !Number.isSafeInteger(t.amount) || t.amount <= 0 || (t.event_id != null && !eids.has(t.event_id)) || (t.receipt != null && !RECEIPT_ID.test(String(t.receipt)))) bad('거래');
   for (const s of j.seasons) if (!dids.has(s.dept_id) || typeof s.name !== 'string') bad('절기');
   if (j.growth !== undefined && (!Array.isArray(j.growth) || j.growth.length > 50000)) bad('주간 체크');
+  if (j.docs !== undefined && (!Array.isArray(j.docs) || j.docs.length > 500 || j.docs.some(d => !d || !isId(d.id) || typeof d.form !== 'string' || typeof d.values !== 'object' || d.values === null))) bad('행정 문서');
+  for (const s of j.services) if (s.order_items !== undefined && !Array.isArray(s.order_items)) bad('예배 순서');
   if (j.deptCfg !== undefined && (typeof j.deptCfg !== 'object' || Array.isArray(j.deptCfg) || j.deptCfg === null)) bad('부서 설정');
   if (j.curricula !== undefined && (!Array.isArray(j.curricula) || j.curricula.length > MAX_CURRICULA)) bad('교재');
   for (const c of (j.curricula || [])) if (!isId(c.id) || typeof c.name !== 'string' || !Number.isInteger(c.years) || c.years < 1 || c.years > 3 || !Array.isArray(c.lessons) || c.lessons.length > MAX_LESSONS || !(c.dept_id === 0 || dids.has(c.dept_id)) || c.lessons.some(l => !Number.isInteger(l.year) || !Number.isInteger(l.no) || LESSON_KEYS.some(k => typeof l[k] !== 'string' || l[k].length > FIELD_MAX[k]))) bad('교재');
@@ -81,7 +85,7 @@ export function normalizeState(j) {
     j.depts.splice(at >= 0 ? at + 1 : j.depts.length, 0, { id, name: '중고등부', kind: 'teen' });
   }
   j.teenAdded = true; // 사용자가 중고등부를 지운 뒤에 다시 생기지 않게
-  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth']) j[k] = j[k] || [];
+  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth', 'docs']) j[k] = j[k] || [];
   j.deptCfg = j.deptCfg || {};
   return j;
 }
@@ -359,7 +363,7 @@ export function createStore(storage, today = kstToday) {
 
     // ----- 예배·출석 -----
     saveService(s) {
-      const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '예배명'), date: reqDate(s.date), time: s.time || '', place: s.place || '', scripture: s.scripture || '', sermon_title: s.sermon_title || '', leader: s.leader || '', order_text: s.order_text || '', kind: s.kind === 'special' ? 'special' : 'regular' };
+      const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '예배명'), date: reqDate(s.date), time: s.time || '', place: s.place || '', scripture: s.scripture || '', sermon_title: s.sermon_title || '', leader: s.leader || '', order_text: s.order_text || '', kind: s.kind === 'special' ? 'special' : 'regular' }; if (Array.isArray(s.order_items)) rec.order_items = cleanOrder(s.order_items);
       if (!dept(rec.dept_id)) throw new ValidationError('부서를 선택하세요.');
       if (s.id) { Object.assign(S.services.find(x => x.id === s.id), rec); save(); return s.id; }
       return addSeries(S.services, rec, s);
@@ -486,6 +490,100 @@ export function createStore(storage, today = kstToday) {
 
     // ----- 부서별 사역(MB12) -----
     deptKind: id => ((dept(id) || {}).kind) || guessDeptKind((dept(id) || {}).name, id),
+    // ----- 예배 순서 칸(담당·시간·준비물·메모) -----
+    setServiceOrder(id, items) { const s = api.service(id); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); const v = cleanOrder(items); if (v.length) { s.order_items = v; s.order_text = orderText(v, s.time); } else { delete s.order_items; } save(); return v; },
+
+    // ----- 행정 문서: 서식으로 쓴 문서를 저장(부서별) -----
+    docs(deptId) { return (S.docs || []).filter(d => !deptId || d.dept_id === deptId).sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || b.id - a.id); },
+    doc(id) { return (S.docs || []).find(d => d.id === id) || null; },
+    saveDoc(d) {
+      const f = formByKey(d.form); if (!f) throw new ValidationError('서식을 찾을 수 없습니다.'); const deptId = Number(d.dept_id) || 0; if (deptId && !dept(deptId)) throw new ValidationError('부서를 선택하세요.');
+      const base = blankValues(f); const values = {};
+      for (const x of f.fields) { const v = (d.values || {})[x.k];
+        if (x.type === 'table') values[x.k] = (Array.isArray(v) ? v : base[x.k]).slice(0, 60).map(r => x.cols.map((_, i) => String((Array.isArray(r) ? r[i] : '') ?? '').slice(0, 300)));
+        else if (x.type === 'check') values[x.k] = (Array.isArray(v) ? v : []).map(Number).filter(i => Number.isInteger(i) && i >= 0 && i < x.items.length);
+        else if (x.type !== 'note') values[x.k] = String(v ?? '').slice(0, x.type === 'area' ? 3000 : 200); }
+      const rec = { form: f.key, dept_id: deptId, title: String(d.title || f.name).trim().slice(0, 80) || f.name, values, ctx: d.ctx && typeof d.ctx === 'object' ? { event_id: Number(d.ctx.event_id) || undefined, year: Number(d.ctx.year) || undefined, month: /^\d{4}-\d{2}$/.test(d.ctx.month || '') ? d.ctx.month : undefined } : {}, updated: today() };
+      S.docs = S.docs || [];
+      if (d.id) { const x = S.docs.find(v => v.id === d.id); if (!x) throw new ValidationError('문서를 찾을 수 없습니다.'); Object.assign(x, rec); save(); return d.id; }
+      if (S.docs.length >= 500) throw new ValidationError('문서는 500개까지 저장할 수 있어요. 오래된 문서를 지워 주세요.');
+      const id = nid(); S.docs.push({ id, created: today(), ...rec }); save(); return id;
+    },
+    deleteDoc(id) { S.docs = (S.docs || []).filter(d => d.id !== id); save(); },
+
+    // 서식 초안: 목회 비서 기록으로 칸을 미리 채운다(ctx: { event_id, year, month, date })
+    formDraft(key, deptId, ctx = {}, t = today()) {
+      const f = formByKey(key); if (!f) throw new ValidationError('서식을 찾을 수 없습니다.'); const d = dept(deptId) || { name: '' }; const v = blankValues(f);
+      const won = n => Math.round(n || 0).toLocaleString('ko-KR'); const mdd = x => `${Number(x.slice(5, 7))}/${Number(x.slice(8))}`;
+      const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active'); const learners = active.filter(p => ['child', 'teen', 'youth'].includes(p.kind)); const staff = active.filter(p => p.kind === 'teacher' || p.kind === 'volunteer');
+      const fillRows = (k, rows) => { const n = Math.max(v[k].length, rows.length); v[k] = Array.from({ length: n }, (_, i) => rows[i] || v[k][0].map(() => '')); };
+      if ('dept' in v) v.dept = d.name; if ('church' in v) v.church = d.name;
+      const e = ctx.event_id ? S.events.find(x => x.id === Number(ctx.event_id)) : null;
+      if (e) { const when = e.start_date === e.end_date ? e.start_date : `${e.start_date} ~ ${e.end_date}`; for (const [k, val] of [['title', e.title], ['when', when], ['place', e.place], ['owner', e.owner], ['target', e.target_count ? `${d.name} ${e.target_count}명` : d.name], ['purpose', e.note]]) if (k in v) v[k] = val || '';
+        const tasks = S.tasks.filter(k => k.event_id === e.id);
+        if ('roles' in v) v.roles = tasks.filter(k => k.assignee).map(k => `- ${k.title}: ${k.assignee}`).join('\n');
+        if (key === 'eventPlan' && e.expected_budget) fillRows('budget', [['행사비', '예상 예산', won(e.expected_budget)]]);
+        if (key === 'eventReport') { const sm = api.eventSummary(e.id); v.count = sm.attended ? `${sm.attended}명(신청 ${sm.registered}명)` : sm.registered ? `신청 ${sm.registered}명` : '';
+          fillRows('money', S.transactions.filter(x => x.event_id === e.id && x.kind === 'expense' && !x.voided).map(x => [`${x.date.slice(5)} ${x.category || x.memo || ''}`.trim(), won(x.amount), x.memo || '']));
+          if (e.retro) { v.good = e.retro.good || ''; v.next = e.retro.change || ''; } }
+        if (key === 'safety' && 'checker' in v) v.checker = e.owner || ''; }
+      if (key === 'annual') { const Y = Number(ctx.year) || Number(t.slice(0, 4)) + (Number(t.slice(5, 7)) >= 10 ? 1 : 0); v.year = `${Y}년`;
+        const P = api.plan(deptId, Y), prev = api.plan(deptId, Y - 1); v.goals = P.goal || ''; v.review = prev.review || '';
+        const lessons = S.services.filter(x => x.dept_id === deptId && x.lesson && String(x.date).startsWith(String(Y))); const cn = [...new Set(lessons.map(x => `${x.lesson.cname}${x.lesson.years > 1 ? ` ${x.lesson.year}년차` : ''}`))];
+        v.curriculum = cn.join(', ') || (S.curricula || []).filter(c => c.dept_id === deptId).map(c => c.name).join(', ');
+        const cy = churchYear(Y); let evs = S.events.filter(x => x.dept_id === deptId && x.status !== 'cancelled' && x.start_date.startsWith(String(Y))).map(x => ({ date: x.start_date, title: x.title }));
+        if (!evs.length) { try { evs = api.annualReport(deptId, Y - 1, t).draft.events.map(x => ({ date: x.date, title: x.title })); } catch { evs = []; } }
+        const mine = api.seasons(deptId, Y);
+        v.months = Array.from({ length: 12 }, (_, i) => { const mm = String(i + 1).padStart(2, '0'); const a = `${Y}-${mm}-01`, z = `${Y}-${mm}-31`;
+          const ss = [...new Set([...cy.filter(c => c.start <= z && c.end >= a).map(c => c.name), ...mine.filter(c => (c.start || '') <= z && (c.end || c.start || '') >= a).map(c => c.name)])];
+          return [`${i + 1}월`, ss.join(', '), (P.themes || {})[i + 1] || '', evs.filter(x => x.date.slice(5, 7) === mm).map(x => `${mdd(x.date)} ${x.title}`).join(', '), '']; });
+        const classes = [...new Set(learners.map(x => x.class_name).filter(Boolean))];
+        if (classes.length) fillRows('org', classes.map(c => [c, staff.filter(x => x.class_name === c).map(x => x.name).join(', '), String(learners.filter(x => x.class_name === c).length), '']));
+        const bs = S.budgets.filter(b => b.dept_id === deptId && b.year === Y);
+        let brows = bs.map(b => [b.category, won(b.amount), b.note || '']);
+        if (!brows.length) { try { brows = api.annualReport(deptId, Y - 1, t).draft.budget.map(b => [b.category, won(b.suggest), `지난해 지출 ${won(b.spent)}원`]); } catch { brows = []; } }
+        if (brows.length) fillRows('budget', brows); }
+      if (key === 'monthly') { const M = ctx.month || (() => { const x = new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 2, 1)); return x.toISOString().slice(0, 7); })(); v.month = `${Number(M.slice(0, 4))}년 ${Number(M.slice(5))}월`;
+        const svs = S.services.filter(x => x.dept_id === deptId && x.kind === 'regular' && x.date.startsWith(M)).sort((a, b) => a.date.localeCompare(b.date));
+        fillRows('att', svs.map(x => { const c = api.attendanceCount(x.id); return [mdd(x.date), String(learners.length), c.recorded ? String(c.present) : '', '', x.lesson ? (x.lesson.title || '') : '']; }));
+        fillRows('events', S.events.filter(x => x.dept_id === deptId && x.status !== 'cancelled' && x.start_date.startsWith(M)).map(x => [mdd(x.start_date), x.title, x.retro && x.retro.good ? x.retro.good : '']));
+        const tx = api.transactions({ deptId, year: Number(M.slice(0, 4)), month: Number(M.slice(5)) }); const inc = tx.filter(x => x.kind === 'income').reduce((a, x) => a + x.amount, 0), exp = tx.filter(x => x.kind === 'expense').reduce((a, x) => a + x.amount, 0);
+        fillRows('money', [['수입', won(inc), ''], ['지출', won(exp), `${tx.filter(x => x.kind === 'expense').length}건`], ['연 예산 잔액', won(api.deptSummary(deptId, Number(M.slice(0, 4))).budget_remaining), '']]);
+        const vis = (S.visits || []).filter(x => x.date.startsWith(M) && (person(x.person_id) || {}).dept_id === deptId); v.care = vis.length ? `심방·연락 ${vis.length}건` : '';
+        const nm = new Date(Date.UTC(Number(M.slice(0, 4)), Number(M.slice(5)), 1)).toISOString().slice(0, 7); v.next = S.events.filter(x => x.dept_id === deptId && x.status !== 'cancelled' && x.start_date.startsWith(nm)).map(x => `- ${mdd(x.start_date)} ${x.title}`).join('\n'); }
+      if (key === 'settle') { const Y = Number(ctx.year) || Number(t.slice(0, 4)); v.period = `${Y}년 1월 ~ ${Y}년 12월`; const m = api.deptSummary(deptId, Y);
+        fillRows('summary', [['예산', won(m.budget)], ['수입', won(m.income)], ['지출', won(m.expense)], ['예산 잔액', won(m.budget_remaining)]]);
+        fillRows('cats', m.byCategory.map(c => [c.category, won(c.budget), won(c.spent), won(c.remaining)])); }
+      if (key === 'meeting') { v.date = ctx.date || t; v.attend = staff.map(x => x.name).join(', '); }
+      if (key === 'expense' || key === 'newcomer' || key === 'visit') { if ('date' in v) v.date = t; }
+      if (key === 'privacy') v.table = PRIVACY_ROWS.map(r => r.slice());
+      return v;
+    },
+    // 지금 쓰면 좋은 서식 추천(이유와 함께)
+    recommendForms(deptId, t = today()) {
+      const out = []; const add = (key, reason, ctx = {}, pri = 5) => { if (!out.some(x => x.key === key && JSON.stringify(x.ctx) === JSON.stringify(ctx))) out.push({ key, reason, ctx, pri }); };
+      const docs = (S.docs || []).filter(x => x.dept_id === deptId); const hasDoc = (key, ctx = {}) => docs.some(x => x.form === key && (!ctx.event_id || (x.ctx || {}).event_id === ctx.event_id) && (!ctx.year || (x.ctx || {}).year === ctx.year) && (!ctx.month || (x.ctx || {}).month === ctx.month));
+      const mm = Number(t.slice(5, 7)), Y = Number(t.slice(0, 4)); const kind = api.deptKind(deptId);
+      for (const e of S.events.filter(x => x.dept_id === deptId && x.status !== 'cancelled')) {
+        const days = Math.round((Date.parse(e.start_date) - Date.parse(t)) / 864e5), after = Math.round((Date.parse(t) - Date.parse(e.end_date)) / 864e5); const ctx = { event_id: e.id };
+        if (days >= 0 && days <= 45 && !hasDoc('eventPlan', ctx)) add('eventPlan', `‘${e.title}’까지 ${days}일 남았어요. 계획서로 결재를 받아 두세요.`, ctx, 1);
+        const away = e.end_date > e.start_date || /수련회|캠프|소풍|성경학교|여행|봉사/.test(e.title + e.type);
+        if (days >= 0 && days <= 30 && away && kind !== 'youth' && !hasDoc('consentEvent', ctx)) add('consentEvent', `‘${e.title}’ — 외부·숙박 행사예요. 보호자 동의서를 받으세요.`, ctx, 1);
+        if (days >= 0 && days <= 10 && away && !hasDoc('safety', ctx)) add('safety', `‘${e.title}’ 안전 점검을 1주 전에 해 두세요.`, ctx, 2);
+        if (after >= 0 && after <= 30 && !hasDoc('eventReport', ctx)) add('eventReport', `‘${e.title}’ 행사가 끝났어요. 2주 안에 결과 보고서를 남기세요.`, ctx, 2);
+      }
+      if (mm >= 10 && !hasDoc('annual', { year: Y + 1 })) add('annual', `${Y + 1}년 연간 교육 계획서를 준비할 때예요(보통 11~1월).`, { year: Y + 1 }, mm >= 11 ? 1 : 3);
+      if (mm <= 1 && !hasDoc('annual', { year: Y })) add('annual', `${Y}년 연간 교육 계획서가 아직 없어요.`, { year: Y }, 2);
+      if ((mm === 12 || mm <= 2) && !hasDoc('settle', { year: mm === 12 ? Y : Y - 1 })) add('settle', `${mm === 12 ? Y : Y - 1}년 결산 보고서를 정리할 때예요.`, { year: mm === 12 ? Y : Y - 1 }, 2);
+      const pm = new Date(Date.UTC(Y, mm - 2, 1)).toISOString().slice(0, 7); if (Number(t.slice(8)) <= 10 && !hasDoc('monthly', { month: pm })) add('monthly', `${Number(pm.slice(5))}월 월간 사역 보고서를 쓸 때예요.`, { month: pm }, 3);
+      if (mm >= 11) add('teacher', '새해 교사 모집 때 봉사 신청서를 쓰세요.', {}, 4);
+      const noConsent = S.people.filter(p => p.dept_id === deptId && p.status === 'active' && ['child', 'teen'].includes(p.kind) && p.info && !p.info.consent).length;
+      if (noConsent) add('privacy', `상세 정보를 적었지만 동의 기록이 없는 학생 ${noConsent}명이 있어요.`, {}, 2);
+      if (api.newcomers(deptId, t).length) add('newcomer', '정착 중인 새친구가 있어요. 등록 카드로 정보를 받아 두세요.', {}, 4);
+      if ((S.schedules || []).some(x => x.dept_id === deptId && /회의/.test(x.title + x.type) && x.date >= addDays(t, -3) && x.date <= addDays(t, 7))) add('meeting', '이번 주 교사 회의가 있어요. 회의록을 남기세요.', { date: t }, 3);
+      return out.sort((a, b) => a.pri - b.pri).slice(0, 8);
+    },
+
     // ----- 주간 가정 메시지·교사 브리핑에 쓸 자료 모으기 -----
     weeklyData(serviceId, t = today()) {
       const s = api.service(serviceId); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); const deptId = s.dept_id; const kind = api.deptKind(deptId);

@@ -19,3 +19,8 @@
 - **frappe-gantt 1.2.2** — Copyright (c) 2024 Frappe Technologies Pvt. Ltd., 출처 https://github.com/frappe/gantt, 위치 `public/vendor/frappe-gantt/` (`frappe-gantt.es.js`, `frappe-gantt.css`). 쓰임: 행사·준비 일정 타임라인(읽기 전용). 이 라이브러리는 제목을 HTML로 그리는 곳이 있어, 사용자가 입력한 글은 항상 이스케이프해서 넘깁니다.
 - **uPlot 1.6.32** — Copyright (c) 2022 Leon Sorokin, 출처 https://github.com/leeoniya/uPlot, 위치 `public/vendor/uplot/` (`uPlot.esm.js`, `uPlot.min.css`). 쓰임: 예배 화면의 출석 추이 차트.
 - **Open Props 1.7.23** — Copyright (c) 2021 Adam Argyle, 출처 https://github.com/argyleink/open-props, 위치 `public/vendor/open-props/` (`sizes.min.css`, `borders.min.css`, `shadows.min.css` 만 사용). 쓰임: 새 화면 부품의 간격·모서리·그림자 값.
+## python-hwpx의 빈 문서 틀 (한글 HWPX 파일 만들기)
+- 위치: `public/vendor/hwpx/` (`header.xml`, `version.xml`, `settings.xml`, `container.xml`, `container.rdf`, `manifest.xml`)
+- 출처: https://github.com/airmang/python-hwpx 의 `src/hwpx/data/Skeleton.hwpx` 를 풀어서 사용. Copyright 2025-2026 airmang, **Apache License 2.0** — 전문: `public/vendor/hwpx/LICENSE.txt`, 고지: `public/vendor/hwpx/NOTICE.txt`
+- **바꾼 점**: `header.xml`에 표 테두리(borderFill 3·4), 굵은 글자·제목·작은 글자 모양(charPr 7~9), 가운데·오른쪽·왼쪽 정렬 문단 모양(paraPr 20~22)을 더했습니다. 나머지 파일은 그대로입니다.
+- 쓰임: `행정 → 서식`에서 한글(HWPX) 파일을 **브라우저 안에서** 만듭니다(서버로 보내지 않음). 본문(section0.xml)과 ZIP은 `public/js/hwpx.js`가 직접 만듭니다.
