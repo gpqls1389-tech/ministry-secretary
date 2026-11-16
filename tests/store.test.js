@@ -249,3 +249,23 @@ test('MB12.4 사람 상세 정보: 형식 검사, 빈 칸 삭제, 인수인계 �
   s.setPersonInfo(id, {}); assert.equal(s.person(id).info, undefined, '모두 비우면 정보 삭제');
   assert.throws(() => s.importJson(JSON.stringify({ ...JSON.parse(s.exportJson()), people: [{ id: 1, name: 'x', dept_id: 1, info: [1] }] })), ValidationError);
 });
+
+test('MB12.5 주간 자료: 가정 메시지·교사 브리핑(공과·준비할 일·생일·건강 주의·받는 사람), 미래 예배는 출석부에서 제외', async () => {
+  const { familyMessage, briefingText } = await import('../public/js/weekly.js');
+  const s = mk(); const sv = s.upcomingService(1, TODAY); assert.ok(sv && sv.date >= TODAY);
+  const id = s.importCurriculum({ type: 'mokhoe-curriculum', version: 1, name: '주간 교재', publisher: '', years: 1, lessons: [{ year: 1, no: 1, title: '첫 과', scripture: '요 1:14', memory: '말씀이 육신이 되어', supplies: '색연필' }, { year: 1, no: 2, title: '둘째 과', scripture: '눅 2:1-7' }] });
+  s.applyCurriculum({ cid: id, dept_id: 1, year: 1, start: sv.date, until: '2027-01-31', pick: 'all', create: 'yes' });
+  const W = s.weeklyData(sv.id, TODAY); assert.equal(W.kind, 'kid'); assert.equal(W.next.lesson.title, '둘째 과');
+  assert.ok(W.health.some(h => /땅콩/.test(h.health)), '가상 데이터의 건강 주의'); assert.ok(W.recipients.some(r => r.phone === '010-0000-0002'));
+  assert.ok(W.tasks.length > 0 && W.tasks.every(k => k.event));
+  const msg = familyMessage(W, { mode: 'before', season: '대림절 제1주' });
+  for (const x of ['아동부 가정 안내', '· 공과: 첫 과', '· 성경 본문: 요 1:14', '· 암송 말씀: 말씀이 육신이 되어', '· 준비물: 색연필', '가정에서 이렇게 물어봐 주세요', '다음 주', '둘째 과', '개역개정']) assert.ok(msg.includes(x), x);
+  assert.ok(!familyMessage(W, { mode: 'after' }).includes('준비물'), '예배 후에는 준비물 빼기');
+  assert.ok(familyMessage(W, { name: '가온' }).includes('가온 보호자님, 이번 주일에'));
+  const br = briefingText(W); for (const x of ['교사 브리핑', '■ 공과', '준비물: 색연필', '■ 준비할 일', '건강 주의']) assert.ok(br.includes(x), x);
+  // 공과 배치로 만든 앞날 예배는 출석부(최근 8회)에 나오지 않는다
+  assert.ok(s.attendanceMatrix(1).services.every(x => x.date <= TODAY));
+  // 생일: 그 주(월~주일)에 있으면
+  const p = s.addPerson({ name: '생일 학생', kind: 'child', dept_id: 1 }); s.setPersonInfo(p, { birth: `2018-${sv.date.slice(5)}` });
+  assert.ok(s.weeklyData(sv.id, TODAY).birthdays.some(b => b.name === '생일 학생'));
+});
