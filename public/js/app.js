@@ -8,6 +8,9 @@ import { initAuth, accountApi, openLoginPreview, receiptApi, imageApi, desktopCr
 import { HANDOVER_STEPS, HANDOVER_FIELDS, HANDOVER_META, HANDOVER_MAX } from './handover.js';
 import { INFO_FIELDS, telHref, smsHref, mainPhone, maskPhone, birthdayIn } from './people.js';
 import { familyMessage, briefingText } from './weekly.js';
+import { ADMIN_CATS, ADMIN_FORMS, formByKey, formBlocks, blocksText, blankValues } from './admin.js';
+import { buildHwpx, HWPX_BASE_FILES } from './hwpx.js';
+import { ORDER_PRESETS, presetItems, orderTimes, orderTotal, parseOrderText } from './order.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
@@ -120,7 +123,7 @@ function openHelp(tab = 'start') {
 }
 
 // ----- 라우터 -----
-const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['ministry', '🌱', '부서 사역'], ['money', '💰', '회계'], ['assets', '🧰', '비품'], ['resources', '📚', '자료실'], ['settings', '⚙️', '설정']];
+const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['ministry', '🌱', '부서 사역'], ['money', '💰', '회계'], ['admin', '🗂️', '행정'], ['resources', '📚', '자료실'], ['settings', '⚙️', '설정']];
 // 왼쪽 메뉴 위 ‘오늘의 교회력’ 띠: 절기 이름과 전례 색(흰색 절기는 금색으로 표시)
 const LITU_HEX = { 보라: '#7d5bc0', 흰색: '#d4a72c', 초록: '#3f9d5f', 빨강: '#d4513f' };
 function paintSeason() {
@@ -130,7 +133,7 @@ function paintSeason() {
   el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
 }
 function render() {
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
@@ -138,7 +141,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -396,11 +399,12 @@ function vService(id) {
   const s = store.service(id); if (!s) { page('⛪', '예배', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
   const people = store.people({ deptId: s.dept_id }); const classes = [...new Set(people.map(p => p.class_name).filter(Boolean))]; const att = new Map(store.get().attendance.filter(a => a.service_id === id).map(a => [a.person_id, a.present]));
   const shown = people.filter(p => !AT.cls || p.class_name === AT.cls); const c = store.attendanceCount(id);
-  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button data-act="print">인쇄</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><button data-go="#brief/${id}">🧑‍🏫 교사 브리핑</button><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><span class="sp"></span><button class="dng" data-act="delService" data-id="${id}">삭제</button></div>
+  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button data-act="print">인쇄</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><button data-act="orderEdit" data-id="${id}">🧩 순서 짜기</button><button data-go="#brief/${id}">🧑‍🏫 교사 브리핑</button><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><span class="sp"></span><button class="dng" data-act="delService" data-id="${id}">삭제</button></div>
   <section class="svhero" style="--lc:${LITU_HEX[churchInfo(s.date).color] || '#3f9d5f'}"><div class="lc"><span class="lcdot" style="background:var(--lc)"></span>${esc(churchLabel(s.date))} <span class="mute small">(자동 계산 · 전례 색 ${esc(churchInfo(s.date).color)})</span></div><div class="sv-main"><div><div class="k">성경 본문</div><div class="v">${esc(s.scripture) || '<span class="mute">미정</span>'}</div></div><div><div class="k">설교 제목</div><div class="v">${esc(s.sermon_title) || '<span class="mute">미정</span>'}</div></div></div></section>
   ${lessonBlock(s)}
   ${growthBlock(s)}
-  <dl class="props" style="margin-top:14px"><dt>담당</dt><dd>${esc(s.leader) || '-'}</dd><dt>순서</dt><dd style="white-space:pre-wrap">${esc(s.order_text) || '-'}</dd></dl>
+  <dl class="props" style="margin-top:14px"><dt>담당</dt><dd>${esc(s.leader) || '-'}</dd>${s.order_items && s.order_items.length ? '' : `<dt>순서</dt><dd style="white-space:pre-wrap">${esc(s.order_text) || '-'}</dd>`}</dl>
+  ${orderBlock(s)}
   <h2>출석 체크 <span class="tag ok">출석 ${c.present}명</span> <span class="tag">기록 ${c.recorded}명</span></h2><p class="mute small noprint">이름을 누르면 바로 저장됩니다. 같은 회차에서 한 사람은 한 번만 집계되고, 복제한 예배의 출석은 비어 있습니다.</p>
   <div class="row noprint" style="margin-bottom:10px"><span class="seg" role="group" aria-label="반 거르기"><button class="sm ${!AT.cls ? 'on' : ''}" data-cls="" aria-pressed="${!AT.cls}">전체</button>${classes.map(x => `<button class="sm ${AT.cls === x ? 'on' : ''}" data-cls="${esc(x)}" aria-pressed="${AT.cls === x}">${esc(x)}</button>`).join('')}</span><span class="sp"></span><button data-act="allPresent" data-id="${id}">보이는 인원 전원 출석</button><button data-act="newPersonHere" data-id="${id}">+ 새 사람</button></div>
   <div class="att-list">${shown.map(p => `<label class="att-row ${att.get(p.id) ? 'on' : ''}"><span class="who"><span class="avatar dk-${dk(s.dept_id)}">${esc(p.name.slice(0, 1))}</span><span style="min-width:0"><b>${esc(p.display)}</b><span class="mute small">${esc(p.class_name)}${p.kind === 'teacher' ? ' · 교사' : ''}</span></span></span><span class="chk"><input type="checkbox" data-att="${id}/${p.id}" ${att.get(p.id) ? 'checked' : ''} aria-label="${esc(p.name)} 출석"><i><span class="y">✓ 출석</span><span class="n">출석 체크</span></i></span></label>`).join('') || emptyState('명단이 없어요', '인원·출석에서 이 부서의 인원을 먼저 등록하세요.', '<button class="sm pri" data-go="#people">인원 등록하러 가기</button>')}</div>`);
@@ -620,7 +624,7 @@ function assetForm(v = {}) {
 function vAssets() {
   const all = store.assets(did()); const places = [...new Set(all.map(a => a.place).filter(Boolean))]; const f = UI.asset;
   const list = all.filter(a => (!f.place || a.place === f.place) && (!f.status || a.status === f.status));
-  page('🧰', '비품', `교구·악기·기기 등 ${all.length}종 ${all.some(a => a.status === '수리 중') ? '· <span class="tag warn">수리 중 ' + all.filter(a => a.status === '수리 중').length + '건</span>' : ''}`, `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newAsset">+ 비품 추가</button><button data-act="pdfAssets">PDF에서 가져오기</button><select data-afilter="place"><option value="">모든 장소</option>${places.map(p => `<option${f.place === p ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select><select data-afilter="status"><option value="">모든 상태</option>${ASSET_STATUS.map(s => `<option${f.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select><span class="sp"></span><button data-act="csvAssets">엑셀(CSV)로 내려받기</button><button data-act="print">인쇄</button></div>
+  page('🧰', '비품', `교구·악기·기기 등 ${all.length}종 ${all.some(a => a.status === '수리 중') ? '· <span class="tag warn">수리 중 ' + all.filter(a => a.status === '수리 중').length + '건</span>' : ''}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#admin">◀ 행정</button><button class="pri" data-act="newAsset">+ 비품 추가</button><button data-act="pdfAssets">PDF에서 가져오기</button><select data-afilter="place"><option value="">모든 장소</option>${places.map(p => `<option${f.place === p ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select><select data-afilter="status"><option value="">모든 상태</option>${ASSET_STATUS.map(s => `<option${f.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select><span class="sp"></span><button data-act="csvAssets">엑셀(CSV)로 내려받기</button><button data-act="print">인쇄</button></div>
   <div class="tablewrap"><table class="t"><thead><tr><th>품목</th><th>구분</th><th>장소</th><th class="num">수량</th><th>상태</th><th>부서</th><th class="num">수리</th></tr></thead><tbody>${list.map(a => `<tr class="link" data-open="asset/${a.id}"><td><b>${esc(a.name)}</b></td><td>${esc(a.category)}</td><td>${esc(a.place)}</td><td class="num">${a.qty}</td><td><span class="tag ${a.status === '수리 중' ? 'warn' : a.status === '폐기' ? '' : 'ok'}">${esc(a.status)}</span></td><td>${deptTag(a.dept_id)}</td><td class="num">${(a.repairs || []).length || '-'}</td></tr>`).join('') || `<tr><td colspan="7">${emptyState('등록된 비품이 없어요', '교구·악기·음향 장비·의자처럼 부서에서 쓰는 물품을 적어 두면 어디에 무엇이 있는지, 수리는 언제 했는지 한눈에 볼 수 있어요.', '<button class="sm pri" data-act="newAsset">+ 비품 추가</button>')}</td></tr>`}</tbody></table></div>`);
 }
 function vAsset(id) {
@@ -759,7 +763,7 @@ function vSettings() {
     return `<h3 style="margin:16px 0 6px">Windows 데스크톱 프로그램 다운로드</h3><p class="small" style="margin:0 0 8px">설치 파일(약 ${DESKTOP.sizeMB}MB, 프로그램 ${esc(DESKTOP.version)})을 받아 실행하면 시작 메뉴·바탕화면에 ‘목회 비서’가 생겨요. 프로그램은 사이트를 앱 창으로 여는 것이라, <b>사이트 버전(${esc(VERSION)})이 올라가면 열 때마다 자동으로 새 버전</b>이 되고 설치 파일을 다시 받을 필요는 거의 없어요. 데이터는 로그인한 계정에 그대로 이어져요.</p><div class="row" style="margin:8px 0"><a class="btnlike pri" href="${esc(DESKTOP.download)}" target="_blank" rel="noopener noreferrer">💾 Windows 설치 파일 받기 (${esc(DESKTOP.file)})</a><a class="btnlike" href="${esc(DESKTOP.page)}" target="_blank" rel="noopener noreferrer">릴리스 페이지·해시값</a></div><div class="callout warn"><span>⚠️</span><div class="sp"><b>코드 서명이 없는 파일이에요.</b> Windows가 ‘알 수 없는 게시자’ 경고를 띄우면 ‘추가 정보 → 실행’을 누르세요. <b>스마트 앱 컨트롤이 켜진 PC에서는 실행이 막힐 수 있어요.</b> 그럴 때는 위의 ‘앱으로 설치’(브라우저 설치)를 쓰세요. 출처가 의심되면 받은 파일의 SHA-256 해시를 릴리스 페이지의 값과 비교하세요.</div></div>`; })()}
   <details class="small"><summary>설치 방법과 알아 둘 점</summary><ul><li><b>컴퓨터(Chrome·Edge)</b>: 주소창 오른쪽의 설치 아이콘, 또는 브라우저 메뉴에서 ‘앱으로 설치’(이름은 버전에 따라 조금 달라요)를 고르세요. 위의 ‘앱으로 설치’ 버튼이 보이면 그 버튼으로도 설치돼요.</li><li><b>Mac Safari</b>: 파일 메뉴 → ‘Dock에 추가’. <b>휴대폰</b>: 브라우저 메뉴의 ‘홈 화면에 추가’.</li><li>설치 버튼이 안 보이면 이미 설치했거나 이 브라우저가 지원하지 않는 경우예요. 그래도 사이트 주소로 그대로 쓸 수 있어요.</li><li>설치한 앱도 <b>인터넷 연결이 필요</b>해요(오프라인에서는 열리지 않아요).</li><li>설치한 앱에서 로그인 상태나 로컬 데이터가 브라우저와 따로 보이면, 설정의 ‘내보내기’·‘가져오기’로 옮기세요.</li><li>지우려면 앱 창의 메뉴(또는 운영체제의 앱 목록)에서 제거하세요. 로그인한 데이터는 지워지지 않아요.</li></ul></details>
   <h2>버전 기록 <span class="mute small">현재 ${esc(VERSION)}</span></h2><div class="changelog">${CHANGELOG.map(x => `<details ${x.v === VERSION ? 'open' : ''}><summary><b>${esc(x.v)}</b> <span class="mute small">${esc(x.date)}</span>${x.v === VERSION ? ' <span class="tag ok">현재</span>' : ''}</summary><ul class="small">${x.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`).join('')}</div>
-  <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>PDF 글자 읽기에는 <b>pdf.js</b> 6.5.438(Mozilla, Apache License 2.0)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/pdfjs/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>달력·타임라인·차트·디자인 변수에는 <b>vanilla-calendar-pro</b> 3.4.0, <b>frappe-gantt</b> 1.2.2, <b>uPlot</b> 1.6.32, <b>Open Props</b> 1.7.23(모두 MIT License)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/vanilla-calendar-pro/LICENSE.txt" target="_blank" rel="noopener">달력</a> · <a href="vendor/frappe-gantt/LICENSE.txt" target="_blank" rel="noopener">타임라인</a> · <a href="vendor/uplot/LICENSE.txt" target="_blank" rel="noopener">차트</a> · <a href="vendor/open-props/LICENSE.txt" target="_blank" rel="noopener">변수</a></p>
+  <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>한글(HWPX) 파일 만들기에는 <b>python-hwpx</b>의 빈 문서 틀(airmang, Apache License 2.0, 표 모양만 추가)을 씁니다. 라이선스 전문: <a href="vendor/hwpx/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a> · <a href="vendor/hwpx/NOTICE.txt" target="_blank" rel="noopener">NOTICE</a><br>PDF 글자 읽기에는 <b>pdf.js</b> 6.5.438(Mozilla, Apache License 2.0)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/pdfjs/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>달력·타임라인·차트·디자인 변수에는 <b>vanilla-calendar-pro</b> 3.4.0, <b>frappe-gantt</b> 1.2.2, <b>uPlot</b> 1.6.32, <b>Open Props</b> 1.7.23(모두 MIT License)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/vanilla-calendar-pro/LICENSE.txt" target="_blank" rel="noopener">달력</a> · <a href="vendor/frappe-gantt/LICENSE.txt" target="_blank" rel="noopener">타임라인</a> · <a href="vendor/uplot/LICENSE.txt" target="_blank" rel="noopener">차트</a> · <a href="vendor/open-props/LICENSE.txt" target="_blank" rel="noopener">변수</a></p>
   <h2>개인정보 안내</h2><ul class="small"><li>명단의 상세 정보에 연락처·주소·보호자·알레르기 같은 개인정보를 적을 수 있어요(모두 선택). 주민등록번호·계좌번호는 입력받지 않습니다.</li><li>개인정보는 당사자(만 14세 미만은 법정대리인)의 동의를 받고 필요한 만큼만 적으세요(개인정보 보호법 제22조의2). 건강 정보처럼 민감한 정보는 따로 동의가 필요할 수 있으니 교회의 개인정보 방침을 확인하세요.</li><li>30분 동안 쓰지 않으면 자동으로 로그아웃돼요. 공용 컴퓨터에서는 간편 로그인·비밀번호 저장을 쓰지 마세요.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li><li>‘이미지 만들기(AI)’를 쓰면 입력한 그림 설명이 OpenAI로 전송됩니다(이메일·이름은 보내지 않고, 만든 그림은 서버에 저장하지 않아요). 개인정보는 설명에 적지 마세요.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
   <h2>정보</h2><dl class="props"><dt>버전</dt><dd><b>${esc(VERSION)}</b></dd><dt>저장 방식</dt><dd>${acct ? '계정별 서버 저장(Cloudflare D1)' : `localStorage (${window.__memOnly ? '사용 불가 → 임시 메모리' : '사용 중'})`}</dd><dt>통화·시간대</dt><dd>원화(정수) · Asia/Seoul</dd></dl>`);
   if (acct) { initImageBox(); initPinBox(); }
@@ -797,6 +801,99 @@ function personInfoForm(id) {
   $('[data-x]', d).onclick = () => d.close();
   $('form', d).onsubmit = e => { e.preventDefault(); const f = e.target; const v = { ...i }; INFO_FIELDS.forEach(x => { if (f.elements[x.k]) v[x.k] = f.elements[x.k].value; });
     try { store.setPersonInfo(id, v); if (v.birth && /^\d{4}/.test(v.birth) && !p.birth_year) store.updatePerson(id, { ...p, birth_year: Number(v.birth.slice(0, 4)) }); d.close(); toast('상세 정보를 저장했어요.'); render(); } catch (err) { $('.err', d).textContent = err.message; } };
+}
+
+// ----- 예배 순서 짜기 -----
+function orderBlock(s) {
+  const it = s.order_items; if (!it || !it.length) return '';
+  const at = orderTimes(it, s.time); const tot = orderTotal(it);
+  return `<section class="box" style="margin-top:14px"><div class="cardh"><h3>🧩 예배 순서</h3><span class="sub">총 ${tot}분${s.time ? ` · ${esc(s.time)} 시작` : ''}</span><span class="sp"></span><button class="sm noprint" data-act="orderEdit" data-id="${s.id}">고치기</button></div><div class="tablewrap" style="border:0"><table class="t"><thead><tr><th style="width:36px">#</th><th>순서</th><th>담당</th><th class="num">시간</th><th>시각</th><th>준비물</th><th>메모</th></tr></thead><tbody>${it.map((x, i) => `<tr><td>${i + 1}</td><td><b>${esc(x.title)}</b></td><td>${esc(x.who)}</td><td class="num">${x.min ? x.min + '분' : ''}</td><td>${at[i] || ''}</td><td>${esc(x.prep)}</td><td class="small" style="white-space:pre-wrap">${esc(x.memo)}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+function orderEditor(id) {
+  const s = store.service(id); if (!s) return; let items = (s.order_items && s.order_items.length ? s.order_items : parseOrderText(s.order_text)).map(x => ({ ...x }));
+  const kind = dk(s.dept_id); const def = /대림|성탄/.test(churchLabel(s.date)) ? 'advent' : kind;
+  const d = modal(`<div class="dlg wide"><h3>🧩 예배 순서 짜기 <span class="mute small">${md(s.date)} ${esc(s.title)}</span></h3>
+    <div class="row" style="margin-bottom:8px"><label class="small">예시 순서 <select id="opreset">${Object.entries(ORDER_PRESETS).map(([k, v]) => `<option value="${k}"${k === def ? ' selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label><button class="sm" data-preset>예시로 바꾸기</button><span class="sp"></span><span class="small" id="otot"></span></div>
+    <div class="tablewrap"><table class="t orderedit"><thead><tr><th>#</th><th>순서</th><th>담당</th><th>분</th><th>시각</th><th>준비물</th><th>메모(대본·멘트)</th><th></th></tr></thead><tbody id="orows"></tbody></table></div>
+    <div class="row" style="margin-top:8px"><button class="sm" data-add>+ 순서 추가</button><span class="mute small">시각은 예배 시작(${esc(s.time || '미정')})부터 계산해요. 저장하면 글 순서도 함께 바뀌어요.</span></div>
+    <div class="err"></div><div class="dlg-foot"><button data-x>취소</button><button class="pri" data-save>저장</button></div></div>`);
+  const body = $('#orows', d);
+  const read = () => { items = [...body.querySelectorAll('tr')].map(tr => ({ title: tr.querySelector('[data-f=title]').value, who: tr.querySelector('[data-f=who]').value, min: Number(tr.querySelector('[data-f=min]').value) || 0, prep: tr.querySelector('[data-f=prep]').value, memo: tr.querySelector('[data-f=memo]').value })); };
+  const draw = () => { const at = orderTimes(items, s.time);
+    body.innerHTML = items.map((x, i) => `<tr><td>${i + 1}</td><td><input data-f="title" value="${esc(x.title)}" maxlength="40" style="min-width:110px"></td><td><input data-f="who" value="${esc(x.who)}" maxlength="30" style="min-width:80px"></td><td><input data-f="min" type="number" min="0" max="240" value="${x.min || ''}" style="width:56px"></td><td class="small">${at[i] || ''}</td><td><input data-f="prep" value="${esc(x.prep)}" maxlength="80" style="min-width:90px"></td><td><textarea data-f="memo" rows="1" maxlength="200" style="min-width:140px">${esc(x.memo)}</textarea></td><td class="nowrap"><button class="sm ghost" data-up="${i}" aria-label="위로">↑</button><button class="sm ghost" data-down="${i}" aria-label="아래로">↓</button><button class="sm ghost" data-del="${i}" aria-label="빼기">✕</button></td></tr>`).join('');
+    const tot = orderTotal(items); $('#otot', d).textContent = `총 ${tot}분${s.time ? ` · ${orderTimes([...items, { min: 0 }], s.time).pop()} 끝` : ''}`; };
+  body.addEventListener('change', () => { read(); draw(); });
+  body.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; read(); const i = Number(b.dataset.up ?? b.dataset.down ?? b.dataset.del);
+    if (b.dataset.up !== undefined && i > 0) [items[i - 1], items[i]] = [items[i], items[i - 1]]; if (b.dataset.down !== undefined && i < items.length - 1) [items[i + 1], items[i]] = [items[i], items[i + 1]]; if (b.dataset.del !== undefined) items.splice(i, 1); draw(); });
+  $('[data-add]', d).onclick = () => { read(); items.push({ title: '', who: '', min: 0, prep: '', memo: '' }); draw(); };
+  $('[data-preset]', d).onclick = async () => { read(); if (items.some(x => x.who || x.prep || x.memo) && !(await ask('지금 적은 순서를 예시로 바꿀까요?', '바꾸기'))) return; items = presetItems($('#opreset', d).value); draw(); };
+  $('[data-x]', d).onclick = () => d.close();
+  $('[data-save]', d).onclick = () => { read(); try { const v = store.setServiceOrder(id, items); d.close(); toast(v.length ? `순서 ${v.length}개를 저장했어요.` : '순서를 비웠어요.'); render(); } catch (err) { $('.err', d).textContent = err.message; } };
+  draw();
+}
+
+// ----- 행정: 서식·연간 계획서·추천·비품 -----
+let HWPX_BASE = null;
+async function downloadHwpx(title, blocks) {
+  try {
+    if (!HWPX_BASE) { const pairs = await Promise.all(HWPX_BASE_FILES.map(async f => { const r = await fetch('vendor/hwpx/' + f); if (!r.ok) throw new Error(); return [f, await r.text()]; })); HWPX_BASE = Object.fromEntries(pairs); }
+    const bytes = buildHwpx(blocks, { title, text: blocksText(blocks), base: HWPX_BASE });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/hwp+zip' })); a.download = `${String(title).replace(/[\\/:*?"<>|]/g, '_')}.hwpx`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    toast('한글(HWPX) 파일을 내려받았어요. 한글 2014 이후 버전에서 열 수 있어요.');
+  } catch { toast('한글 파일을 만들지 못했어요. 인터넷 연결을 확인하고 다시 해 주세요.', true); }
+}
+function docLabel(doc) { const f = formByKey(doc.form); const c = doc.ctx || {}; const ev = c.event_id ? store.get().events.find(e => e.id === c.event_id) : null; return `${f ? f.name : doc.form}${ev ? ' · ' + ev.title : c.year ? ` · ${c.year}년` : c.month ? ` · ${Number(c.month.slice(5))}월` : ''}`; }
+async function newDocFlow(key, preset) {
+  const f = formByKey(key); const d0 = workDept(); const t = today(); let ctx = preset || null;
+  if (!ctx && f.ctx === 'event') { const evs = store.get().events.filter(e => e.dept_id === d0 && e.status !== 'cancelled').sort((a, b) => b.start_date.localeCompare(a.start_date));
+    if (!evs.length) ctx = {}; else { ctx = await new Promise(res => form({ title: `${f.name}: 행사 고르기`, submit: '만들기', fields: [{ k: 'ev', label: '행사', type: 'select', options: [[0, '(행사 없이 빈 서식)'], ...evs.map(e => [e.id, `${md(e.start_date)} ${e.title}`])] }], values: { ev: (evs.find(e => e.start_date >= t) || evs[0]).id }, onSubmit: o => res({ event_id: Number(o.ev) || undefined }) })); } }
+  if (!ctx && f.ctx === 'year') { const Y = Number(t.slice(0, 4)) + (key === 'annual' && Number(t.slice(5, 7)) >= 10 ? 1 : 0); ctx = await new Promise(res => form({ title: `${f.name}: 연도`, submit: '만들기', fields: [{ k: 'y', label: '연도', type: 'select', options: [Y - 1, Y, Y + 1].map(y => [y, y + '년']) }], values: { y: Y }, onSubmit: o => res({ year: Number(o.y) }) })); }
+  if (!ctx && f.ctx === 'month') { const pm = new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 2, 1)).toISOString().slice(0, 7); ctx = await new Promise(res => form({ title: `${f.name}: 보고 월`, submit: '만들기', fields: [{ k: 'm', label: '보고 월 (YYYY-MM)', req: true }], values: { m: pm }, onSubmit: o => { if (!/^\d{4}-\d{2}$/.test(o.m)) throw new Error('YYYY-MM 형식으로 적어 주세요.'); res({ month: o.m }); } })); }
+  ctx = ctx || {}; const values = store.formDraft(key, d0, ctx); const ev = ctx.event_id ? store.get().events.find(e => e.id === ctx.event_id) : null;
+  const id = guard(() => store.saveDoc({ form: key, dept_id: d0, ctx, values, title: `${f.name}${ev ? ' - ' + ev.title : ctx.year ? ` - ${ctx.year}년` : ctx.month ? ` - ${ctx.month}` : ''}` }));
+  if (id) { location.hash = `#doc/${id}`; toast('기록으로 채운 초안이에요. 확인하고 고쳐 쓰세요.'); }
+}
+function vAdmin() {
+  const d = workDept(); const rec = store.recommendForms(d); const docs = store.docs(d).slice(0, 30); const assets = store.assets(did());
+  const card = f => `<div class="res-card"><div class="res-name">${f.icon} ${esc(f.name)}</div><p class="res-desc small">${esc(f.use)}</p><div class="row"><button class="sm pri" data-act="newDoc" data-key="${f.key}">기록으로 채워 쓰기</button><button class="sm ghost" data-act="blankHwpx" data-key="${f.key}">빈 서식 한글 받기</button></div></div>`;
+  page('🗂️', '행정', `${deptTag(d)} 서식을 앱에서 채워 저장하고, 인쇄하거나 한글(HWPX) 파일로 받아요.`, `
+  ${rec.length ? `<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>💡 지금 쓰면 좋은 서식</h3><span class="sub">일정·기록을 보고 골랐어요</span></div><div class="cardb"><ul class="recs">${rec.map(r => { const f = formByKey(r.key); return `<li><span>${f.icon} <b>${esc(f.name)}</b><br><span class="mute small">${esc(r.reason)}</span></span><button class="sm pri" data-act="newDoc" data-key="${r.key}" data-ctx="${esc(JSON.stringify(r.ctx))}">만들기</button></li>`; }).join('')}</ul></div></section>` : ''}
+  <section class="callout" style="margin-bottom:16px"><span>📅</span><div class="sp"><b>연간 교육 계획서</b><br><span class="small">표어·주제 성구·교육 목표·중점 사업·월별 계획(교회력·교육 주제·행사)·교사 조직·예산을 한 문서로. 월별 주제와 행사, 공과, 예산은 목회 비서 기록으로 채워져요.</span></div><button class="pri" data-act="newDoc" data-key="annual">연간 계획서 만들기</button></section>
+  ${ADMIN_CATS.map(([c, label]) => { const fs = ADMIN_FORMS.filter(f => f.cat === c && f.key !== 'annual'); return fs.length ? `<h2>${esc(label)}</h2><div class="res-grid">${fs.map(card).join('')}</div>` : ''; }).join('')}
+  <h2>내 문서 <span class="mute small">${esc((store.dept(d) || {}).name || '')}</span></h2>
+  <div class="tablewrap"><table class="t"><thead><tr><th>문서</th><th>서식</th><th>고친 날</th></tr></thead><tbody>${docs.map(x => `<tr class="link" data-open="doc/${x.id}"><td><b>${esc(x.title)}</b></td><td class="small">${esc(docLabel(x))}</td><td>${esc(x.updated || '')}</td></tr>`).join('') || '<tr><td colspan="3" class="mute">아직 만든 문서가 없어요.</td></tr>'}</tbody></table></div>
+  <h2>비품</h2><div class="callout"><span>🧰</span><div class="sp">교구·악기·기기 <b>${assets.length}종</b>${assets.some(a => a.status === '수리 중') ? ` · 수리 중 ${assets.filter(a => a.status === '수리 중').length}건` : ''}. 장소·상태별로 관리하고, 빌려줄 때는 ‘장소·비품 사용 신청서’를 쓰세요.</div><button data-go="#assets">비품 관리 열기</button></div>
+  <p class="mute small">서식 항목은 교회 행사 계획·결과 보고, 결산, 연간 계획표 예시와 개인정보 보호법의 동의 고지 항목(목적·항목·보유 기간·거부 권리)을 참고해 정리했어요. 우리 교회·교단 규정에 맞게 고쳐 쓰세요.</p>`);
+}
+function vDoc(id) {
+  const doc = store.doc(id); if (!doc) { page('🗂️', '문서', '', '<div class="callout bad">문서를 찾을 수 없습니다.</div>'); return; } const f = formByKey(doc.form); const v = doc.values;
+  const fld2 = x => { const val = v[x.k];
+    if (x.type === 'note') return `<p class="small docnote">${esc(x.text)}</p>`;
+    if (x.type === 'text' || x.type === 'date') return `<label class="f">${esc(x.label)}<input data-dv="${x.k}" ${x.type === 'date' ? 'placeholder="YYYY-MM-DD"' : ''} value="${esc(val || '')}" maxlength="200">${x.hint ? `<span class="hint">${esc(x.hint)}</span>` : ''}</label>`;
+    if (x.type === 'area') return `<label class="f">${esc(x.label)}<textarea data-dv="${x.k}" rows="3" maxlength="3000"${x.hint ? ` placeholder="${esc(x.hint)}"` : ''}>${esc(val || '')}</textarea></label>`;
+    if (x.type === 'check') return `<fieldset class="infogrp"><legend>${esc(x.label)}</legend>${x.items.map((it, i) => `<label class="chk" style="display:flex;gap:6px;margin:4px 0"><input type="checkbox" data-dc="${x.k}" value="${i}"${(val || []).includes(i) ? ' checked' : ''}> <span>${esc(it)}</span></label>`).join('')}</fieldset>`;
+    if (x.type === 'table') return `<div class="f"><b>${esc(x.label)}</b><div class="tablewrap"><table class="t doctable"><thead><tr>${x.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${val.map((r, ri) => `<tr>${x.cols.map((_, ci) => `<td><input class="cell-in" data-dt="${x.k}" data-r="${ri}" data-c="${ci}" value="${esc(r[ci] || '')}" maxlength="300"></td>`).join('')}</tr>`).join('')}</tbody></table></div><button class="sm ghost noprint" data-act="docRow" data-id="${id}" data-k="${x.k}">+ 줄 추가</button></div>`;
+    return ''; };
+  const B = formBlocks(f, v, { title: f.name, sub: (store.dept(doc.dept_id) || {}).name || '' });
+  page(f.icon, esc(doc.title), `${esc(docLabel(doc))} · 고친 날 ${esc(doc.updated || '')}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#admin">◀ 행정</button><button class="pri" data-act="saveDocAct" data-id="${id}">저장</button><button data-act="refillDoc" data-id="${id}">기록으로 빈 칸 채우기</button><button data-act="docPrint" data-id="${id}">인쇄·PDF</button><button data-act="docHwpx" data-id="${id}">📄 한글(HWPX)로 받기</button><span class="sp"></span><button class="dng" data-act="delDoc" data-id="${id}">삭제</button></div>
+  <div class="noprint docform"><label class="f">문서 이름<input data-dtitle value="${esc(doc.title)}" maxlength="80"></label>${f.fields.map(fld2).join('')}</div>
+  <div class="printonly docprint">${blocksHtml(B)}</div>
+  <p class="mute small noprint">목회 비서 기록으로 채운 칸은 꼭 확인하세요. 성경 구절은 개역개정으로 확인하고, 개인정보가 들어간 문서는 필요한 사람에게만 나누세요.</p>`);
+}
+function collectDoc(id) {
+  const doc = store.doc(id); const f = formByKey(doc.form); const values = JSON.parse(JSON.stringify(doc.values));
+  $$('[data-dv]').forEach(i => { values[i.dataset.dv] = i.value; });
+  for (const x of f.fields.filter(y => y.type === 'check')) values[x.k] = $$(`[data-dc="${x.k}"]`).filter(c => c.checked).map(c => Number(c.value));
+  $$('[data-dt]').forEach(i => { const a = values[i.dataset.dt]; const r = Number(i.dataset.r), c = Number(i.dataset.c); if (a && a[r]) a[r][c] = i.value; });
+  const t = $('[data-dtitle]'); return { ...doc, title: t ? t.value : doc.title, values };
+}
+// 인쇄용 HTML(한글 파일과 같은 블록)
+function blocksHtml(B) {
+  return B.map(b => b.t === 'title' ? `<h1 class="doctitle">${esc(b.text)}</h1>` : b.t === 'h' ? `<h3>${esc(b.text)}</h3>` : b.t === 'p' ? (b.box ? `<div class="docbox">${esc(b.text) || '&nbsp;'}</div>` : `<p class="${b.small ? 'small' : ''}" style="white-space:pre-wrap;${b.align === 'right' ? 'text-align:right' : ''}">${esc(b.text)}</p>`)
+    : b.t === 'approve' ? `<table class="approve"><tr>${b.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr><tr>${b.cols.map(() => '<td></td>').join('')}</tr></table>`
+    : b.t === 'info' ? `<table class="docinfo">${b.rows.map(r => `<tr><th>${esc(r[0])}</th><td>${esc(r[1])}</td><th>${esc(r[2])}</th><td>${esc(r[3])}</td></tr>`).join('')}</table>`
+    : b.t === 'table' ? `<table class="docinfo"><tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${b.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>`
+    : b.t === 'check' ? b.items.map(i => `<p>${i.on ? '■' : '□'} ${esc(i.text)}</p>`).join('') : '').join('');
 }
 
 // ----- 주간 가정 메시지 -----
@@ -936,6 +1033,17 @@ const ACT = {
     if (await ask(`${d.year}년차를 아래 ${rows.length}과로 바꿀까요?\n\n${rows.slice(0, 5).map(r => `${r.no}과 ${r.title} ${r.scripture}`).join('\n')}${rows.length > 5 ? `\n…외 ${rows.length - 5}과` : ''}`, '넣기')) { guard(() => store.setCurriculumYear(Number(d.id), Number(d.year), rows), `${rows.length}과를 넣었어요.`); render(); } },
   lessonEdit: d => lessonEditor(Number(d.id)),
   personCard: d => personCard(Number(d.id)),
+  orderEdit: d => orderEditor(Number(d.id)),
+  newDoc: d => newDocFlow(d.key, d.ctx ? JSON.parse(d.ctx) : null),
+  blankHwpx: async d => { const f = formByKey(d.key); await downloadHwpx(f.name, formBlocks(f, blankValues(f), { sub: (store.dept(workDept()) || {}).name || '' })); },
+  delDoc: async d => { if (await ask('이 문서를 지울까요? 되돌릴 수 없어요.', '지우기')) { store.deleteDoc(Number(d.id)); location.hash = '#admin'; toast('지웠어요.'); } },
+  saveDocAct: d => { guard(() => store.saveDoc(collectDoc(Number(d.id))), '저장했어요.'); render(); },
+  refillDoc: async d => { const doc = store.doc(Number(d.id)); const cur = collectDoc(doc.id); const draft = store.formDraft(doc.form, doc.dept_id, doc.ctx || {}); let n = 0; const f = formByKey(doc.form);
+    for (const x of f.fields) { const a = cur.values[x.k], b = draft[x.k]; if (x.type === 'table') { const emp = !a.some(r => r.some(c => String(c).trim())); if (emp && b.some(r => r.some(c => c))) { cur.values[x.k] = b; n++; } } else if (x.type !== 'check' && x.type !== 'note' && !String(a || '').trim() && b) { cur.values[x.k] = b; n++; } }
+    guard(() => store.saveDoc(cur)); render(); toast(n ? `빈 칸 ${n}개를 기록으로 채웠어요.` : '채울 빈 칸이 없어요.'); },
+  docHwpx: async d => { const cur = collectDoc(Number(d.id)); guard(() => store.saveDoc(cur)); const f = formByKey(cur.form); await downloadHwpx(cur.title, formBlocks(f, cur.values, { title: f.name, sub: (store.dept(cur.dept_id) || {}).name || '' })); },
+  docPrint: d => { guard(() => store.saveDoc(collectDoc(Number(d.id)))); render(); setTimeout(() => window.print(), 50); },
+  docRow: d => { const cur = collectDoc(Number(d.id)); const f = formByKey(cur.form); const x = f.fields.find(y => y.k === d.k); cur.values[d.k].push(x.cols.map(() => '')); guard(() => store.saveDoc(cur)); render(); },
   familyMsg: d => familyForm(Number(d.id)),
   familyNext: () => { const sv = store.upcomingService(workDept()); if (!sv) { toast('다가오는 주일예배가 없어요. 예배를 먼저 만들어 주세요.', true); return; } familyForm(sv.id); },
   briefNext: () => { const sv = store.upcomingService(workDept()); if (!sv) { toast('다가오는 주일예배가 없어요. 예배를 먼저 만들어 주세요.', true); return; } location.hash = `#brief/${sv.id}`; },

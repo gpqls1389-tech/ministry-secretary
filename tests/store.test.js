@@ -269,3 +269,53 @@ test('MB12.5 주간 자료: 가정 메시지·교사 브리핑(공과·준비할
   const p = s.addPerson({ name: '생일 학생', kind: 'child', dept_id: 1 }); s.setPersonInfo(p, { birth: `2018-${sv.date.slice(5)}` });
   assert.ok(s.weeklyData(sv.id, TODAY).birthdays.some(b => b.name === '생일 학생'));
 });
+
+test('MB12.6 예배 순서 칸: 시간 계산·글 순서 동기화·복제 유지', async () => {
+  const { orderTimes, orderTotal, presetItems, parseOrderText } = await import('../public/js/order.js');
+  const s = mk(); const sv = s.upcomingService(1, TODAY);
+  const items = presetItems('kid'); items[0].who = '김교사(가상)'; items[0].prep = '촛불';
+  const v = s.setServiceOrder(sv.id, [...items, { title: '', min: 3 }]); assert.equal(v.length, 9, '빈 제목 줄은 빠짐');
+  assert.equal(orderTotal(v), 45); assert.deepEqual(orderTimes(v, '11:00').slice(0, 3), ['11:00', '11:02', '11:12']);
+  const x = s.service(sv.id); assert.match(x.order_text, /^1\. 입례·묵상 기도 — 김교사\(가상\) \(2분, 11:00\) · 준비: 촛불/);
+  const c = s.cloneService(sv.id, '2027-01-03'); assert.equal(s.service(c).order_items.length, 9);
+  assert.equal(parseOrderText('1. 찬양\n2) 기도\n\n말씀').map(y => y.title).join(','), '찬양,기도,말씀');
+  s.setServiceOrder(sv.id, []); assert.equal(s.service(sv.id).order_items, undefined);
+});
+
+test('MB12.6 행정 문서: 기록으로 초안(연간 계획서·행사·결산·월간), 저장 검사, 추천', async () => {
+  const { ADMIN_FORMS, formBlocks, blocksText } = await import('../public/js/admin.js');
+  const s = mk();
+  const A = s.formDraft('annual', 1, { year: 2027 }, TODAY); assert.equal(A.year, '2027년'); assert.equal(A.months.length, 12);
+  assert.match(A.months[11][1], /대림절|성탄/); assert.ok(A.months.some(r => r[3]), '지난해 행사로 월별 행사 초안'); assert.ok(A.org.some(r => r[0] === '해님반' && /김교사/.test(r[1])));
+  assert.ok(A.budget.some(r => r[0]), '예산 초안');
+  const ev = s.get().events.find(e => e.dept_id === 1 && /성탄/.test(e.title));
+  const P = s.formDraft('eventPlan', 1, { event_id: ev.id }, TODAY); assert.equal(P.title, ev.title); assert.match(P.roles, /담당 교사/);
+  const st = s.formDraft('settle', 1, { year: 2026 }, TODAY); assert.equal(st.summary[0][0], '예산'); assert.ok(st.cats.length > 0);
+  const mo = s.formDraft('monthly', 1, { month: '2026-11' }, TODAY); assert.equal(mo.month, '2026년 11월'); assert.ok(mo.att.some(r => r[2]));
+  assert.equal(s.formDraft('privacy', 1).table[0][0], '수집·이용 목적');
+  // 저장: 모르는 칸 버림, 표 칸 수 맞춤, 체크 범위
+  const id = s.saveDoc({ form: 'eventPlan', dept_id: 1, ctx: { event_id: ev.id }, values: { ...P, schedule: [['10:00', '모임', '부장', '넘침']], hack: 'x' } });
+  const d = s.doc(id); assert.deepEqual(d.values.schedule[0], ['10:00', '모임', '부장']); assert.ok(!('hack' in d.values));
+  assert.throws(() => s.saveDoc({ form: 'nope', values: {} }), ValidationError);
+  const sid = s.saveDoc({ form: 'safety', dept_id: 1, values: { items: [0, 99, 2] } }); assert.deepEqual(s.doc(sid).values.items, [0, 2]);
+  // 추천: 연말이면 내년 계획서, 다가오는 행사는 계획서(이미 쓴 것은 빼기)
+  const R = s.recommendForms(1, TODAY); assert.ok(R.some(r => r.key === 'annual' && r.ctx.year === 2027)); assert.ok(!R.some(r => r.key === 'eventPlan' && r.ctx.event_id === ev.id));
+  // 모든 서식이 블록·글로 바뀐다
+  for (const f of ADMIN_FORMS) { const B = formBlocks(f, s.formDraft(f.key, 1, {}, TODAY)); assert.equal(B[0].t, 'title'); assert.ok(blocksText(B).includes(f.name)); }
+  const j = s.exportJson(); const s2 = mk(); s2.importJson(j); assert.equal(s2.docs(1).length, 2);
+});
+
+test('MB12.6 한글(HWPX): 파일 구조(mimetype 먼저·무압축), XML 이스케이프, 표', async () => {
+  const fs = await import('node:fs'); const { buildHwpx, sectionXml, crc32, xmlEsc, HWPX_BASE_FILES } = await import('../public/js/hwpx.js'); const { formByKey, formBlocks, blankValues } = await import('../public/js/admin.js');
+  const base = Object.fromEntries(HWPX_BASE_FILES.map(f => [f, fs.readFileSync(new URL('../public/vendor/hwpx/' + f, import.meta.url), 'utf8')]));
+  assert.equal(crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
+  assert.equal(xmlEsc('a<b>&"c"\u0001'), 'a&lt;b&gt;&amp;&quot;c&quot;');
+  const f = formByKey('eventPlan'); const v = blankValues(f); v.title = '성탄 <발표회> & 잔치';
+  const B = formBlocks(f, v); const x = sectionXml(B); assert.ok(x.includes('성탄 &lt;발표회&gt; &amp; 잔치')); assert.ok(x.includes('<hp:tbl ')); assert.ok(x.includes('borderFillIDRef="4"'));
+  const z = buildHwpx(B, { title: f.name, base }); const dv = new DataView(z.buffer);
+  assert.equal(dv.getUint32(0, true), 0x04034b50); assert.equal(dv.getUint16(8, true), 0, '무압축'); assert.equal(new TextDecoder().decode(z.slice(30, 38)), 'mimetype'); assert.equal(new TextDecoder().decode(z.slice(38, 57)), 'application/hwp+zip');
+  assert.equal(dv.getUint32(z.length - 22, true), 0x06054b50); assert.equal(dv.getUint16(z.length - 12, true), 10, '파일 10개');
+  assert.throws(() => buildHwpx(B, { base: {} }));
+  // 바탕 header.xml에 표 테두리·굵은 글자·가운데 정렬 모양이 있다
+  for (const t of ['<hh:borderFill id="3"', '<hh:borderFill id="4"', '<hh:charPr id="8"', '<hh:paraPr id="20"']) assert.ok(base['header.xml'].includes(t), t);
+});
