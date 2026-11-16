@@ -16,7 +16,21 @@ export const accountApi = {
   logoutAll: () => req('POST', '/api/logout-all', {}),
   changePassword: (current, next) => req('POST', '/api/password', { current, next }),
   deleteAccount: password => req('POST', '/api/delete-account', { password }),
+  pinStatus: () => req('GET', '/api/pin'),
+  pinSetup: (password, pin, label) => req('POST', '/api/pin', { password, pin, label }),
+  pinRemove: (all = false) => req('POST', '/api/pin/remove', { all }),
 };
+// 데스크톱 프로그램이면 로그인 정보를 Windows 계정 암호화로 저장할 수 있다(사이트에서는 브라우저의 비밀번호 저장 기능을 쓴다)
+export const desktopCred = () => (window.mbDesktop && window.mbDesktop.cred) || null;
+// 이 기기 이름(간편 로그인 목록에 표시): 운영체제 + 앱/브라우저 정도만
+export function deviceLabel(ua = navigator.userAgent) {
+  const os = /Windows/.test(ua) ? 'Windows' : /iPhone|iPad/.test(ua) ? 'iPhone·iPad' : /Android/.test(ua) ? 'Android' : /Mac OS/.test(ua) ? 'Mac' : '기기';
+  const app = /MokhoeBiseoDesktop\//.test(ua) ? '데스크톱 앱' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : /Firefox\//.test(ua) ? 'Firefox' : '브라우저';
+  return `${os} · ${app}`;
+}
+const EMAIL_KEY = 'ministry-secretary:email';
+const lsGet = k => { try { return window.localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { if (v === null) window.localStorage.removeItem(k); else window.localStorage.setItem(k, v); } catch { /* 저장 못 해도 로그인은 된다 */ } };
 export const imageApi = {
   status: () => req('GET', '/api/image/status'),
   generate: b => req('POST', '/api/image/generate', b),
@@ -60,11 +74,11 @@ function makeAdapter(initial) {
 }
 
 // 로그인·가입 화면(왼쪽 소개 + 오른쪽 입력). preview=true면 서버 없이 모양만 보여 준다(설정 → 로그인 화면 미리보기).
-function showLogin(signupOpen, { preview = false } = {}) {
+function showLogin(signupOpen, { preview = false, quick = null } = {}) {
   document.body.dataset.theme = 'all'; // 로그인 화면은 항상 기본(진한 초록) 색
   return new Promise(resolve => {
     document.getElementById('auth')?.remove();
-    const el = document.createElement('div'); el.id = 'auth'; document.body.appendChild(el); let tab = 'login';
+    const el = document.createElement('div'); el.id = 'auth'; document.body.appendChild(el); let tab = quick ? 'quick' : 'login'; const cred = desktopCred();
     const draw = (err = '') => {
       el.innerHTML = `<div class="auth-wrap">
         <section class="auth-hero"><div>
@@ -76,28 +90,50 @@ function showLogin(signupOpen, { preview = false } = {}) {
         <section class="auth-pane">
           ${preview ? '<div class="auth-preview"><span>👀 미리보기 화면이에요. 실제 로그인은 되지 않아요.</span><span class="sp"></span><button class="sm" id="pv-close" type="button">닫기</button></div>' : ''}
           <div class="auth-card">
-            <h2>${tab === 'login' ? '다시 만나서 반가워요' : '계정 만들기'}</h2><p class="sub2">${tab === 'login' ? '이메일과 비밀번호로 로그인하세요.' : '관리자에게 받은 초대 코드가 필요해요.'}</p>
-            <div class="tabs" style="margin:0 0 16px"><a data-t="login" class="${tab === 'login' ? 'on' : ''}">로그인</a><a data-t="register" class="${tab === 'register' ? 'on' : ''}">가입</a></div>
-            <form autocomplete="on">
+            <h2>${tab === 'register' ? '계정 만들기' : '다시 만나서 반가워요'}</h2><p class="sub2">${tab === 'quick' ? `<b>${esc(quick.email)}</b> · 이 기기에 설정한 번호 6자리를 입력하세요.` : tab === 'login' ? '이메일과 비밀번호로 로그인하세요.' : '관리자에게 받은 초대 코드가 필요해요.'}</p>
+            <div class="tabs" style="margin:0 0 16px">${quick ? `<a data-t="quick" class="${tab === 'quick' ? 'on' : ''}">간편 로그인</a>` : ''}<a data-t="login" class="${tab === 'login' ? 'on' : ''}">${quick ? '비밀번호' : '로그인'}</a><a data-t="register" class="${tab === 'register' ? 'on' : ''}">가입</a></div>
+            ${tab === 'quick' ? `<form autocomplete="off" class="quickf"><label class="f">간편 로그인 번호<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" class="pinbox" required aria-describedby="pinhelp"></label><p id="pinhelp" class="small" style="color:var(--mute);margin:-4px 0 10px">번호는 이 기기에서만 쓸 수 있어요. 5번 틀리면 해제되고 비밀번호로 로그인해야 해요.</p><div class="err" role="alert">${esc(err)}</div><button class="pri">로그인</button><p class="small" style="margin-top:12px"><a href="#" id="pinforget">이 기기에서 간편 로그인 지우기</a></p></form>` : `<form autocomplete="on">
               <label class="f">이메일<input name="email" type="email" autocomplete="username" required></label>
               ${tab === 'register' ? '<label class="f">이름 (선택)<input name="name" autocomplete="name" maxlength="40"></label>' : ''}
               <label class="f">비밀번호${tab === 'register' ? ' (10자 이상)' : ''}<input name="password" type="password" autocomplete="${tab === 'login' ? 'current-password' : 'new-password'}" minlength="${tab === 'register' ? 10 : 1}" required></label>
               <label class="small" style="display:flex;gap:6px;align-items:center;margin:-4px 0 10px;color:var(--mute)"><input type="checkbox" id="showpw"> 비밀번호 보기</label>
+              ${tab === 'login' ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin:-4px 0 10px;color:var(--mute)"><input type="checkbox" id="savelogin"> ${cred ? '이 컴퓨터에 이메일·비밀번호 저장 (Windows 계정으로 암호화)' : '이메일 기억하기 (비밀번호는 브라우저의 ‘비밀번호 저장’을 쓰세요)'}</label>` : ''}
               ${tab === 'register' ? `<label class="f">초대 코드<input name="invite" autocomplete="off" required><span class="hint">${signupOpen ? '관리자에게 받은 코드를 입력하세요.' : '지금은 가입이 닫혀 있어요(관리자가 초대 코드를 설정해야 열립니다).'}</span></label>` : ''}
               <div class="err" role="alert">${esc(err)}</div>
               <button class="pri">${tab === 'login' ? '로그인' : '가입하고 시작'}</button>
-            </form>
+            </form>`}
           </div>
           <p class="auth-foot">로그인하면 사용자마다 따로 저장돼요. 같은 사이트를 써도 다른 사람의 데이터는 보이지 않아요. 공용 컴퓨터에서는 사용 후 꼭 로그아웃하세요. 비밀번호를 잊으면 관리자에게 문의하세요(자동 재설정은 아직 없어요).</p>
         </section></div>`;
       el.querySelectorAll('[data-t]').forEach(a => (a.onclick = () => { tab = a.dataset.t; draw(); }));
-      el.querySelector('#showpw').onchange = e => { const p = el.querySelector('[name=password]'); p.type = e.target.checked ? 'text' : 'password'; };
+      if (tab === 'quick') {
+        const pin = el.querySelector('[name=pin]'); pin.focus();
+        pin.oninput = () => { pin.value = pin.value.replace(/\D/g, '').slice(0, 6); if (pin.value.length === 6 && !preview) el.querySelector('form').requestSubmit(); };
+        el.querySelector('#pinforget').onclick = async e => { e.preventDefault(); if (preview) return; try { await req('POST', '/api/pin/forget', {}); } catch { /* 무시 */ } quick = null; tab = 'login'; draw('이 기기의 간편 로그인을 지웠어요. 비밀번호로 로그인하세요.'); };
+      } else el.querySelector('#showpw').onchange = e => { const p = el.querySelector('[name=password]'); p.type = e.target.checked ? 'text' : 'password'; };
+      if (tab === 'login') { // 저장해 둔 로그인 정보 채우기
+        const em = el.querySelector('[name=email]'), pw = el.querySelector('[name=password]'), box = el.querySelector('#savelogin');
+        if (cred) cred.get().then(c => { if (c && !em.value) { em.value = c.email; pw.value = c.password; box.checked = true; } }).catch(() => {});
+        else { const saved = lsGet(EMAIL_KEY); if (saved && !em.value) { em.value = saved; box.checked = true; pw.focus(); } }
+      }
       if (preview) el.querySelector('#pv-close').onclick = () => { el.remove(); resolve(); };
       el.querySelector('form').onsubmit = async e => {
         e.preventDefault(); const f = new FormData(e.target);
         if (preview) { draw('미리보기 화면이에요. 실제 로그인은 서버를 켠 뒤에 사용할 수 있어요.'); return; }
         const btn = el.querySelector('button.pri'); btn.disabled = true;
-        try { const body = { email: f.get('email'), password: f.get('password') }; if (tab === 'register') { body.name = f.get('name') || ''; body.invite = f.get('invite'); } await req('POST', tab === 'login' ? '/api/login' : '/api/register', body); el.remove(); resolve(); }
+        if (tab === 'quick') {
+          try { await req('POST', '/api/pin/login', { pin: f.get('pin') }); el.remove(); resolve(); }
+          catch (er) { if (er.data && er.data.code === 'no-device') { quick = null; tab = 'login'; } draw(er.message); }
+          return;
+        }
+        try {
+          const body = { email: f.get('email'), password: f.get('password') }; if (tab === 'register') { body.name = f.get('name') || ''; body.invite = f.get('invite'); }
+          await req('POST', tab === 'login' ? '/api/login' : '/api/register', body);
+          if (tab === 'login') { const keep = el.querySelector('#savelogin').checked;
+            if (cred) { try { if (keep) await cred.save(body.email, body.password); else await cred.clear(); } catch { /* 저장 실패해도 로그인은 계속 */ } }
+            else lsSet(EMAIL_KEY, keep ? String(body.email).trim() : null); }
+          el.remove(); resolve();
+        }
         catch (er) { draw(er.message); const em = el.querySelector('[name=email]'); if (em) em.value = f.get('email'); }
       };
     };
@@ -109,7 +145,7 @@ export async function initAuth() {
   await loadImages();
   let me; try { me = await req('GET', '/api/me'); } catch (e) { AUTH.reason = e.missing ? 'api-missing' : 'offline'; AUTH.storage = localStorageSafe(); return AUTH; }
   if (!me.configured) { AUTH.reason = 'not-configured'; AUTH.storage = localStorageSafe(); return AUTH; }
-  if (!me.user) { await showLogin(me.signup); me = await req('GET', '/api/me'); }
+  if (!me.user) { await showLogin(me.signup, { quick: me.quick }); me = await req('GET', '/api/me'); }
   AUTH.mode = 'account'; AUTH.user = me.user; AUTH.signup = !!me.signup;
   const st = await req('GET', '/api/state'); AUTH.version = st.version;
   AUTH.storage = makeAdapter(st.state ?? JSON.stringify(emptyState())); // 새 계정은 가상 데이터 없이 빈 상태로 시작

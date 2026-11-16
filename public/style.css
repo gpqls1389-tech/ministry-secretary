@@ -423,3 +423,14 @@ label.btnlike.sm { padding:4px 10px; font-size:13px; }
 .cal a.les.hold { color:var(--warn,#a15c00); }
 .cal a .les-sub { display:block; font-size:.92em; color:var(--muted,#6b7a70); overflow:hidden; text-overflow:ellipsis; }
 table.t tr.lesrow td { color:var(--ink2,#3d4a42); } table.t tr.lesrow td b { font-weight:500; }
+
+/* MB12.3 인수인계·간편 로그인 */
+ol.hosteps { list-style:none; padding:0; margin:0 0 14px; display:grid; gap:8px; }
+ol.hosteps > li { display:grid; grid-template-columns:84px 1fr; gap:12px; padding:10px 12px; border:1px solid var(--line,#e2e0d8); border-radius:var(--radius-sm,8px); background:#fff; }
+ol.hosteps .hwhen { font-weight:700; color:var(--primary); font-size:.9rem; } ol.hosteps ul { margin:4px 0 0; padding-left:18px; }
+.hometa { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; } @media (max-width:760px) { .hometa { grid-template-columns:1fr 1fr; } ol.hosteps > li { grid-template-columns:1fr; gap:2px; } }
+.hofield { margin:14px 0; } .hofield h3 { font-size:16px; margin:0 0 4px; } .hofield textarea { width:100%; min-height:90px; }
+.hofacts { background:var(--soft,#f4f6f2); border-left:3px solid var(--primary); padding:6px 10px; margin:6px 0; } .hofacts ul { margin:4px 0 0; padding-left:18px; }
+.hoex { background:#fffbea; padding:6px 10px; border-radius:6px; margin:4px 0; }
+.hosign { display:none; } .pinbox { letter-spacing:.5em; font-size:22px; text-align:center; }
+@media print { .hofield textarea { display:none; } .hoprint { white-space:pre-wrap; border:1px solid #999; padding:8px; min-height:60px; } .hosign { display:flex; justify-content:space-between; margin-top:28px; gap:12px; } .hosign span { display:inline-block; min-width:90px; border-bottom:1px solid #000; } }

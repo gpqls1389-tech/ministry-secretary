@@ -4,7 +4,8 @@ import { toCsv, parseTable, decodeText } from './csv.js';
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장소 사용 불가 */ } };
 
-import { initAuth, accountApi, openLoginPreview, receiptApi, imageApi } from './auth.js';
+import { initAuth, accountApi, openLoginPreview, receiptApi, imageApi, desktopCred, deviceLabel } from './auth.js';
+import { HANDOVER_STEPS, HANDOVER_FIELDS, HANDOVER_META, HANDOVER_MAX } from './handover.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
@@ -127,7 +128,7 @@ function paintSeason() {
   el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
 }
 function render() {
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' ? 'assets' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
@@ -135,7 +136,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
 }
@@ -742,7 +743,9 @@ function vSettings() {
   const where = acct ? `<b>${esc(A.user.email)}</b> 계정의 서버 저장소에 저장됩니다. 같은 사이트를 써도 계정마다 데이터가 따로이고, 다른 기기에서 같은 계정으로 로그인하면 같은 데이터를 볼 수 있어요.` : `<b>이 브라우저(이 기기)</b>에만 저장되며 서버로 전송되지 않습니다. 다른 기기와 자동으로 공유되지 않으므로 아래 ‘내보내기’로 백업하세요.${A.reason === 'not-configured' ? ' (로그인 서버가 아직 연결되지 않았어요. README의 ‘로그인 켜기’를 따라 하면 사용자별 로그인이 켜져요.)' : ''}`;
   page('⚙️', '설정', '데이터 관리와 배포 정보', `
   ${acct ? `<h2 style="margin-top:0">내 계정</h2><div class="card"><div class="row"><div class="sp"><b>${esc(A.user.name || A.user.email)}</b><br><span class="mute small">${esc(A.user.email)}</span></div><button data-act="logout">로그아웃</button><button data-act="changePw">비밀번호 변경</button><button data-act="logoutAll">모든 기기에서 로그아웃</button><button class="dng" data-act="deleteAcct">계정 삭제</button></div><p class="mute small" style="margin:10px 0 0">가입 상태: ${A.signup ? '<span class="tag warn">열려 있음</span> (초대 코드를 아는 사람은 가입할 수 있어요. 필요한 사람이 모두 가입했다면 관리자가 Cloudflare에서 INVITE_CODE를 삭제하고 다시 배포하면 닫혀요)' : '<span class="tag ok">닫힘</span>'}<br>저장 상태: ${(SAVE_TXT[A.status] || SAVE_TXT.saved)[0]} · 계정을 삭제하면 서버의 내 데이터가 모두 지워져요(되돌릴 수 없음). 삭제 전에 ‘내보내기’로 백업하세요.</p></div>` : ''}
-  <h2 ${acct ? '' : 'style="margin-top:0"'}>데이터</h2><div class="callout ${S.demo ? 'warn' : ''}"><span>${S.demo ? '🧪' : '📒'}</span><div>현재 <b>${S.demo ? '가상 데이터' : '실제 데이터'}</b>를 사용 중입니다. 데이터는 ${where}${ds === null ? '' : ` (마지막 내보내기: ${ds === 0 ? '오늘' : ds + '일 전'})`}</div></div>
+  ${acct ? `<h2>간편 로그인·로그인 정보 저장</h2><div class="box pad" id="pinbox"><p class="mute small">확인 중…</p></div>` : ''}
+  <h2 ${acct ? '' : 'style="margin-top:0"'}>인수인계</h2><div class="callout"><span>🤝</span><div class="sp">부서를 다른 교사에게 넘길 때 쓰는 <b>인수인계 도우미</b>예요. 순서(4주 전~한 달 뒤), 인수인계서 양식과 칸마다 적을 내용·예시가 있고, 목회 비서 기록(인원·공과·일정·회계·비품)으로 초안을 채울 수 있어요.</div><button class="pri" data-go="#handover">인수인계 열기</button></div>
+  <h2>데이터</h2><div class="callout ${S.demo ? 'warn' : ''}"><span>${S.demo ? '🧪' : '📒'}</span><div>현재 <b>${S.demo ? '가상 데이터' : '실제 데이터'}</b>를 사용 중입니다. 데이터는 ${where}${ds === null ? '' : ` (마지막 내보내기: ${ds === 0 ? '오늘' : ds + '일 전'})`}</div></div>
   <div class="row" style="margin:12px 0"><button data-act="resetDemo">가상 데이터로 초기화</button><button class="pri" data-act="startEmpty">실제 데이터로 시작 (비움)</button></div>
   <h2>백업·복원 (JSON 파일)</h2><div class="row"><button data-act="export">내보내기(.json 다운로드)</button><button data-act="import">파일에서 가져오기</button><input type="file" id="file" accept="application/json,.json" hidden></div>
   <p class="mute small">내보낸 파일에는 이름 등 개인정보가 들어 있을 수 있으니 안전한 곳에만 보관하세요. 가져오면 현재 데이터가 파일 내용으로 바뀝니다(바꾸기 전에 확인합니다).</p>
@@ -762,8 +765,40 @@ function vSettings() {
   <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>PDF 글자 읽기에는 <b>pdf.js</b> 6.5.438(Mozilla, Apache License 2.0)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/pdfjs/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>달력·타임라인·차트·디자인 변수에는 <b>vanilla-calendar-pro</b> 3.4.0, <b>frappe-gantt</b> 1.2.2, <b>uPlot</b> 1.6.32, <b>Open Props</b> 1.7.23(모두 MIT License)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/vanilla-calendar-pro/LICENSE.txt" target="_blank" rel="noopener">달력</a> · <a href="vendor/frappe-gantt/LICENSE.txt" target="_blank" rel="noopener">타임라인</a> · <a href="vendor/uplot/LICENSE.txt" target="_blank" rel="noopener">차트</a> · <a href="vendor/open-props/LICENSE.txt" target="_blank" rel="noopener">변수</a></p>
   <h2>개인정보 안내</h2><ul class="small"><li>이 앱은 보호자 연락처·알레르기·계좌·주민번호를 입력받지 않습니다.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li><li>‘이미지 만들기(AI)’를 쓰면 입력한 그림 설명이 OpenAI로 전송됩니다(이메일·이름은 보내지 않고, 만든 그림은 서버에 저장하지 않아요). 개인정보는 설명에 적지 마세요.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
   <h2>정보</h2><dl class="props"><dt>버전</dt><dd><b>${esc(VERSION)}</b></dd><dt>저장 방식</dt><dd>${acct ? '계정별 서버 저장(Cloudflare D1)' : `localStorage (${window.__memOnly ? '사용 불가 → 임시 메모리' : '사용 중'})`}</dd><dt>통화·시간대</dt><dd>원화(정수) · Asia/Seoul</dd></dl>`);
-  if (acct) initImageBox();
+  if (acct) { initImageBox(); initPinBox(); }
 }
+
+// ----- 간편 로그인(6자리)·로그인 정보 저장 -----
+async function initPinBox() {
+  const box = $('#pinbox'); if (!box) return; const cred = desktopCred(); let st;
+  try { st = await accountApi.pinStatus(); } catch (e) { box.innerHTML = `<p class="mute small">간편 로그인 상태를 불러오지 못했어요: ${esc(e.message)}</p>`; return; }
+  const ago = ms => { const d = Math.floor((Date.now() - ms) / 864e5); return d <= 0 ? '오늘' : d + '일 전'; };
+  box.innerHTML = `<p class="small" style="margin-top:0"><b>간편 로그인</b>: 비밀번호 대신 <b>숫자 6자리</b>로 로그인해요. 번호는 <b>설정한 이 기기에서만</b> 쓸 수 있고(다른 기기에서는 비밀번호 필요), 5번 틀리면 자동으로 해제돼요. 180일 동안 쓰지 않으면 만료돼요.</p>
+    <div class="row"><span class="tag ${st.here ? 'ok' : ''}">${st.here ? '이 기기: 켜짐' : '이 기기: 꺼짐'}</span><button class="${st.here ? '' : 'pri'}" data-act="pinSetup">${st.here ? '번호 바꾸기' : '이 기기에 간편 로그인 만들기'}</button>${st.here ? '<button class="ghost" data-act="pinRemove">이 기기 해제</button>' : ''}${st.devices.length ? '<button class="ghost dng" data-act="pinRemoveAll">모든 기기 해제</button>' : ''}</div>
+    ${st.devices.length ? `<table class="t" style="margin-top:10px"><thead><tr><th>기기</th><th>만든 날</th><th>마지막 사용</th></tr></thead><tbody>${st.devices.map(d => `<tr><td>${esc(d.label)}${d.here ? ' <span class="tag ok">이 기기</span>' : ''}</td><td>${new Date(d.created_at).toLocaleDateString('ko-KR')}</td><td>${ago(d.last_used)}</td></tr>`).join('')}</tbody></table>` : ''}
+    <p class="small" style="margin-bottom:0"><b>비밀번호 저장</b>: ${cred ? '데스크톱 프로그램에서는 로그인 화면의 ‘이 컴퓨터에 이메일·비밀번호 저장’을 고르면 Windows 계정 암호화로 저장돼요. <button class="sm ghost" data-act="credClear">저장한 로그인 정보 지우기</button>' : '사이트에서는 로그인할 때 브라우저가 묻는 ‘비밀번호 저장’을 누르세요(Chrome·Edge·Safari의 비밀번호 관리자). 로그인 화면의 ‘이메일 기억하기’로 이메일만 기억할 수도 있어요. <button class="sm ghost" data-act="credClear">기억한 이메일 지우기</button>'} 여러 사람이 함께 쓰는 컴퓨터에서는 저장하지 마세요.</p>`;
+}
+
+// ----- 인수인계 도우미 -----
+function vHandover() {
+  const d = workDept(); const h = store.handover(d); const meta = h.meta || {}, fields = h.fields || {}; const facts = UI.hoFacts && UI.hoFacts.dept === d ? UI.hoFacts.out : null;
+  page('🤝', '인수인계', `${deptTag(d)} 부서를 넘길 때 순서대로 따라 하고, 인수인계서를 채워 인쇄하세요.${UI.dept === 'all' ? ' <span class="mute small">(전체 보기에서는 첫 부서를 표시해요. 위에서 부서를 고르세요)</span>' : ''}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#settings">◀ 설정</button></div>
+  <section class="noprint"><h2 style="margin-top:0">인수인계 순서</h2><ol class="hosteps">${HANDOVER_STEPS.map(st => `<li><div class="hwhen">${esc(st.when)}</div><div><b>${esc(st.title)}</b><ul class="small">${st.do.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></li>`).join('')}</ol>
+  <div class="callout warn"><span>🔒</span><div class="sp">비밀번호·계좌번호·아이들의 건강이나 가정 사정 같은 민감한 정보는 인수인계서에 적지 마세요. 계정은 비밀번호를 알려 주는 대신 인수자 계정을 새로 만들거나 관리자 권한을 넘기세요. 목회 비서 데이터는 설정 → ‘내보내기’ 파일을 인수자가 자기 계정에서 ‘가져오기’ 하면 옮겨져요.</div></div></section>
+  <h2>인수인계서 <span class="mute small">${esc(store.dept(d).name)}${h.updated ? ' · 마지막 저장 ' + esc(h.updated) : ''}</span></h2>
+  <div class="row noprint" style="margin-bottom:10px"><button data-act="hoFacts">📥 기록에서 채우기 (빈 칸만)</button><button data-act="hoExample">예시로 채우기 (빈 칸만)</button><span class="sp"></span><button class="pri" data-act="hoSave">저장</button><button data-act="hoPrint">인쇄·PDF</button><button class="ghost" data-act="hoTxt">글 파일로 받기</button></div>
+  <div class="hometa">${HANDOVER_META.map(([k, l]) => `<label class="f">${esc(l)}<input data-hm="${k}" ${k === 'date' ? 'type="date"' : 'maxlength="40"'} value="${esc(meta[k] || '')}"></label>`).join('')}</div>
+  ${HANDOVER_FIELDS.map(f => `<section class="hofield"><h3>${esc(f.label)}</h3><p class="mute small noprint">적을 내용: ${esc(f.hint)}</p>
+    <details class="noprint small"><summary>예시 보기</summary><p class="hoex">${esc(f.ex)}</p></details>
+    ${facts && facts[f.k] && facts[f.k].length ? `<div class="hofacts noprint small"><b>기록에서 찾은 내용</b><ul>${facts[f.k].map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+    <textarea data-hf="${f.k}" rows="4" maxlength="${HANDOVER_MAX}" aria-label="${esc(f.label)}">${esc(fields[f.k] || '')}</textarea><div class="printonly hoprint">${esc(fields[f.k] || '')}</div></section>`).join('')}
+  <div class="hosign"><div>인계자 <span>${esc(meta.from || '')}</span> (서명)</div><div>인수자 <span>${esc(meta.to || '')}</span> (서명)</div><div>확인자 <span>${esc(meta.witness || '')}</span> (서명)</div></div>
+  <p class="mute small noprint">이 양식과 순서는 교회학교 현장에서 쓰기 쉽게 정리한 안내예요. 회계 이관·결재는 교회 재정 규정과 담당 교역자의 안내를 먼저 따르세요.</p>`);
+  $$('[data-hf]').forEach(t => { const pr = t.nextElementSibling; t.oninput = () => { pr.textContent = t.value; }; });
+}
+const hoCollect = () => ({ meta: Object.fromEntries($$('[data-hm]').map(i => [i.dataset.hm, i.value])), fields: Object.fromEntries($$('[data-hf]').map(t => [t.dataset.hf, t.value])) });
+function hoText() { const d = workDept(); const o = hoCollect(); const L = [`[${store.dept(d).name}] 인수인계서`, ...HANDOVER_META.map(([k, l]) => `${l}: ${o.meta[k] || ''}`), ''];
+  HANDOVER_FIELDS.forEach(f => L.push(f.label, o.fields[f.k] || '(비어 있음)', '')); L.push('인계자 (서명)        인수자 (서명)        확인자 (서명)'); return L.join('\r\n'); }
 
 // ----- 이벤트 -----
 // ----- PDF에서 가져오기 공통 마법사: 파일 고르기 → 글자 읽기 → 후보 확인·수정 → 등록 (PDF는 브라우저 안에서만 처리) -----
@@ -837,6 +872,21 @@ const ACT = {
   pasteCurr: async d => { const rows = parseLessonText($('#cpaste').value); if (!rows.length) { toast('넣을 줄을 찾지 못했어요. 한 줄에 한 과씩 적어 주세요.', true); return; }
     if (await ask(`${d.year}년차를 아래 ${rows.length}과로 바꿀까요?\n\n${rows.slice(0, 5).map(r => `${r.no}과 ${r.title} ${r.scripture}`).join('\n')}${rows.length > 5 ? `\n…외 ${rows.length - 5}과` : ''}`, '넣기')) { guard(() => store.setCurriculumYear(Number(d.id), Number(d.year), rows), `${rows.length}과를 넣었어요.`); render(); } },
   lessonEdit: d => lessonEditor(Number(d.id)),
+  hoSave: () => { guard(() => store.saveHandover(workDept(), hoCollect()), '인수인계서를 저장했어요.'); render(); },
+  hoFacts: () => { const d = workDept(); const out = store.handoverDraft(d); UI.hoFacts = { dept: d, out }; let n = 0; const cur = hoCollect();
+    for (const f of HANDOVER_FIELDS) if (!String(cur.fields[f.k] || '').trim() && out[f.k] && out[f.k].length) { cur.fields[f.k] = out[f.k].map(x => '- ' + x).join('\n'); n++; }
+    guard(() => store.saveHandover(d, cur)); render(); toast(n ? `빈 칸 ${n}개를 기록으로 채웠어요. 맞는지 확인하고 고쳐 쓰세요.` : '채울 빈 칸이 없거나 기록이 없어요. 기록에서 찾은 내용은 각 칸 위에 보여요.'); },
+  hoExample: async () => { if (!(await ask('비어 있는 칸을 가상의 예시 문장으로 채울까요? 예시는 모양을 보여 주려는 것이니 우리 부서 내용으로 꼭 바꿔 쓰세요.', '예시로 채우기'))) return; const d = workDept(); const cur = hoCollect(); let n = 0;
+    for (const f of HANDOVER_FIELDS) if (!String(cur.fields[f.k] || '').trim()) { cur.fields[f.k] = '(예시) ' + f.ex; n++; } guard(() => store.saveHandover(d, cur)); render(); toast(n ? `빈 칸 ${n}개를 예시로 채웠어요.` : '빈 칸이 없어요.'); },
+  hoPrint: () => { guard(() => store.saveHandover(workDept(), hoCollect())); window.print(); },
+  hoTxt: () => { const d = workDept(); guard(() => store.saveHandover(d, hoCollect())); download(`${store.dept(d).name} 인수인계서.txt`, '\ufeff' + hoText(), 'text/plain'); toast('글 파일을 내려받았어요. 민감한 정보가 없는지 확인하고 나누세요.'); },
+  pinSetup: () => form({ title: '간편 로그인 번호 만들기', submit: '만들기', intro: '<p class="mute small">이 기기에서만 쓰는 숫자 6자리를 정해요. 같은 숫자 반복(111111)이나 연속 숫자(123456)는 쓸 수 없어요. 생일·전화번호 끝자리처럼 남이 알기 쉬운 번호도 피하세요. 확인을 위해 계정 비밀번호를 한 번 더 입력해요.</p>',
+    fields: [{ k: 'pw', label: '계정 비밀번호', type: 'password', req: true }, { k: 'pin', label: '새 번호 (숫자 6자리)', type: 'password', req: true }, { k: 'pin2', label: '번호 다시 입력', type: 'password', req: true }],
+    onOpen: d => d.querySelectorAll('[name=pin],[name=pin2]').forEach(i => { i.inputMode = 'numeric'; i.maxLength = 6; i.autocomplete = 'off'; }),
+    onSubmit: async o => { if (!/^\d{6}$/.test(o.pin)) throw new Error('번호는 숫자 6자리로 적어 주세요.'); if (o.pin !== o.pin2) throw new Error('두 번 입력한 번호가 달라요.'); await accountApi.pinSetup(o.pw, o.pin, deviceLabel()); toast('이 기기에 간편 로그인을 만들었어요. 다음 로그인부터 번호 6자리로 들어올 수 있어요.'); } }),
+  pinRemove: async () => { if (!(await ask('이 기기의 간편 로그인을 해제할까요? 다음에는 비밀번호로 로그인해요.', '해제'))) return; await accountApi.pinRemove(false); toast('이 기기의 간편 로그인을 해제했어요.'); render(); },
+  pinRemoveAll: async () => { if (!(await ask('모든 기기의 간편 로그인을 해제할까요? 기기를 잃어버렸을 때 쓰세요. 지금 로그인은 유지돼요.', '모두 해제'))) return; await accountApi.pinRemove(true); toast('모든 기기의 간편 로그인을 해제했어요.'); render(); },
+  credClear: async () => { const c = desktopCred(); if (c) await c.clear(); else { try { localStorage.removeItem('ministry-secretary:email'); } catch { /* 무시 */ } } toast(c ? '이 컴퓨터에 저장한 로그인 정보를 지웠어요.' : '기억한 이메일을 지웠어요.'); },
   togglePlanAll: () => { UI.planAll = !UI.planAll; render(); },
   lessonShift: async d => { if (await ask('이 주일은 공과를 쉬고, 이 주 공과부터 뒤의 공과를 한 주씩 뒤로 밀까요?\n\n이 예배는 그대로 두고(교체하지 않음), 마지막 공과는 비어 있는 다음 주일(없으면 새로 만든 주일예배)에 들어가요. ‘공과 다시 넣기’로 되돌릴 수 있어요.', '한 주씩 밀기')) { const r = store.shiftLesson(Number(d.id)); toast(`공과 ${r.moved}개를 한 주씩 밀었어요. 마지막 공과는 ${md(r.until)}에 들어갔어요.`); render(); } },
   lessonPull: d => { const n = guard(() => store.pullLesson(Number(d.id))); if (n !== undefined) toast(n ? `뒤의 공과 ${n}개를 한 주씩 당겼어요.` : '공과 쉼을 풀었어요.'); render(); },

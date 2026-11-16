@@ -3,6 +3,7 @@ import { makeSeed } from './seed.js';
 import { DEFAULT_CHECKS, MAX_CHECKS, NEWCOMER_STEPS, AWAY_REASONS, AWAY_EVERY, EXAM_TYPE, guessDeptKind } from './ministry.js';
 import { LESSON_KEYS, FIELD_MAX, MAX_LESSONS, MAX_CURRICULA, CURRICULUM_PRESETS, PICK_PRESETS, blankLessons, cleanLesson, sundaysBetween, lessonLabel } from './curriculum.js';
 import { EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
+import { HANDOVER_FIELDS, HANDOVER_META, HANDOVER_MAX } from './handover.js';
 
 export const KEY = 'ministry-secretary:v1';
 export class ValidationError extends Error {}
@@ -484,7 +485,47 @@ export function createStore(storage, today = kstToday) {
 
     // ----- 부서별 사역(MB12) -----
     deptKind: id => ((dept(id) || {}).kind) || guessDeptKind((dept(id) || {}).name, id),
-    checks(deptId) { const c = (S.deptCfg[deptId] || {}).checks; return Array.isArray(c) ? c : (DEFAULT_CHECKS[api.deptKind(deptId)] || []); },
+    // ----- 인수인계: 부서마다 인수인계서(칸별 글)를 저장하고, 기록에서 초안을 만든다 -----
+    handover(deptId) { const h = (S.deptCfg[deptId] || {}).handover; return h && typeof h === 'object' ? h : { meta: {}, fields: {} }; },
+    saveHandover(deptId, h) {
+      if (!dept(deptId)) throw new ValidationError('부서를 선택하세요.');
+      const clip = (v, n) => String(v ?? '').slice(0, n);
+      const meta = Object.fromEntries(HANDOVER_META.map(([k]) => [k, clip((h.meta || {})[k], k === 'date' ? 10 : 40).trim()])); if (meta.date) reqDate(meta.date, '인계일');
+      const fields = Object.fromEntries(HANDOVER_FIELDS.map(f => [f.k, clip((h.fields || {})[f.k], HANDOVER_MAX)]));
+      S.deptCfg[deptId] = { ...(S.deptCfg[deptId] || {}), handover: { meta, fields, updated: today() } }; save(); return S.deptCfg[deptId].handover;
+    },
+    // 기록에서 가져온 사실(칸별 문장 목록). 사람 이름은 교사·봉사자만 넣고 학생 이름은 넣지 않는다.
+    handoverDraft(deptId, t = today()) {
+      const d = dept(deptId); if (!d) throw new ValidationError('부서를 선택하세요.'); const year = Number(t.slice(0, 4)); const won = n => `${Math.round(n).toLocaleString('ko-KR')}원`;
+      const until = addDays(t, 92); const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active');
+      const learners = active.filter(p => ['child', 'teen', 'youth'].includes(p.kind)); const staff = active.filter(p => p.kind === 'teacher' || p.kind === 'volunteer');
+      const regular = S.services.filter(s => s.dept_id === deptId && s.kind === 'regular' && s.date <= t).sort((a, b) => b.date.localeCompare(a.date));
+      const rec = regular.slice(0, 8).map(s => api.attendanceCount(s.id)).filter(c => c.recorded > 0); const avg = rec.length ? Math.round(rec.reduce((a, c) => a + c.present, 0) / rec.length * 10) / 10 : null;
+      const last = regular[0]; const goal = api.plan(deptId, year).goal;
+      const out = { overview: [], people: [], worship: [], schedule: [], money: [], assets: [], care: [], accounts: [], pending: [] };
+      out.overview.push(`${d.name}: 학생 ${learners.length}명, 교사·봉사자 ${staff.length}명${avg !== null ? `, 최근 ${rec.length}주 평균 출석 ${avg}명` : ''}.`);
+      if (last) out.overview.push(`주일예배: ${last.title}${last.time ? ' ' + last.time : ''}${last.place ? ', ' + last.place : ''}.`);
+      if (goal) out.overview.push(`올해 목표: ${goal}`);
+      if (staff.length) out.people.push(...staff.map(p => `${p.name} (${p.kind === 'teacher' ? '교사' : '봉사자'}${p.class_name ? ', ' + p.class_name : ''})`));
+      const classes = [...new Set(learners.map(p => p.class_name).filter(Boolean))]; if (classes.length) out.people.push(`반: ${classes.join(', ')}`);
+      const upLessons = api.lessonPlan(deptId, t, until).filter(s => s.lesson); const doneLessons = api.lessonPlan(deptId, `${year}-01-01`, addDays(t, -1)).filter(s => s.lesson);
+      if (doneLessons.length) { const x = doneLessons[doneLessons.length - 1].lesson; out.worship.push(`공과: ‘${x.cname}’ ${lessonLabel(x)}까지 진행(${doneLessons.length}주).`); }
+      if (upLessons.length) out.worship.push(`다음 공과: ${upLessons.slice(0, 3).map(s => `${s.date.slice(5).replace('-', '/')} ${lessonLabel(s.lesson)}`).join(', ')}`);
+      if (last && last.order_text) out.worship.push('예배 순서는 목회 비서 ‘예배’ 화면에 저장되어 있어요.');
+      const evs = S.events.filter(e => e.dept_id === deptId && e.status !== 'cancelled' && e.end_date >= t && e.start_date <= until).sort((a, b) => a.start_date.localeCompare(b.start_date));
+      for (const e of evs) { const open = S.tasks.filter(k => k.event_id === e.id && k.status !== 'done'); out.schedule.push(`${e.start_date.slice(5).replace('-', '/')} ${e.title}${open.length ? ` — 남은 준비 ${open.length}개(${open.slice(0, 3).map(k => k.title).join(', ')}${open.length > 3 ? ' 등' : ''})` : ' — 준비 업무 모두 끝남'}`); }
+      const sch = (S.schedules || []).filter(s => s.dept_id === deptId && s.date >= t && s.date <= until); const byType = {}; sch.forEach(s => (byType[s.title] = (byType[s.title] || 0) + 1));
+      Object.entries(byType).filter(([, n]) => n >= 2).forEach(([k, n]) => out.schedule.push(`반복 모임: ${k} (앞으로 3달 동안 ${n}번)`));
+      const m = api.deptSummary(deptId, year);
+      if (m.budget || m.expense || m.income) out.money.push(`${year}년 예산 ${won(m.budget)}, 지출 ${won(m.expense)}, 수입 ${won(m.income)}, 예산 잔액 ${won(m.budget_remaining)}.`);
+      const noRcpt = api.transactions({ deptId, year }).filter(x => x.kind === 'expense' && !x.receipt && !(x.receipts && x.receipts.length)).length; if (noRcpt) out.money.push(`영수증이 연결되지 않은 지출 ${noRcpt}건 — 인계 전에 확인하세요.`);
+      const as = (S.assets || []).filter(a => a.dept_id === deptId); if (as.length) { out.assets.push(`비품 ${as.length}종(목회 비서 ‘비품’ 목록).`); const fix = as.filter(a => a.status === '수리 중'); if (fix.length) out.assets.push(`수리 중: ${fix.map(a => a.name).join(', ')}`); }
+      const nc = api.newcomers(deptId, t), away = api.awayList(deptId, t); if (nc.length) out.care.push(`정착 중인 새가족 ${nc.length}명(목회 비서 ‘부서 사역’).`); if (away.length) out.care.push(`장기 부재로 연락 중인 사람 ${away.length}명.`);
+      const vis = (S.visits || []).filter(v => v.follow_up && v.follow_up >= t && (person(v.person_id) || {}).dept_id === deptId); if (vis.length) out.care.push(`다음 연락일이 잡힌 심방 ${vis.length}건.`);
+      if (out.care.length) out.care.push('이름과 자세한 사정은 문서에 적지 말고 만나서 전하세요.');
+      return out;
+    },
+    checks(deptId) { const c =(S.deptCfg[deptId] || {}).checks; return Array.isArray(c) ? c : (DEFAULT_CHECKS[api.deptKind(deptId)] || []); },
     saveChecks(deptId, list) {
       if (!dept(deptId)) throw new ValidationError('부서를 선택하세요.'); const seen = new Set();
       const out = (list || []).map(c => ({ key: String(c.key || '').replace(/[^a-z0-9]/gi, '').slice(0, 16) || 'c' + Math.random().toString(36).slice(2, 7), label: String(c.label || '').trim().slice(0, 20), points: Math.max(0, Math.min(100, Math.trunc(Number(c.points)) || 0)) })).filter(c => c.label && !seen.has(c.key) && seen.add(c.key));

@@ -2,7 +2,7 @@
 // 화면과 기능은 사이트가 그대로 제공하므로, 사이트 버전(MB11.x)이 올라가면 이 프로그램도 열 때마다 자동으로 새 버전이 됩니다.
 // 데이터는 로그인 계정의 서버 저장소에 있어 그대로 이어집니다. 이 프로그램은 파일·시스템에 접근하는 기능을 노출하지 않습니다.
 'use strict';
-const { app, BrowserWindow, Menu, dialog, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, session, shell, ipcMain, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,6 +14,24 @@ app.setAppUserModelId('app.ministry-secretary.desktop');
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 let win = null;
+
+// ---- 로그인 정보 저장(사용자가 로그인 화면에서 ‘이 컴퓨터에 저장’을 고른 경우만) ----
+// Windows 사용자 계정으로 암호화(safeStorage, DPAPI)해 프로그램 데이터 폴더에 둔다. 다른 Windows 사용자는 풀 수 없다.
+// 요청은 목회 비서 사이트 화면에서 온 것만 받는다.
+const credFile = () => path.join(app.getPath('userData'), 'login.bin');
+const fromSite = e => { try { return new URL(e.senderFrame.url).origin === ORIGIN; } catch (err) { return false; } };
+function registerCred() {
+  ipcMain.handle('cred:available', e => fromSite(e) && safeStorage.isEncryptionAvailable());
+  ipcMain.handle('cred:get', e => {
+    if (!fromSite(e) || !safeStorage.isEncryptionAvailable()) return null;
+    try { const j = JSON.parse(safeStorage.decryptString(fs.readFileSync(credFile()))); return typeof j.email === 'string' && typeof j.password === 'string' ? j : null; } catch (err) { return null; }
+  });
+  ipcMain.handle('cred:save', (e, email, password) => {
+    if (!fromSite(e) || !safeStorage.isEncryptionAvailable() || typeof email !== 'string' || typeof password !== 'string' || email.length > 254 || password.length > 128 || !email || !password) return false;
+    fs.writeFileSync(credFile(), safeStorage.encryptString(JSON.stringify({ email, password }))); return true;
+  });
+  ipcMain.handle('cred:clear', e => { if (!fromSite(e)) return false; try { fs.unlinkSync(credFile()); } catch (err) { /* 없으면 그만 */ } return true; });
+}
 
 // 사이트 밖 주소는 이 창에서 열지 않고, http(s)만 기본 브라우저로 넘긴다.
 function openExternal(url) { try { const u = new URL(url); if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.toString()); } catch (e) { /* 잘못된 주소는 무시 */ } }
@@ -32,7 +50,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 420, minHeight: 600, title: '목회 비서', backgroundColor: '#ffffff', autoHideMenuBar: true, show: !SMOKE,
     icon: path.join(__dirname, 'build', 'icon.png'),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false, devTools: !app.isPackaged },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false, devTools: !app.isPackaged, preload: path.join(__dirname, 'preload.js') },
   });
   win.webContents.setUserAgent(`${win.webContents.getUserAgent()} MokhoeBiseoDesktop/${app.getVersion()}`);
   win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
@@ -55,7 +73,7 @@ app.whenReady().then(() => {
   const allowed = (permission, url) => { if (permission !== 'notifications') return false; try { return new URL(url).origin === ORIGIN; } catch (e) { return false; } };
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(allowed(permission, (details && details.requestingUrl) || wc.getURL())));
   session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => allowed(permission, requestingOrigin));
-  buildMenu(); createWindow();
+  registerCred(); buildMenu(); createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { app.quit(); });

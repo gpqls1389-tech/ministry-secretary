@@ -154,3 +154,52 @@ test('이미지 만들기: OpenAI 오류는 친절한 문장으로 바꾸고 원
   assert.equal((await run(200, { data: [] })).status, 502); assert.equal((await run(200, { data: [{ b64_json: '!!!not-base64!!!'.repeat(10) }] })).status, 502); assert.equal((await run(200, { data: [{ b64_json: Buffer.from('plain text not image'.repeat(10)).toString('base64') }] })).status, 502);
   const to = await run(200, {}, Object.assign(new Error('aborted'), { name: 'AbortError' })); assert.equal(to.status, 504); assert.equal((await run(200, {}, new Error('network'))).status, 502);
 });
+test('MB12.3 간편 로그인: 비밀번호 확인 후 이 기기에만, 쉬운 번호 거부, 5번 틀리면 해제, 다른 기기 불가', async () => {
+  const env = envOf(); const sess = await signup(env);
+  // 비밀번호 틀림·쉬운 번호
+  assert.equal((await call(env, 'POST', '/api/pin', { cookie: sess, body: { password: 'wrong-pass-123', pin: '482915' } })).status, 401);
+  for (const pin of ['123456', '111111', '121212', '12345', 'abcdef', '987654']) assert.equal((await call(env, 'POST', '/api/pin', { cookie: sess, body: { password: PW, pin } })).status, 400, pin);
+  const set = await call(env, 'POST', '/api/pin', { cookie: sess, body: { password: PW, pin: '482915', label: 'Windows 데스크톱' } });
+  assert.equal(set.status, 200); assert.match(set.setCookie, /^__Host-ms_device=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=15552000; Secure$/);
+  const dev = set.cookie; const raw = env.DB.raw.prepare('SELECT * FROM devices').all();
+  assert.equal(raw.length, 1); assert.ok(!JSON.stringify(raw).includes('482915')); assert.ok(!JSON.stringify(raw).includes(dev.split('=')[1]));
+  // 로그아웃 뒤: /api/me가 간편 로그인을 알려 주고(이메일 일부만), 번호로 로그인
+  const me = await call(env, 'GET', '/api/me', { cookie: dev }); assert.equal(me.json.user, null); assert.equal(me.json.quick.email, 'a*@church.kr');
+  assert.equal((await call(env, 'GET', '/api/me')).json.quick, null, '기기 쿠키가 없으면 안내하지 않음');
+  const ok = await call(env, 'POST', '/api/pin/login', { cookie: dev, body: { pin: '482915' } }); assert.equal(ok.status, 200); assert.match(ok.setCookie, /^__Host-ms_session=/);
+  assert.equal((await call(env, 'GET', '/api/state', { cookie: ok.cookie })).status, 200);
+  // 다른 기기(쿠키 없음)에서는 번호만으로 안 됨
+  assert.equal((await call(env, 'POST', '/api/pin/login', { body: { pin: '482915' } })).status, 401);
+  // 설정 목록
+  const st = await call(env, 'GET', '/api/pin', { cookie: `${ok.cookie}; ${dev}` }); assert.equal(st.json.here, true); assert.equal(st.json.devices[0].label, 'Windows 데스크톱');
+  // 4번 틀리면 남은 횟수 안내, 5번째에 해제
+  for (let i = 0; i < 4; i++) { const r = await call(env, 'POST', '/api/pin/login', { cookie: dev, body: { pin: '000001' } }); assert.equal(r.status, 401); assert.match(r.json.error, new RegExp(`${4 - i}번 더`)); }
+  const last = await call(env, 'POST', '/api/pin/login', { cookie: dev, body: { pin: '000001' } }); assert.equal(last.status, 401); assert.equal(last.json.code, 'no-device'); assert.match(last.setCookie, /Max-Age=0/);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) c FROM devices').get().c, 0);
+  assert.equal((await call(env, 'POST', '/api/pin/login', { cookie: dev, body: { pin: '482915' } })).status, 401, '해제 뒤에는 맞는 번호도 안 됨');
+});
+
+test('MB12.3 간편 로그인 해제: 이 기기·모든 기기, 비밀번호 변경·모두 로그아웃 시 다른 기기 해제, 만료', async () => {
+  const env = envOf(); const sess = await signup(env);
+  const a = (await call(env, 'POST', '/api/pin', { cookie: sess, body: { password: PW, pin: '482915', label: 'A' } })).cookie;
+  const s2 = (await call(env, 'POST', '/api/login', { body: { email: 'a@church.kr', password: PW } })).cookie;
+  const b = (await call(env, 'POST', '/api/pin', { cookie: s2, body: { password: PW, pin: '739164', label: 'B' } })).cookie;
+  assert.equal((await call(env, 'GET', '/api/pin', { cookie: sess })).json.devices.length, 2);
+  // 비밀번호 바꾸면 이 기기(A)만 남는다
+  assert.equal((await call(env, 'POST', '/api/password', { cookie: `${sess}; ${a}`, body: { current: PW, next: 'another-good-pw-77' } })).status, 200);
+  assert.equal((await call(env, 'POST', '/api/pin/login', { cookie: b, body: { pin: '739164' } })).status, 401);
+  assert.equal((await call(env, 'POST', '/api/pin/login', { cookie: a, body: { pin: '482915' } })).status, 200);
+  // 이 기기 해제
+  assert.equal((await call(env, 'POST', '/api/pin/remove', { cookie: `${sess}; ${a}`, body: {} })).status, 200);
+  assert.equal((await call(env, 'POST', '/api/pin/login', { cookie: a, body: { pin: '482915' } })).status, 401);
+  // 모두 로그아웃은 간편 로그인도 지운다
+  const c = (await call(env, 'POST', '/api/pin', { cookie: sess, body: { password: 'another-good-pw-77', pin: '482915' } })).cookie;
+  await call(env, 'POST', '/api/logout-all', { cookie: sess, body: {} });
+  assert.equal((await call(env, 'POST', '/api/pin/login', { cookie: c, body: { pin: '482915' } })).status, 401);
+  // 180일 동안 안 쓰면 만료
+  const s3 = (await call(env, 'POST', '/api/login', { body: { email: 'a@church.kr', password: 'another-good-pw-77' } })).cookie;
+  const d = (await call(env, 'POST', '/api/pin', { cookie: s3, body: { password: 'another-good-pw-77', pin: '482915' } })).cookie;
+  assert.equal((await call(env, 'POST', '/api/pin/login', { cookie: d, body: { pin: '482915' }, now: Date.now() + 181 * 864e5 })).status, 401);
+  // 로그인 없이 /api/pin 설정 불가
+  assert.equal((await call(env, 'POST', '/api/pin', { body: { password: PW, pin: '482915' } })).status, 401);
+});
