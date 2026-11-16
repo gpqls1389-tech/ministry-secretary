@@ -82,6 +82,36 @@ async function ensureReceipts(db) {
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_receipts_user ON receipts(user_id)').bind().run();
   receiptReady.add(db);
 }
+// ---- 간편 로그인(6자리 번호): 비밀번호로 로그인한 ‘이 기기’에서만 쓴다 ----
+// 기기 비밀값(32바이트)은 HttpOnly 쿠키에만 있고 서버에는 SHA-256만 둔다. 번호는 기기 비밀값과 함께 PBKDF2로 저장해
+// 데이터베이스가 새어도 번호를 맞혀 볼 수 없고, 다른 기기에서는 번호만으로 로그인할 수 없다. 5번 틀리면 그 기기의 간편 로그인을 지운다.
+const DEVICE_MS = 180 * 24 * 3600e3;       // 쓰지 않으면 180일 뒤 만료(쓸 때마다 연장)
+const PIN_FAILS = 5;
+const MAX_DEVICES = 5;
+function deviceCookieName(secure) { return secure ? '__Host-ms_device' : 'ms_device'; }
+const setDeviceCookie = (secure, value, maxAge) => `${deviceCookieName(secure)}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+const WEAK_PIN = new Set(['000000', '111111', '123456', '654321', '123123', '121212', '112233', '123321', '111222', '696969', '159753', '147258', '258369', '102030', '100000', '999999', '012345', '987654', '543210', '456789']);
+export function pinCheck(pin) {
+  if (typeof pin !== 'string' || !/^\d{6}$/.test(pin)) throw new HttpError(400, '간편 로그인 번호는 숫자 6자리예요.');
+  const d = [...pin].map(Number); const step = d.slice(1).map((x, i) => x - d[i]);
+  if (WEAK_PIN.has(pin) || new Set(d).size <= 2 || step.every(x => x === 1) || step.every(x => x === -1)) throw new HttpError(400, '너무 쉬운 번호예요(같은 숫자 반복·연속 숫자 등). 다른 6자리를 골라 주세요.');
+}
+const deviceReady = new WeakSet();
+async function ensureDevices(db) {
+  if (deviceReady.has(db)) return;
+  await db.prepare("CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, pin_hash TEXT NOT NULL, fails INTEGER NOT NULL DEFAULT 0, label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, last_used INTEGER NOT NULL, expires_at INTEGER NOT NULL)").bind().run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id)').bind().run();
+  deviceReady.add(db);
+}
+async function currentDevice(db, request, secure, now) {
+  const t = readCookie(request, deviceCookieName(secure)); if (!t || t.length > 100) return null; await ensureDevices(db);
+  const d = await db.prepare('SELECT d.id, d.user_id, d.pin_hash, d.fails, d.expires_at, u.email, u.name FROM devices d JOIN users u ON u.id=d.user_id WHERE d.token_hash=?').bind(await sha256Hex(t)).first();
+  if (!d) return null; if (d.expires_at <= now) { await db.prepare('DELETE FROM devices WHERE id=?').bind(d.id).run(); return null; }
+  return { ...d, secret: t };
+}
+const maskEmail = e => { const [a, b] = String(e).split('@'); return `${a.slice(0, 2)}${'*'.repeat(Math.max(1, Math.min(6, a.length - 2)))}@${b}`; };
+async function dropDevices(db, userId, exceptId = '') { await ensureDevices(db); await db.prepare('DELETE FROM devices WHERE user_id=? AND id<>?').bind(userId, exceptId).run(); }
+
 export async function handle(request, env, now = Date.now()) {
   const url = new URL(request.url); const path = url.pathname.replace(/\/+$/, '') || '/'; const secure = url.protocol === 'https:'; const method = request.method.toUpperCase();
   try {
@@ -96,7 +126,26 @@ export async function handle(request, env, now = Date.now()) {
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'local';
 
-    if (path === '/api/me' && method === 'GET') { const user = await currentUser(db, request, secure, now); return json({ ok: true, configured: true, signup: inviteReady(env), user: user ? { email: user.email, name: user.name } : null }); }
+    if (path === '/api/me' && method === 'GET') { const user = await currentUser(db, request, secure, now); const dev = user ? null : await currentDevice(db, request, secure, now); return json({ ok: true, configured: true, signup: inviteReady(env), user: user ? { email: user.email, name: user.name } : null, quick: dev ? { email: maskEmail(dev.email) } : null }); }
+
+    if (path === '/api/pin/login' && method === 'POST') {
+      if (await limited(db, `pi:${ip}`, 30, now)) throw new HttpError(429, '시도가 너무 많습니다. 15분 뒤에 다시 해 주세요.');
+      const b = await body(request); const dev = await currentDevice(db, request, secure, now);
+      if (!dev) throw new HttpError(401, '이 기기에는 간편 로그인이 설정되어 있지 않아요. 비밀번호로 로그인하세요.', { code: 'no-device' });
+      const ok = /^\d{6}$/.test(String(b.pin || '')) && await verifyPassword(dev.secret + ':' + b.pin, dev.pin_hash);
+      if (!ok) {
+        await fail(db, `pi:${ip}`, now); const left = PIN_FAILS - dev.fails - 1;
+        if (left <= 0) { await db.prepare('DELETE FROM devices WHERE id=?').bind(dev.id).run(); return json({ ok: false, error: `번호를 ${PIN_FAILS}번 틀려 이 기기의 간편 로그인을 해제했어요. 비밀번호로 로그인한 뒤 설정에서 다시 만드세요.`, code: 'no-device' }, 401, { 'Set-Cookie': setDeviceCookie(secure, '', 0) }); }
+        await db.prepare('UPDATE devices SET fails=fails+1 WHERE id=?').bind(dev.id).run(); throw new HttpError(401, `번호가 맞지 않아요. ${left}번 더 틀리면 간편 로그인이 해제돼요.`);
+      }
+      await db.prepare('UPDATE devices SET fails=0, last_used=?, expires_at=? WHERE id=?').bind(now, now + DEVICE_MS, dev.id).run();
+      const token = await newSession(db, dev.user_id, now);
+      return json({ ok: true, user: { email: dev.email, name: dev.name } }, 200, { 'Set-Cookie': setCookie(secure, token, SESSION_MS / 1000) });
+    }
+    if (path === '/api/pin/forget' && method === 'POST') { // 로그인 화면의 ‘이 기기에서 간편 로그인 지우기’(로그인 없이 가능: 자기 기기 쿠키만 지움)
+      const dev = await currentDevice(db, request, secure, now); if (dev) await db.prepare('DELETE FROM devices WHERE id=?').bind(dev.id).run();
+      return json({ ok: true }, 200, { 'Set-Cookie': setDeviceCookie(secure, '', 0) });
+    }
 
     if (path === '/api/register' && method === 'POST') {
       if (!env.INVITE_CODE) throw new HttpError(403, '지금은 가입을 받지 않습니다(관리자가 초대 코드를 설정하지 않았습니다).');
@@ -132,9 +181,33 @@ export async function handle(request, env, now = Date.now()) {
     }
     if (!user) throw new HttpError(401, '로그인이 필요합니다.', { code: 'login' });
 
-    if (path === '/api/logout-all' && method === 'POST') { // 모든 기기에서 로그아웃: 내 세션을 전부 지운다(이 기기 포함)
-      await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run();
+    if (path === '/api/logout-all' && method === 'POST') { // 모든 기기에서 로그아웃: 내 세션과 간편 로그인을 전부 지운다(이 기기 포함)
+      await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await dropDevices(db, user.id);
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
+    }
+    if (path === '/api/pin' && method === 'GET') {
+      await ensureDevices(db); const mine = await currentDevice(db, request, secure, now);
+      const list = (await db.prepare('SELECT id, label, created_at, last_used FROM devices WHERE user_id=? AND expires_at>? ORDER BY last_used DESC').bind(user.id, now).all()).results;
+      return json({ ok: true, here: !!(mine && mine.user_id === user.id), devices: list.map(d => ({ label: d.label, created_at: d.created_at, last_used: d.last_used, here: !!(mine && mine.id === d.id) })) });
+    }
+    if (path === '/api/pin' && method === 'POST') { // 이 기기에 간편 로그인 만들기(또는 번호 바꾸기): 비밀번호를 다시 확인한다
+      const b = await body(request); if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
+      const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
+      if (!(await verifyPassword(String(b.password || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '비밀번호가 맞지 않습니다.'); }
+      pinCheck(b.pin); await ensureDevices(db); const label = String(b.label || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 40) || '이 기기';
+      const old = await currentDevice(db, request, secure, now); if (old) await db.prepare('DELETE FROM devices WHERE id=?').bind(old.id).run();
+      const n = (await db.prepare('SELECT COUNT(*) c FROM devices WHERE user_id=?').bind(user.id).first()).c;
+      if (n >= MAX_DEVICES) throw new HttpError(409, `간편 로그인은 기기 ${MAX_DEVICES}대까지 쓸 수 있어요. ‘모든 기기 해제’를 누른 뒤 다시 해 주세요.`);
+      const secret = b64url(crypto.getRandomValues(new Uint8Array(32)));
+      await db.prepare('INSERT INTO devices(id,user_id,token_hash,pin_hash,fails,label,created_at,last_used,expires_at) VALUES(?,?,?,?,0,?,?,?,?)').bind(crypto.randomUUID(), user.id, await sha256Hex(secret), await hashPassword(secret + ':' + b.pin), label, now, now, now + DEVICE_MS).run();
+      await clear(db, `pw:${user.id}`);
+      return json({ ok: true }, 200, { 'Set-Cookie': setDeviceCookie(secure, secret, DEVICE_MS / 1000) });
+    }
+    if (path === '/api/pin/remove' && method === 'POST') { // 기본은 이 기기만, all이면 내 모든 기기
+      const b = await body(request);
+      if (b.all) { await dropDevices(db, user.id); return json({ ok: true }, 200, { 'Set-Cookie': setDeviceCookie(secure, '', 0) }); }
+      const mine = await currentDevice(db, request, secure, now); if (mine && mine.user_id === user.id) await db.prepare('DELETE FROM devices WHERE id=?').bind(mine.id).run();
+      return json({ ok: true }, 200, { 'Set-Cookie': setDeviceCookie(secure, '', 0) });
     }
     if (path === '/api/state' && method === 'GET') { // 항상 '내' 줄만 조회: user_id는 세션에서만 얻는다
       const r = await db.prepare('SELECT version, state FROM user_state WHERE user_id=?').bind(user.id).first();
@@ -160,13 +233,14 @@ export async function handle(request, env, now = Date.now()) {
       if (!(await verifyPassword(String(b.current || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '현재 비밀번호가 맞지 않습니다.'); }
       await db.prepare('UPDATE users SET pw_hash=? WHERE id=?').bind(await hashPassword(b.next), user.id).run();
       const keep = await sha256Hex(readCookie(request, cookieName(secure)) || ''); await db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').bind(user.id, keep).run(); // 다른 기기는 로그아웃
+      const mine = await currentDevice(db, request, secure, now); await dropDevices(db, user.id, mine && mine.user_id === user.id ? mine.id : ''); // 다른 기기의 간편 로그인도 해제
       return json({ ok: true });
     }
     if (path === '/api/delete-account' && method === 'POST') {
       const b = await body(request); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
       if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
       if (!(await verifyPassword(String(b.password || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '비밀번호가 맞지 않습니다.'); }
-      await ensureReceipts(db); await db.prepare('DELETE FROM receipts WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
+      await ensureReceipts(db); await db.prepare('DELETE FROM receipts WHERE user_id=?').bind(user.id).run(); await dropDevices(db, user.id); await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
     }
     // ---- 영수증 사진 (항상 '내' 사진만: user_id는 세션에서만 얻는다) ----
