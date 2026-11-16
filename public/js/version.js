@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB12.3';
+export const VERSION = 'MB12.4';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '12.3.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '12.4.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB12.4', date: '2026-11-16', items: ['명단 상세 정보: 휴대폰·이메일·주소·생일·학교·직분·세례, 보호자와 비상 연락처, 알레르기·건강 주의, 돌봄 메모, 개인정보 수집 동의 기록', '명단에 연락처 칸(누르면 전화, 카드에서 문자), 연락처 가리기, 이번 달 생일, 건강 주의 표시', '인수인계서 초안에 교사 연락처, 새가족·장기 부재·심방 대상 이름, 건강 주의·돌봄 메모, 동의 확인 안내', '명단 엑셀(CSV)에 상세 정보 포함 여부 선택', '설치 프로그램 12.4.0'] },
   { v: 'MB12.3', date: '2026-11-16', items: ['설정 → 인수인계 도우미: 순서(4주 전~한 달 뒤), 인수인계서 양식과 칸마다 적을 내용·예시, 목회 비서 기록으로 초안 채우기, 저장·인쇄·글 파일', '간편 로그인: 설정에서 이 기기에 숫자 6자리를 정하면 다음부터 번호로 바로 로그인(이 기기에서만, 5번 틀리면 해제)', '로그인 정보 저장: 데스크톱 프로그램은 Windows 계정 암호화로 이메일·비밀번호 저장, 사이트는 이메일 기억하기와 브라우저 비밀번호 저장', '설치 프로그램 12.3.0(로그인 정보 저장을 쓰려면 새로 설치)'] },
   { v: 'MB12.2', date: '2026-11-13', items: ['일정 화면 월 달력에 배치한 공과(📚)가 보임. 누르면 그 주 예배로 이동, ‘공과 보기’로 켜고 끄기', '‘예배도 함께 보기’를 켜면 예배 칸 아래에 그 주 공과 이름 표시', '일정 목록에도 앞으로의 공과를 날짜순으로 함께 보기', '설치 프로그램 12.2.0'] },
   { v: 'MB12.1', date: '2026-11-13', items: ['교재 통째로 넣기: 교재 파일 여러 개(또는 묶음 파일 하나)를 고르면 부서·몇 년차만 정해 한 해 분량을 주일예배에 한 번에 배치', '같은 교재를 다시 넣으면 새 내용으로 바꾸고, 하나라도 실패하면 아무것도 바꾸지 않음', '공과 배치 현황에서 주마다 바로 수정·한 주 밀기·다시 넣기, 전체 주 보기', '설치 프로그램 12.1.0'] },

@@ -8,6 +8,9 @@ export function makeSeed(today) {
   let pid = 1; const P = (name, kind, dept, cls, by) => { S.people.push({ id: pid, name, kind, dept_id: dept, class_name: cls, birth_year: by || null, status: 'active' }); return pid++; };
   const kids = [P('가온', 'child', 1, '해님반', 2018), P('나래', 'child', 1, '해님반', 2018), P('다온', 'child', 1, '달님반', 2016), P('라온', 'child', 1, '달님반', 2016), P('마루', 'child', 1, '별님반', 2014), P('하늬', 'child', 1, '별님반', 2014), P('하늬', 'child', 1, '별님반', 2015)];
   P('김교사(가상)', 'teacher', 1, '해님반');
+  // 상세 정보 예시(모두 가상: 실제로 쓰이지 않는 번호·주소)
+  S.people.find(p => p.name === '김교사(가상)').info = { phone: '010-0000-0001', role: '해님반 담임', consent: '가상 예시' };
+  S.people.find(p => p.id === kids[0]).info = { guardian: '가온 보호자(가상)', guardian_rel: '어머니', guardian_phone: '010-0000-0002', address: '가상시 예시로 12', birth: '2018-' + today.slice(5, 7) + '-15', health: '땅콩 알레르기(가상 예시)', consent: '가상 예시: 보호자 서면 동의' };
   const yth = [P('청년 A', 'youth', 2, '1조', 2001), P('청년 B', 'youth', 2, '1조', 2002), P('청년 C', 'youth', 2, '2조', 2000), P('청년 D', 'youth', 2, '2조', 1999)];
   // 정기예배: 지난 7주 + 이번 주
   let sid = 1; const sv = (dept, title, date, sermon, scripture) => { S.services.push({ id: sid, dept_id: dept, title, date, time: dept === 1 ? '11:00' : '14:00', place: dept === 1 ? '교육관' : '본당', scripture, sermon_title: sermon, leader: dept === 1 ? '담당 교역자' : '청년부 담당', order_text: '묵상기도 · 찬양 · 말씀 · 헌금 · 축도', kind: 'regular' }); return sid++; };
