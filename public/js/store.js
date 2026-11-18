@@ -93,6 +93,7 @@ export function normalizeState(j) {
 export function createStore(storage, today = kstToday) {
   let S = null;
   const save = () => { // 저장이 막히거나 공간이 부족하면 조용히 넘어가지 않고 알린다
+    if (loadError) throw new ValidationError('저장된 데이터를 읽지 못해 저장을 멈췄어요(원본은 그대로예요). 복구 화면에서 먼저 해결해 주세요.');
     try { storage.setItem(KEY, JSON.stringify(S)); }
     catch { throw new ValidationError('저장 공간이 부족하거나 브라우저가 저장을 막아 저장하지 못했습니다. 지금 설정에서 ‘내보내기’로 백업해 두세요.'); }
   };
@@ -103,16 +104,36 @@ export function createStore(storage, today = kstToday) {
     if (!sv.sermon_title && l.title && l.pick.includes('title')) { sv.sermon_title = l.title; l.filled.title = true; } };
   const unfill = sv => { const l = sv.lesson; if (!l || !l.filled) return;
     if (l.filled.scripture && sv.scripture === l.scripture) sv.scripture = ''; if (l.filled.title && sv.sermon_title === l.title) sv.sermon_title = ''; delete l.filled; };
-  let recovered = false;
+  let loadError = null; // { raw, message }: 저장된 값을 읽지 못했을 때 원본을 들고 있다(저장은 막힘)
   function load() {
     let raw = null;
-    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); S = normalizeState(j); return S; } } catch {
-      // 저장된 값이 손상된 경우: 가상 데이터로 덮어쓰기 전에 원본을 따로 남겨 둔다(복구 가능)
-      if (raw) { try { storage.setItem(KEY + ':broken', raw); recovered = true; } catch { /* 무시 */ } }
+    try { raw = storage.getItem(KEY); if (raw) { const j = JSON.parse(raw); validateState(j); S = normalizeState(j); return S; } } catch (e) {
+      // 저장된 값을 읽지 못한 경우: 절대 덮어쓰지 않는다(MB12.7). 가상 데이터는 메모리에만 두고 저장은 막은 채, 복구 화면에서 사용자가 고르게 한다.
+      if (raw) { loadError = { raw, message: String((e && e.message) || e) }; S = normalizeState(makeSeed(today())); return S; }
     }
     S = normalizeState(makeSeed(today())); try { save(); } catch { /* 저장 불가 환경: 메모리만 사용 */ } return S;
   }
   load();
+  // 불러오기 실패 복구: 검사에 걸리는 선택 항목(목록)만 비우고 열 수 있는지 시험한다. 이 함수는 저장하지 않는다.
+  const SALVAGE = { docs: '행정 문서', curricula: '교재', growth: '주간 체크', schedules: '일정', visits: '심방 기록', assets: '비품', links: '내 사이트', todos: '할 일', supplies: '준비물', deptCfg: '부서 설정' };
+  function salvageRaw(raw) {
+    let j; try { j = JSON.parse(raw); } catch { return null; }
+    if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+    const dropped = new Set(); const err = o => { try { validateState(o); return ''; } catch (e) { return e.message; } };
+    for (const p of (Array.isArray(j.people) ? j.people : [])) if (p && p.info != null && (typeof p.info !== 'object' || Array.isArray(p.info))) { delete p.info; dropped.add('사람 상세 정보'); }
+    for (const s of (Array.isArray(j.services) ? j.services : [])) if (s && s.order_items !== undefined && !Array.isArray(s.order_items)) { delete s.order_items; dropped.add('예배 순서'); }
+    let msg = err(j);
+    for (let n = 0; msg && n <= Object.keys(SALVAGE).length; n++) {
+      let moved = false;
+      for (const k of Object.keys(SALVAGE)) {
+        if (j[k] === undefined || dropped.has(SALVAGE[k])) continue;
+        const copy = { ...j, [k]: k === 'deptCfg' ? {} : [] }; const m2 = err(copy);
+        if (!m2 || m2 !== msg) { j = copy; dropped.add(SALVAGE[k]); msg = m2; moved = true; break; } // 비우면 그 오류가 사라지거나 바뀌는 목록만
+      }
+      if (!moved) break;
+    }
+    return msg ? null : { state: j, dropped: [...dropped] };
+  }
   const get = () => S;
   let lastSeries = { made: 1, skipped: 0 };
   // 반복 규칙(s.repeat, s.until)대로 같은 내용을 여러 날짜에 만든다. 반복일 때만 같은 부서·이름·날짜가 이미 있으면 건너뛴다.
@@ -131,7 +152,22 @@ export function createStore(storage, today = kstToday) {
   const ev = id => S.events.find(e => e.id === id);
 
   const api = {
-    get, save, KEY, wasRecovered: () => recovered, lastSeries: () => lastSeries,
+    get, save, KEY, lastSeries: () => lastSeries,
+    // ----- 불러오기 실패(저장은 막혀 있고 원본은 그대로) -----
+    loadFailure: () => (loadError ? { message: loadError.message, size: loadError.raw.length, canSalvage: !!salvageRaw(loadError.raw) } : null),
+    loadFailureRaw: () => (loadError ? loadError.raw : null),
+    // 문제가 된 항목을 비우고 연다(비운 항목 이름 목록을 돌려줌). 이때부터 저장하면 서버 데이터가 이 상태로 바뀐다.
+    openSalvaged() {
+      if (!loadError) return []; const r = salvageRaw(loadError.raw); if (!r) throw new ValidationError('자동으로 열 수 없는 데이터예요. 원본을 내려받아 보관하고, 서버 저장본으로 되돌리거나 새로 시작하세요.');
+      const keep = loadError; loadError = null; const before = S; S = normalizeState(r.state);
+      try { save(); } catch (e) { S = before; loadError = keep; throw e; } return r.dropped;
+    },
+    // 비어 있는 상태로 새로 시작한다. 이 브라우저에서는 원본을 ‘:broken’에 한 부 남긴다(로그인 모드는 서버 저장본 이력이 남는다).
+    recoverStartFresh() {
+      if (!loadError) return; try { storage.setItem(KEY + ':broken', loadError.raw); } catch { /* 무시 */ }
+      const keep = loadError; loadError = null; const before = S; S = normalizeState(emptyState(today()));
+      try { save(); } catch (e) { S = before; loadError = keep; throw e; }
+    },
     resetDemo() { S = normalizeState(makeSeed(today())); save(); },
     startEmpty() { S = normalizeState(emptyState(today())); save(); },
     exportJson() { return JSON.stringify(S, null, 1); },
@@ -602,7 +638,12 @@ export function createStore(storage, today = kstToday) {
       const newcomers = api.newcomers(deptId, t).map(n => ({ name: n.person.name, next: n.next ? n.next[1] : '' }));
       const prev = S.services.filter(x => x.dept_id === deptId && x.kind === 'regular' && x.date < s.date).sort((a, b) => b.date.localeCompare(a.date)).find(x => api.attendanceCount(x.id).recorded > 0);
       const lastAtt = prev ? { date: prev.date, present: api.attendanceCount(prev.id).present } : null;
-      const recipients = learners.map(p => { const i = p.info || {}; const phone = kind === 'youth' ? (i.phone || '') : (i.guardian_phone || i.phone || ''); return { id: p.id, name: p.name, phone, who: kind === 'youth' ? '' : (i.guardian ? `${i.guardian}${i.guardian_rel ? '(' + i.guardian_rel + ')' : ''}` : '보호자') }; });
+      // 같은 번호(형제·자매)는 한 사람으로 묶는다: 문자도 한 번만 보내고 이름은 ‘가온·나래’처럼 붙인다
+      const phoneKey = x => String(x || '').split(/[,/]/)[0].replace(/\D/g, ''); const groups = new Map();
+      for (const p of learners) { const i = p.info || {}; const phone = kind === 'youth' ? (i.phone || '') : (i.guardian_phone || i.phone || ''); const key = phoneKey(phone) || 'p' + p.id;
+        const who = kind === 'youth' ? '' : (i.guardian ? `${i.guardian}${i.guardian_rel ? '(' + i.guardian_rel + ')' : ''}` : '보호자'); const g = groups.get(key);
+        if (g) { g.ids.push(p.id); g.names.push(p.name); } else groups.set(key, { id: p.id, ids: [p.id], names: [p.name], phone, who }); }
+      const recipients = [...groups.values()].map(g => ({ id: g.id, ids: g.ids, name: g.names.join('·'), phone: g.phone, who: g.who }));
       return { service: s, dept: dept(deptId), kind, next, events, tasks, schedules, low, birthdays, health, newcomers, lastAtt, recipients };
     },
     // 다가오는(오늘 이후 첫) 정기예배: 브리핑·가정 메시지의 기본값

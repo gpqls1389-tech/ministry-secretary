@@ -89,7 +89,7 @@ A.onStatus = (s, m) => { paintAcct(); if (s === 'failed' && m) toast(m, true); }
 A.onConflict = serverVersion => {
   const d = modal(`<div class="dlg"><h3>다른 기기에서 먼저 저장했어요</h3><p>같은 계정으로 다른 기기(또는 다른 창)에서 데이터를 바꿨습니다. 어느 쪽을 쓸지 고르세요.</p><p class="mute small">‘서버 데이터 불러오기’는 이 화면에서 한 변경을 버립니다. ‘내 변경으로 덮어쓰기’는 다른 기기에서 한 변경을 덮어씁니다.</p><div class="dlg-foot"><button data-a>서버 데이터 불러오기</button><button class="pri" data-b>내 변경으로 덮어쓰기</button></div></div>`);
   d.addEventListener('cancel', e => e.preventDefault());
-  $('[data-a]', d).onclick = () => location.reload();
+  $('[data-a]', d).onclick = () => { A.discardPending(); location.reload(); };
   $('[data-b]', d).onclick = async () => { d.close(); await A.forceSave(serverVersion); toast('내 변경으로 저장했어요.'); };
 };
 
@@ -144,7 +144,14 @@ function render() {
   const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
+  a11yPass();
 }
+// 키보드로도 쓸 수 있게: 링크 모양인데 주소가 없는 곳(탭·이름·메뉴)과 눌러서 여는 표 행에 포커스와 Enter·Space를 준다(MB12.7)
+function a11yPass(root = document) {
+  root.querySelectorAll('a:not([href])').forEach(a => { if (!a.hasAttribute('tabindex')) a.tabIndex = 0; if (!a.getAttribute('role')) a.setAttribute('role', 'button'); });
+  root.querySelectorAll('[data-open]:not(button):not(a)').forEach(el => { if (!el.hasAttribute('tabindex')) el.tabIndex = 0; if (el.tagName !== 'TR' && !el.getAttribute('role')) el.setAttribute('role', 'button'); });
+}
+document.addEventListener('keydown', e => { if ((e.key !== 'Enter' && e.key !== ' ') || e.isComposing) return; const el = e.target; if (el instanceof Element && el.matches('a:not([href])[tabindex], [data-open][tabindex]:not(button):not(a)')) { e.preventDefault(); el.click(); } });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 watchUpdates(VERSION, showUpdateBar);
 // ----- 할 일 시간 알림(팝업) -----
@@ -743,7 +750,7 @@ function vSettings() {
   const S = store.get(); const acct = A.mode === 'account'; const ds = store.daysSinceExport();
   const where = acct ? `<b>${esc(A.user.email)}</b> 계정의 서버 저장소에 저장됩니다. 같은 사이트를 써도 계정마다 데이터가 따로이고, 다른 기기에서 같은 계정으로 로그인하면 같은 데이터를 볼 수 있어요.` : `<b>이 브라우저(이 기기)</b>에만 저장되며 서버로 전송되지 않습니다. 다른 기기와 자동으로 공유되지 않으므로 아래 ‘내보내기’로 백업하세요.${A.reason === 'not-configured' ? ' (로그인 서버가 아직 연결되지 않았어요. README의 ‘로그인 켜기’를 따라 하면 사용자별 로그인이 켜져요.)' : ''}`;
   page('⚙️', '설정', '데이터 관리와 배포 정보', `
-  ${acct ? `<h2 style="margin-top:0">내 계정</h2><div class="card"><div class="row"><div class="sp"><b>${esc(A.user.name || A.user.email)}</b><br><span class="mute small">${esc(A.user.email)}</span></div><button data-act="logout">로그아웃</button><button data-act="changePw">비밀번호 변경</button><button data-act="logoutAll">모든 기기에서 로그아웃</button><button class="dng" data-act="deleteAcct">계정 삭제</button></div><p class="mute small" style="margin:10px 0 0">가입 상태: ${A.signup ? '<span class="tag warn">열려 있음</span> (초대 코드를 아는 사람은 가입할 수 있어요. 필요한 사람이 모두 가입했다면 관리자가 Cloudflare에서 INVITE_CODE를 삭제하고 다시 배포하면 닫혀요)' : '<span class="tag ok">닫힘</span>'}<br>저장 상태: ${(SAVE_TXT[A.status] || SAVE_TXT.saved)[0]} · 계정을 삭제하면 서버의 내 데이터가 모두 지워져요(되돌릴 수 없음). 삭제 전에 ‘내보내기’로 백업하세요.</p></div>` : ''}
+  ${acct ? `<h2 style="margin-top:0">내 계정</h2><div class="card"><div class="row"><div class="sp"><b>${esc(A.user.name || A.user.email)}</b><br><span class="mute small">${esc(A.user.email)}</span></div><button data-act="logout">로그아웃</button><button data-act="changePw">비밀번호 변경</button><button data-act="history">이전 저장본으로 되돌리기</button><button data-act="logoutAll">모든 기기에서 로그아웃</button><button class="dng" data-act="deleteAcct">계정 삭제</button></div><p class="mute small" style="margin:10px 0 0">가입 상태: ${A.signup ? '<span class="tag warn">열려 있음</span> (초대 코드를 아는 사람은 가입할 수 있어요. 필요한 사람이 모두 가입했다면 관리자가 Cloudflare에서 INVITE_CODE를 삭제하고 다시 배포하면 닫혀요)' : '<span class="tag ok">닫힘</span>'}<br>저장 상태: ${(SAVE_TXT[A.status] || SAVE_TXT.saved)[0]} · 계정을 삭제하면 서버의 내 데이터가 모두 지워져요(되돌릴 수 없음). 삭제 전에 ‘내보내기’로 백업하세요.</p></div>` : ''}
   ${acct ? `<h2>간편 로그인·로그인 정보 저장</h2><div class="box pad" id="pinbox"><p class="mute small">확인 중…</p></div>` : ''}
   <h2 ${acct ? '' : 'style="margin-top:0"'}>인수인계</h2><div class="callout"><span>🤝</span><div class="sp">부서를 다른 교사에게 넘길 때 쓰는 <b>인수인계 도우미</b>예요. 순서(4주 전~한 달 뒤), 인수인계서 양식과 칸마다 적을 내용·예시가 있고, 목회 비서 기록(인원·공과·일정·회계·비품)으로 초안을 채울 수 있어요.</div><button class="pri" data-go="#handover">인수인계 열기</button></div>
   <h2>데이터</h2><div class="callout ${S.demo ? 'warn' : ''}"><span>${S.demo ? '🧪' : '📒'}</span><div>현재 <b>${S.demo ? '가상 데이터' : '실제 데이터'}</b>를 사용 중입니다. 데이터는 ${where}${ds === null ? '' : ` (마지막 내보내기: ${ds === 0 ? '오늘' : ds + '일 전'})`}</div></div>
@@ -764,7 +771,7 @@ function vSettings() {
   <details class="small"><summary>설치 방법과 알아 둘 점</summary><ul><li><b>컴퓨터(Chrome·Edge)</b>: 주소창 오른쪽의 설치 아이콘, 또는 브라우저 메뉴에서 ‘앱으로 설치’(이름은 버전에 따라 조금 달라요)를 고르세요. 위의 ‘앱으로 설치’ 버튼이 보이면 그 버튼으로도 설치돼요.</li><li><b>Mac Safari</b>: 파일 메뉴 → ‘Dock에 추가’. <b>휴대폰</b>: 브라우저 메뉴의 ‘홈 화면에 추가’.</li><li>설치 버튼이 안 보이면 이미 설치했거나 이 브라우저가 지원하지 않는 경우예요. 그래도 사이트 주소로 그대로 쓸 수 있어요.</li><li>설치한 앱도 <b>인터넷 연결이 필요</b>해요(오프라인에서는 열리지 않아요).</li><li>설치한 앱에서 로그인 상태나 로컬 데이터가 브라우저와 따로 보이면, 설정의 ‘내보내기’·‘가져오기’로 옮기세요.</li><li>지우려면 앱 창의 메뉴(또는 운영체제의 앱 목록)에서 제거하세요. 로그인한 데이터는 지워지지 않아요.</li></ul></details>
   <h2>버전 기록 <span class="mute small">현재 ${esc(VERSION)}</span></h2><div class="changelog">${CHANGELOG.map(x => `<details ${x.v === VERSION ? 'open' : ''}><summary><b>${esc(x.v)}</b> <span class="mute small">${esc(x.date)}</span>${x.v === VERSION ? ' <span class="tag ok">현재</span>' : ''}</summary><ul class="small">${x.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`).join('')}</div>
   <h2>글꼴·오픈소스 고지</h2><p class="small">이 사이트의 글꼴은 <b>Pretendard</b> v1.3.9(Copyright © 2021 Kil Hyung-jin, SIL Open Font License 1.1)이며 수정 없이 그대로 사용합니다. 라이선스 전문: <a href="fonts/pretendard/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>한글(HWPX) 파일 만들기에는 <b>python-hwpx</b>의 빈 문서 틀(airmang, Apache License 2.0, 표 모양만 추가)을 씁니다. 라이선스 전문: <a href="vendor/hwpx/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a> · <a href="vendor/hwpx/NOTICE.txt" target="_blank" rel="noopener">NOTICE</a><br>PDF 글자 읽기에는 <b>pdf.js</b> 6.5.438(Mozilla, Apache License 2.0)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/pdfjs/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a><br>달력·타임라인·차트·디자인 변수에는 <b>vanilla-calendar-pro</b> 3.4.0, <b>frappe-gantt</b> 1.2.2, <b>uPlot</b> 1.6.32, <b>Open Props</b> 1.7.23(모두 MIT License)을 수정 없이 사용합니다. 라이선스 전문: <a href="vendor/vanilla-calendar-pro/LICENSE.txt" target="_blank" rel="noopener">달력</a> · <a href="vendor/frappe-gantt/LICENSE.txt" target="_blank" rel="noopener">타임라인</a> · <a href="vendor/uplot/LICENSE.txt" target="_blank" rel="noopener">차트</a> · <a href="vendor/open-props/LICENSE.txt" target="_blank" rel="noopener">변수</a></p>
-  <h2>개인정보 안내</h2><ul class="small"><li>명단의 상세 정보에 연락처·주소·보호자·알레르기 같은 개인정보를 적을 수 있어요(모두 선택). 주민등록번호·계좌번호는 입력받지 않습니다.</li><li>개인정보는 당사자(만 14세 미만은 법정대리인)의 동의를 받고 필요한 만큼만 적으세요(개인정보 보호법 제22조의2). 건강 정보처럼 민감한 정보는 따로 동의가 필요할 수 있으니 교회의 개인정보 방침을 확인하세요.</li><li>30분 동안 쓰지 않으면 자동으로 로그아웃돼요. 공용 컴퓨터에서는 간편 로그인·비밀번호 저장을 쓰지 마세요.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li><li>‘이미지 만들기(AI)’를 쓰면 입력한 그림 설명이 OpenAI로 전송됩니다(이메일·이름은 보내지 않고, 만든 그림은 서버에 저장하지 않아요). 개인정보는 설명에 적지 마세요.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
+  <h2>개인정보 안내</h2><ul class="small"><li>명단의 상세 정보에 연락처·주소·보호자·알레르기 같은 개인정보를 적을 수 있어요(모두 선택). 주민등록번호·계좌번호는 입력받지 않습니다.</li><li>개인정보는 당사자(만 14세 미만은 법정대리인)의 동의를 받고 필요한 만큼만 적으세요(개인정보 보호법 제22조의2). 건강 정보처럼 민감한 정보는 따로 동의가 필요할 수 있으니 교회의 개인정보 방침을 확인하세요.</li><li>30분 동안 쓰지 않으면 자동으로 로그아웃돼요. 공용 컴퓨터에서는 간편 로그인·비밀번호 저장을 쓰지 마세요.</li>${acct ? '<li>입력한 이름·출석·지출 기록은 이 사이트 관리자의 Cloudflare 계정(D1 데이터베이스)에 저장됩니다. 관리자는 기술적으로 저장된 데이터를 볼 수 있으니, 아이들 이름을 입력하는 것에 대해 교회의 개인정보 방침과 보호자 안내를 확인하세요.</li><li>비밀번호는 원문이 아닌 해시로 저장됩니다.</li><li>사고에 대비해 서버가 이전 저장본을 최근 30개까지 보관해요(편집 중 30분마다, 데이터를 비우거나 크게 줄일 때). 지운 사람의 정보도 이 저장본에는 남아 있을 수 있고, 계정을 삭제하면 함께 지워져요. 이 기기에는 서버에 올리지 못한 변경이 올릴 때까지만 임시로 남아요.</li><li>‘이미지 만들기(AI)’를 쓰면 입력한 그림 설명이 OpenAI로 전송됩니다(이메일·이름은 보내지 않고, 만든 그림은 서버에 저장하지 않아요). 개인정보는 설명에 적지 마세요.</li>' : '<li>사이트 주소를 아는 사람은 누구나 앱을 열 수 있지만, 입력한 데이터는 각자의 브라우저에만 있어 서로 보이지 않습니다.</li><li>공용 PC에서는 사용 후 브라우저 데이터를 삭제해 정리하세요.</li>'}</ul>
   <h2>정보</h2><dl class="props"><dt>버전</dt><dd><b>${esc(VERSION)}</b></dd><dt>저장 방식</dt><dd>${acct ? '계정별 서버 저장(Cloudflare D1)' : `localStorage (${window.__memOnly ? '사용 불가 → 임시 메모리' : '사용 중'})`}</dd><dt>통화·시간대</dt><dd>원화(정수) · Asia/Seoul</dd></dl>`);
   if (acct) { initImageBox(); initPinBox(); }
 }
@@ -875,7 +882,7 @@ function vDoc(id) {
     if (x.type === 'table') return `<div class="f"><b>${esc(x.label)}</b><div class="tablewrap"><table class="t doctable"><thead><tr>${x.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${val.map((r, ri) => `<tr>${x.cols.map((_, ci) => `<td><input class="cell-in" data-dt="${x.k}" data-r="${ri}" data-c="${ci}" value="${esc(r[ci] || '')}" maxlength="300"></td>`).join('')}</tr>`).join('')}</tbody></table></div><button class="sm ghost noprint" data-act="docRow" data-id="${id}" data-k="${x.k}">+ 줄 추가</button></div>`;
     return ''; };
   const B = formBlocks(f, v, { title: f.name, sub: (store.dept(doc.dept_id) || {}).name || '' });
-  page(f.icon, esc(doc.title), `${esc(docLabel(doc))} · 고친 날 ${esc(doc.updated || '')}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#admin">◀ 행정</button><button class="pri" data-act="saveDocAct" data-id="${id}">저장</button><button data-act="refillDoc" data-id="${id}">기록으로 빈 칸 채우기</button><button data-act="docPrint" data-id="${id}">인쇄·PDF</button><button data-act="docHwpx" data-id="${id}">📄 한글(HWPX)로 받기</button><span class="sp"></span><button class="dng" data-act="delDoc" data-id="${id}">삭제</button></div>
+  page(f.icon, doc.title, `${esc(docLabel(doc))} · 고친 날 ${esc(doc.updated || '')}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#admin">◀ 행정</button><button class="pri" data-act="saveDocAct" data-id="${id}">저장</button><button data-act="refillDoc" data-id="${id}">기록으로 빈 칸 채우기</button><button data-act="docPrint" data-id="${id}">인쇄·PDF</button><button data-act="docHwpx" data-id="${id}">📄 한글(HWPX)로 받기</button><span class="sp"></span><button class="dng" data-act="delDoc" data-id="${id}">삭제</button></div>
   <div class="noprint docform"><label class="f">문서 이름<input data-dtitle value="${esc(doc.title)}" maxlength="80"></label>${f.fields.map(fld2).join('')}</div>
   <div class="printonly docprint">${blocksHtml(B)}</div>
   <p class="mute small noprint">목회 비서 기록으로 채운 칸은 꼭 확인하세요. 성경 구절은 개역개정으로 확인하고, 개인정보가 들어간 문서는 필요한 사람에게만 나누세요.</p>`);
@@ -900,15 +907,15 @@ function blocksHtml(B) {
 async function copyText(text, area) { try { await navigator.clipboard.writeText(text); toast('복사했어요.'); } catch { if (area) area.select(); toast('복사하지 못했어요. 글을 선택해 Ctrl+C로 복사하세요.', true); } }
 function familyForm(serviceId) {
   const data = store.weeklyData(serviceId); const s = data.service; const season = churchLabel(s.date); const mode = s.date < today() ? 'after' : 'before';
-  const withPhone = data.recipients.filter(r => r.phone); const noPhone = data.recipients.length - withPhone.length;
+  const withPhone = data.recipients.filter(r => r.phone); const noPhone = data.recipients.filter(r => !r.phone).reduce((a, r) => a + r.ids.length, 0);
   const d = modal(`<div class="dlg wide"><h3>📣 ${esc(data.dept.name)} 가정 메시지 <span class="mute small">${md(s.date)} ${esc(s.title)}</span></h3>
     ${!s.lesson ? '<div class="callout warn small"><span>📚</span><div>이 예배에는 공과가 없어서 예배의 본문·설교 제목으로 만들었어요.</div></div>' : ''}
     <div class="row" style="margin-bottom:8px"><label class="small">보낼 때 <select id="fmMode"><option value="before"${mode === 'before' ? ' selected' : ''}>예배 전(미리 안내)</option><option value="after"${mode === 'after' ? ' selected' : ''}>예배 후(오늘 배운 말씀)</option></select></label><span class="sp"></span><button class="sm" data-reset>다시 만들기</button></div>
     <textarea id="fmText" rows="16" style="width:100%"></textarea><p class="mute small">질문·미션은 일반 틀이에요. 우리 부서 말투로 고쳐 쓰세요. 고친 글이 아래 문자 보내기에도 그대로 쓰여요.</p>
-    <h4 style="margin:12px 0 6px">받는 사람 ${withPhone.length}명${noPhone ? ` <span class="mute small">(연락처 없는 사람 ${noPhone}명: 명단에서 이름을 눌러 ${data.kind === 'youth' ? '휴대폰' : '보호자 연락처'}를 적으세요)</span>` : ''}</h4>
+    <h4 style="margin:12px 0 6px">받는 가정 ${withPhone.length}곳${noPhone ? ` <span class="mute small">(연락처 없는 사람 ${noPhone}명: 명단에서 이름을 눌러 ${data.kind === 'youth' ? '휴대폰' : '보호자 연락처'}를 적으세요)</span>` : ''}</h4>
     ${withPhone.length ? `<div class="row" style="margin-bottom:8px"><label class="small"><input type="checkbox" id="fmName" checked> 한 사람씩 보낼 때 이름 넣기</label><span class="sp"></span><button class="sm" data-allnum>번호 모두 복사(단체 문자용)</button></div>
       <div class="tablewrap" style="max-height:220px;overflow:auto"><table class="t"><tbody>${withPhone.map(r => `<tr><td><b>${esc(r.name)}</b> <span class="mute small">${esc(r.who)}</span></td><td>${esc(r.phone)}</td><td class="nowrap"><a class="btnlike sm" data-sms="${r.id}" href="#">문자 보내기</a></td></tr>`).join('')}</tbody></table></div>
-      <p class="mute small">‘문자 보내기’는 휴대폰(또는 문자 앱이 있는 기기)에서 문자 앱을 열어요. 컴퓨터에서는 ‘복사’ 후 단체방에 붙여 넣으세요.</p>` : ''}
+      <p class="mute small">‘문자 보내기’는 휴대폰(또는 문자 앱이 있는 기기)에서 문자 앱을 열어요. 컴퓨터에서는 ‘복사’ 후 단체방에 붙여 넣으세요. 같은 번호(형제·자매)는 한 번만 보내요.</p>` : ''}
     <div class="dlg-foot"><button data-x>닫기</button><button class="pri" data-copy>글 복사</button></div></div>`);
   const ta = $('#fmText', d); const make = () => { ta.value = familyMessage(data, { mode: $('#fmMode', d).value, season }); }; make();
   $('#fmMode', d).onchange = make; $('[data-reset]', d).onclick = make; $('[data-x]', d).onclick = () => d.close(); $('[data-copy]', d).onclick = () => copyText(ta.value, ta);
@@ -924,7 +931,7 @@ function vBrief(id) {
   const b = store.weeklyData(id); const s = b.service; const l = s.lesson; const season = churchLabel(s.date);
   const others = store.services(s.dept_id).filter(x => x.kind === 'regular').sort((a, c) => a.date.localeCompare(c.date)); const i = others.findIndex(x => x.id === id);
   const li = (arr, f) => arr.length ? `<ul>${arr.map(x => `<li>${f(x)}</li>`).join('')}</ul>` : '<p class="mute small">없음</p>';
-  page('🧑‍🏫', `${esc(b.dept.name)} 교사 브리핑`, `${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(season)}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#service/${id}">◀ 예배</button>${i > 0 ? `<button data-go="#brief/${others[i - 1].id}">◀ 지난주</button>` : ''}${i >= 0 && i < others.length - 1 ? `<button data-go="#brief/${others[i + 1].id}">다음 주 ▶</button>` : ''}<span class="sp"></span><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><button data-act="briefCopy" data-id="${id}">글 복사(단체방용)</button><button class="pri" data-act="print">인쇄</button></div>
+  page('🧑‍🏫', `${b.dept.name} 교사 브리핑`, `${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(season)}`, `<div class="row noprint" style="margin-bottom:12px"><button data-go="#service/${id}">◀ 예배</button>${i > 0 ? `<button data-go="#brief/${others[i - 1].id}">◀ 지난주</button>` : ''}${i >= 0 && i < others.length - 1 ? `<button data-go="#brief/${others[i + 1].id}">다음 주 ▶</button>` : ''}<span class="sp"></span><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><button data-act="briefCopy" data-id="${id}">글 복사(단체방용)</button><button class="pri" data-act="print">인쇄</button></div>
   <div class="briefgrid">
     <section class="box pad"><h3>⛪ 예배</h3><dl class="props"><dt>예배</dt><dd>${esc(s.title)}</dd><dt>인도</dt><dd>${esc(s.leader) || '-'}</dd><dt>본문</dt><dd>${esc(s.scripture) || '-'}</dd><dt>설교</dt><dd>${esc(s.sermon_title) || '-'}</dd></dl>${s.order_text ? `<h4>순서</h4><div class="small" style="white-space:pre-wrap">${esc(s.order_text)}</div>` : ''}</section>
     <section class="box pad"><h3>📚 공과</h3>${l ? `<p><b>${esc(lessonLabel(l))}</b><br><span class="mute small">${esc(l.cname || '')}</span></p><dl class="props">${l.scripture ? `<dt>본문</dt><dd>${esc(l.scripture)}</dd>` : ''}${l.memory ? `<dt>암송</dt><dd>${esc(l.memory)}</dd>` : ''}${l.activity ? `<dt>활동</dt><dd>${esc(l.activity)}</dd>` : ''}${l.supplies ? `<dt>준비물</dt><dd><b>${esc(l.supplies)}</b></dd>` : ''}${l.note ? `<dt>메모</dt><dd>${esc(l.note)}</dd>` : ''}</dl>` : s.lesson_hold ? '<p>이번 주는 <b>공과 쉼</b>이에요.</p>' : '<p class="mute small">배치된 공과가 없어요.</p>'}${b.next && b.next.lesson ? `<p class="small mute">다음 주(${md(b.next.date)}): ${esc(lessonLabel(b.next.lesson))}</p>` : ''}</section>
@@ -940,6 +947,50 @@ function vBrief(id) {
       ${!b.lastAtt && !b.health.length && !b.birthdays.length && !b.newcomers.length && !b.low.length ? '<p class="mute small">표시할 내용이 없어요.</p>' : ''}</section>
   </div>
   <p class="mute small noprint">돌봄 칸에는 개인정보가 있어요. 단체방에 올릴 때는 ‘글 복사’ 후 필요 없는 부분을 지우고, 인쇄물은 교사 모임 뒤 정리하세요.</p>`);
+}
+
+// ----- 저장 이력(서버)·불러오기 실패 복구 (MB12.7) -----
+const kb = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1e3)) + 'KB');
+const hist = async () => { try { return (await accountApi.history()).items; } catch (e) { toast(e.message, true); return null; } };
+function historyRows(items) {
+  return items.length ? `<div class="tablewrap" style="max-height:300px;overflow:auto"><table class="t"><thead><tr><th>저장한 때</th><th class="num">인원</th><th class="num">출석 기록</th><th class="num">크기</th><th></th></tr></thead><tbody>${items.map(x => `<tr><td>${esc(new Date(x.at).toLocaleString('ko-KR'))}</td><td class="num">${x.people}</td><td class="num">${x.att}</td><td class="num">${kb(x.bytes)}</td><td class="nowrap"><button class="sm pri" data-hrestore="${x.id}">이 저장본으로 되돌리기</button> <button class="sm ghost" data-hdown="${x.id}">내려받기</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mute small">아직 보관된 저장본이 없어요. 편집하면 30분마다 이전 상태가 자동으로 보관돼요.</p>';
+}
+function wireHistory(root) {
+  $$('[data-hdown]', root).forEach(b => { b.onclick = async () => { try { const r = await accountApi.historyGet(b.dataset.hdown); download(`목회비서_저장본_${new Date(r.at).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.json`, r.state, 'application/json'); toast('저장본을 내려받았어요. 개인정보가 들어 있으니 안전하게 보관하세요.'); } catch (e) { toast(e.message, true); } }; });
+  $$('[data-hrestore]', root).forEach(b => { b.onclick = async () => {
+    if (!(await ask('이 저장본으로 되돌립니다. 지금 데이터는 되돌리기 직전에 이력에 한 번 보관되니 다시 돌아올 수 있어요. 계속할까요?', '되돌리기'))) return;
+    try { await accountApi.historyRestore(b.dataset.hrestore); A.discardPending(); toast('되돌렸어요. 새로 불러옵니다.'); setTimeout(() => location.reload(), 600); } catch (e) { toast(e.message, true); } }; });
+}
+async function openHistory() {
+  if (A.mode !== 'account') return toast('로그인한 계정에서만 쓸 수 있어요.', true);
+  if (A.status !== 'saved') return toast('저장이 끝난 뒤에 열어 주세요.', true);
+  const items = await hist(); if (!items) return;
+  const d = modal(`<div class="dlg wide"><h3>🕘 이전 저장본으로 되돌리기</h3><p class="mute small">편집하는 동안 30분에 한 번, 그리고 데이터를 비우거나 크게 줄이는 저장 직전에 서버가 이전 상태를 보관해요(최근 30개). 되돌리면 되돌리기 직전 상태도 보관돼요. 영수증 사진은 들어 있지 않아요.</p>${historyRows(items)}<div class="dlg-foot"><button data-x>닫기</button></div></div>`);
+  $('[data-x]', d).onclick = () => d.close(); wireHistory(d);
+}
+async function showRecovery() {
+  const f = store.loadFailure(); const el = document.createElement('div'); el.id = 'recover'; el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-modal', 'true'); document.body.appendChild(el);
+  const items = A.mode === 'account' ? await hist() : null;
+  el.innerHTML = `<div class="recover-card"><h2>⚠️ 저장된 데이터를 읽지 못했어요</h2>
+    <p><b>데이터는 지우지 않았어요.</b> 여기서 고를 때까지 아무것도 덮어쓰지 않고, 저장도 멈춰 둡니다.</p>
+    <p class="mute small">원인: ${esc(f.message)} (원본 ${kb(f.size)})</p>
+    <ol class="recover-steps">
+      <li><b>먼저 원본을 내려받아 보관하세요.</b> <button data-rawdown>원본 내려받기</button></li>
+      ${A.mode === 'account' ? `<li><b>서버에 보관된 이전 저장본으로 되돌리기</b>${items ? historyRows(items) : '<p class="mute small">저장본 목록을 불러오지 못했어요.</p>'}</li>` : ''}
+      <li><b>문제가 된 부분만 비우고 열기</b> ${f.canSalvage ? '<button data-salvage>비우고 열기</button><span class="mute small"> 비운 항목은 저장하면 사라져요(서버에는 이전 상태가 이력으로 남아요).</span>' : '<span class="mute small">이 데이터는 자동으로 열 수 없어요.</span>'}</li>
+      <li><b>비어 있는 데이터로 새로 시작</b> <button class="dng" data-fresh>새로 시작</button></li></ol>
+    <p class="mute small">문제가 계속되면 내려받은 원본 파일을 개발자에게 보내 주세요.</p></div>`;
+  const done = () => { el.remove(); render(); };
+  $('[data-rawdown]', el).onclick = () => { download(`목회비서_원본_${today()}.json`, store.loadFailureRaw(), 'application/json'); toast('원본을 내려받았어요. 개인정보가 들어 있으니 안전하게 보관하세요.'); };
+  wireHistory(el);
+  const sv = $('[data-salvage]', el); if (sv) sv.onclick = async () => { if (!(await ask('문제가 된 항목을 비우고 엽니다. 이때부터 저장하면 서버 데이터가 이 상태로 바뀌어요(서버에는 이전 상태가 이력으로 남아요). 원본은 내려받으셨나요?', '비우고 열기'))) return; A.snapNext = true; try { const dropped = store.openSalvaged(); toast(dropped.length ? `${dropped.join(', ')} 항목을 비우고 열었어요.` : '열었어요.'); done(); } catch (e) { toast(e.message, true); } };
+  $('[data-fresh]', el).onclick = async () => { if (!(await ask('비어 있는 데이터로 새로 시작합니다. 읽지 못한 원본은 서버 이력(이 브라우저에서는 따로 보관본)에 남지만 화면에서는 사라져요. 원본은 내려받으셨나요?', '새로 시작'))) return; A.snapNext = true; try { store.recoverStartFresh(); location.hash = '#home'; toast('새로 시작했어요.'); done(); } catch (e) { toast(e.message, true); } };
+}
+function pendingConflictDialog() {
+  const p = A.pendingConflict; const d = modal(`<div class="dlg"><h3>이 기기에 저장하지 못한 변경이 남아 있어요</h3><p>${esc(new Date(p.at).toLocaleString('ko-KR'))}에 한 변경을 서버에 올리지 못했는데, 그 사이 다른 기기에서 먼저 저장해서 자동으로 합칠 수 없어요.</p><p class="mute small">내려받아 보관한 뒤 필요한 내용만 다시 입력하거나, 설정의 ‘가져오기’로 비교해 볼 수 있어요. ‘버리기’를 누르면 이 기기의 임시 보관이 지워져요.</p><div class="dlg-foot"><button data-keep>나중에 정할게요</button><button data-down>내려받기</button><button class="dng" data-drop>버리기</button></div></div>`);
+  d.addEventListener('cancel', e => e.preventDefault());
+  $('[data-keep]', d).onclick = () => d.close(); $('[data-down]', d).onclick = () => { download(`목회비서_저장못한변경_${today()}.json`, p.state, 'application/json'); toast('내려받았어요. 개인정보가 들어 있으니 안전하게 보관하세요.'); };
+  $('[data-drop]', d).onclick = async () => { if (await ask('이 기기에 남은 변경을 지울까요? 되돌릴 수 없어요.', '버리기')) { A.discardPending(); d.close(); toast('지웠어요.'); } };
 }
 
 // ----- 인수인계 도우미 -----
@@ -1032,6 +1083,7 @@ const ACT = {
   pasteCurr: async d => { const rows = parseLessonText($('#cpaste').value); if (!rows.length) { toast('넣을 줄을 찾지 못했어요. 한 줄에 한 과씩 적어 주세요.', true); return; }
     if (await ask(`${d.year}년차를 아래 ${rows.length}과로 바꿀까요?\n\n${rows.slice(0, 5).map(r => `${r.no}과 ${r.title} ${r.scripture}`).join('\n')}${rows.length > 5 ? `\n…외 ${rows.length - 5}과` : ''}`, '넣기')) { guard(() => store.setCurriculumYear(Number(d.id), Number(d.year), rows), `${rows.length}과를 넣었어요.`); render(); } },
   lessonEdit: d => lessonEditor(Number(d.id)),
+  history: () => openHistory(),
   personCard: d => personCard(Number(d.id)),
   orderEdit: d => orderEditor(Number(d.id)),
   newDoc: d => newDocFlow(d.key, d.ctx ? JSON.parse(d.ctx) : null),
@@ -1155,8 +1207,8 @@ const ACT = {
   editSeason: d => { const s = d.id ? store.get().seasons.find(x => x.id === Number(d.id)) : { dept_id: workDept(), year: UI.year }; form({ title: '절기 계획', values: s, fields: [{ k: 'name', label: '절기명', req: true }, { k: 'start', label: '시작일', type: 'date' }, { k: 'end', label: '종료일', type: 'date' }, { k: 'theme', label: '주제' }, { k: 'scripture', label: '성경 본문 (개역개정 · 인용 전 확인)' }, { k: 'plan', label: '예배·교육·행사 계획', type: 'textarea' }], onSubmit: o => store.saveSeason({ ...s, ...o, start: o.start || null, end: o.end || null }) }); },
   delSeason: async d => { if (await ask('이 절기 계획을 삭제할까요?', '삭제')) { store.deleteSeason(Number(d.id)); render(); } },
   editBudget: () => form({ title: '예산 항목', intro: `<p class="mute small">${UI.year}년 · ${esc(store.dept(workDept()).name)} · 같은 항목명이면 금액이 수정됩니다.</p>`, fields: [{ k: 'category', label: '항목', req: true }, { k: 'amount', label: '예산액 (원)', type: 'number', req: true }], onSubmit: o => store.saveBudget(workDept(), UI.year, o.category.trim(), Number(o.amount)) }),
-  resetDemo: async () => { if (await ask('가상 데이터로 되돌립니다. 지금 입력한 내용은 사라집니다.', '초기화')) { store.resetDemo(); render(); toast('가상 데이터로 초기화했습니다.'); } },
-  startEmpty: async () => { if (await ask('비어 있는 실제 데이터로 시작합니다. 현재(가상) 데이터는 사라집니다. 먼저 ‘내보내기’로 백업할 수 있습니다.', '비우고 시작')) { store.startEmpty(); location.hash = '#home'; render(); toast('실제 데이터로 시작합니다.'); } },
+  resetDemo: async () => { if (await ask('가상 데이터로 되돌립니다. 지금 입력한 내용은 사라집니다.', '초기화')) { A.snapNext = true; store.resetDemo(); render(); toast('가상 데이터로 초기화했습니다.'); } },
+  startEmpty: async () => { if (await ask('비어 있는 실제 데이터로 시작합니다. 현재(가상) 데이터는 사라집니다. 먼저 ‘내보내기’로 백업할 수 있습니다.', '비우고 시작')) { A.snapNext = true; store.startEmpty(); location.hash = '#home'; render(); toast('실제 데이터로 시작합니다.'); } },
   export: () => { download(`목회비서_백업_${today()}.json`, store.exportJson(), 'application/json'); guard(() => store.markExported(), '백업 파일을 내려받았어요. 안전한 곳에 보관하세요.'); render(); },
   import: () => $('#file').click(),
   print: () => window.print(),
@@ -1201,7 +1253,9 @@ const ACT = {
     const rows = [['이름', '구분', '부서', '반·조', '출생년도', '상태', ...(full ? F.map(f => f.label) : [])], ...store.people({ deptId: did(), status: UI.pstatus || 'active' }).map(p => [p.name, KIND[p.kind], (store.dept(p.dept_id) || {}).name || '', p.class_name, p.birth_year || '', p.status, ...(full ? F.map(f => (p.info || {})[f.k] || '') : [])])]; download(`명단_${today()}.csv`, toCsv(rows)); },
   csvTx: () => { const rows = [['날짜', '부서', '구분', '항목', '적요', '행사', '금액', '영수증'],...store.transactions({ deptId: did(), year: UI.year, month: UI.mmonth || undefined }).map(t => [t.date, (store.dept(t.dept_id) || {}).name, t.kind === 'income' ? '수입' : '지출', t.category, t.memo, (store.ev(t.event_id) || {}).title || '', t.amount, t.receipt ? '있음' : ''])]; download(`거래내역_${UI.year}_${today()}.csv`, toCsv(rows)); },
   // --- 계정 ---
-  logout: async () => { if (AUTH_BUSY()) return toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true); await accountApi.logout().catch(() => {}); location.reload(); },
+  logout: async () => { if (AUTH_BUSY()) return toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true);
+    if (A.status === 'failed' && !(await ask('아직 서버에 저장하지 못한 변경이 있어요. 이 기기에 임시로 남겨 두고 로그아웃할까요? 다음에 같은 계정으로 로그인하면 되살려요.', '로그아웃'))) return;
+    await accountApi.logout().catch(() => {}); location.reload(); },
   logoutAll: async () => { if (AUTH_BUSY()) return toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true); if (!(await ask('이 기기를 포함해 모든 기기에서 로그아웃합니다. 기기를 잃어버렸거나 남이 내 계정을 썼을 수 있을 때 사용하세요. 저장된 데이터는 지워지지 않아요.', '모두 로그아웃'))) return; await accountApi.logoutAll().catch(e => { throw e; }); location.reload(); },
   changePw: () => form({ title: '비밀번호 변경', intro: '<p class="mute small">변경하면 다른 기기는 모두 로그아웃돼요.</p>', fields: [{ k: 'cur', label: '현재 비밀번호', type: 'password', req: true }, { k: 'nxt', label: '새 비밀번호 (10자 이상)', type: 'password', req: true }], onSubmit: async o => { try { await accountApi.changePassword(o.cur, o.nxt); toast('비밀번호를 바꿨어요.'); } catch (e) { throw e; } } }),
   deleteAcct: async () => { if (!(await ask('계정과 서버에 저장된 내 데이터가 모두 삭제돼요. 되돌릴 수 없어요. 먼저 ‘내보내기’로 백업하셨나요?', '계속'))) return; form({ title: '계정 삭제 확인', intro: '<p class="mute small">비밀번호를 입력하면 계정이 삭제돼요.</p>', fields: [{ k: 'pw', label: '비밀번호', type: 'password', req: true }], submit: '계정 삭제', onSubmit: async o => { await accountApi.deleteAccount(o.pw); location.reload(); } }); },
@@ -1243,7 +1297,8 @@ document.addEventListener('change', e => {
   else if (t.matches('[data-repimg]')) { UI.rep.rc = t.checked; render(); }
   else if (t.matches('[data-pstatus]')) { UI.pstatus = t.value; render(); }
   else if (t.matches('[data-mmonth]')) { UI.mmonth = t.value; render(); }
-  else if (t.id === 'file') { const f = t.files[0]; if (!f) return; f.text().then(async txt => { if (await ask('현재 데이터를 이 파일의 내용으로 바꿉니다. 계속할까요?', '가져오기')) { guard(() => { store.importJson(txt); render(); }, '가져왔습니다.'); } t.value = ''; }); }
+  else if (t.id === 'file') { const f = t.files[0]; if (!f) return; f.text().then(async txt => { if (await ask('현재 데이터를 이 파일의 내용으로 바꿉니다. 계속할까요?', '가져오기')) { guard(() => { A.snapNext = true; store.importJson(txt); render(); }, '가져왔습니다.'); } t.value = ''; }); }
 });
-render();
-if (store.wasRecovered()) toast('저장된 데이터가 손상되어 가상 데이터로 시작했어요. 손상된 원본은 브라우저에 따로 보관돼 있어요.', true);
+if (store.loadFailure()) showRecovery(); else render(); // 저장된 데이터를 읽지 못했으면 덮어쓰지 않고 복구 화면부터
+if (A.pendingNote) toast(A.pendingNote);
+if (A.pendingConflict) pendingConflictDialog();

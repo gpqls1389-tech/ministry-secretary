@@ -1,5 +1,6 @@
 // 로그인과 사용자별 서버 저장. /api가 없거나(정적 미리보기) 서버 설정 전이면 로컬 모드(이 브라우저에만 저장)로 동작한다.
-import { KEY, emptyState } from './store.js';
+import { KEY, emptyState, validateState } from './store.js';
+import { writePending, readPending, clearPending, pendingAction } from './pending.js';
 import { loadImages, imgSrc } from './images.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -17,6 +18,9 @@ export const accountApi = {
   changePassword: (current, next) => req('POST', '/api/password', { current, next }),
   deleteAccount: password => req('POST', '/api/delete-account', { password }),
   pinStatus: () => req('GET', '/api/pin'),
+  history: () => req('GET', '/api/history'),
+  historyGet: id => req('GET', '/api/history/' + encodeURIComponent(id)),
+  historyRestore: id => req('POST', '/api/history/restore', { id }),
   pinSetup: (password, pin, label) => req('POST', '/api/pin', { password, pin, label }),
   pinRemove: (all = false) => req('POST', '/api/pin/remove', { all }),
 };
@@ -45,6 +49,12 @@ function localStorageSafe() {
   catch { const m = new Map(); window.__memOnly = true; return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v) }; }
 }
 
+// 서버에 올리지 못한 변경의 임시 보관(이 기기, 계정별). 서버 저장에 성공하면 지운다.
+const lsRaw = () => { try { return window.localStorage; } catch { return null; } };
+const pendingWrite = v => { const ls = lsRaw(); if (ls && AUTH.user) writePending(ls, AUTH.user.email, v, AUTH.version); };
+const pendingClear = () => { const ls = lsRaw(); if (ls && AUTH.user) clearPending(ls, AUTH.user.email); };
+AUTH.discardPending = () => pendingClear();
+
 // ---- 서버 저장 어댑터: store는 동기 저장소를 기대하므로 메모리에 두고 변경 시 서버로 보낸다 ----
 function makeAdapter(initial) {
   let cache = initial, dirty = false, inflight = false, timer = null, retry = 0, blocked = false;
@@ -54,7 +64,10 @@ function makeAdapter(initial) {
     try {
       while (dirty && !blocked) {
         dirty = false; const snap = cache;
-        try { const r = await req('PUT', '/api/state', { baseVersion: AUTH.version, state: snap }); AUTH.version = r.version; retry = 0; if (!dirty) set('saved'); }
+        try {
+          const wantSnap = AUTH.snapNext === true; // 비우기·가져오기·덮어쓰기처럼 되돌릴 수 있어야 하는 저장은 서버가 이전 상태를 꼭 보관하게 한다
+          const r = await req('PUT', '/api/state', wantSnap ? { baseVersion: AUTH.version, state: snap, snap: true } : { baseVersion: AUTH.version, state: snap });
+          AUTH.version = r.version; retry = 0; if (wantSnap) AUTH.snapNext = false; if (!dirty) { set('saved'); pendingClear(); } else pendingWrite(cache); } // 그 사이 더 바뀌었으면 새 서버 버전을 기준으로 임시 보관을 갱신
         catch (e) {
           dirty = true;
           if (e.status === 409) { blocked = true; set('failed', '다른 기기에서 먼저 저장했어요.'); AUTH.onConflict(e.data.version); return; }
@@ -65,11 +78,11 @@ function makeAdapter(initial) {
       }
     } finally { inflight = false; }
   }
-  AUTH.forceSave = async serverVersion => { AUTH.version = serverVersion; blocked = false; dirty = true; set('saving'); await flush(); };
+  AUTH.forceSave = async serverVersion => { AUTH.snapNext = true; AUTH.version = serverVersion; blocked = false; dirty = true; set('saving'); await flush(); };
   window.addEventListener('beforeunload', e => { if (dirty || inflight || AUTH.status === 'failed') { e.preventDefault(); e.returnValue = ''; } });
   return {
     getItem: k => (k === KEY ? cache : null),
-    setItem(k, v) { if (k !== KEY) return; cache = v; dirty = true; set('saving'); clearTimeout(timer); timer = setTimeout(flush, 700); }, // 저장 오류는 상태 표시로 알림(동기 오류를 던지지 않음)
+    setItem(k, v) { if (k !== KEY) return; cache = v; dirty = true; pendingWrite(v); set('saving'); clearTimeout(timer); timer = setTimeout(flush, 700); }, // 저장 오류는 상태 표시로 알림(동기 오류를 던지지 않음). 서버에 올리기 전까지 이 기기에도 임시 보관
   };
 }
 
@@ -105,7 +118,7 @@ function showLogin(signupOpen, { preview = false, quick = null } = {}) {
           </div>
           <p class="auth-foot">로그인하면 사용자마다 따로 저장돼요. 같은 사이트를 써도 다른 사람의 데이터는 보이지 않아요. 공용 컴퓨터에서는 사용 후 꼭 로그아웃하세요. 비밀번호를 잊으면 관리자에게 문의하세요(자동 재설정은 아직 없어요).</p>
         </section></div>`;
-      el.querySelectorAll('[data-t]').forEach(a => (a.onclick = () => { tab = a.dataset.t; draw(); }));
+      el.querySelectorAll('[data-t]').forEach(a => { a.onclick = () => { tab = a.dataset.t; draw(); }; a.tabIndex = 0; a.setAttribute('role', 'button'); a.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); a.click(); } }; });
       if (tab === 'quick') {
         const pin = el.querySelector('[name=pin]'); pin.focus();
         pin.oninput = () => { pin.value = pin.value.replace(/\D/g, '').slice(0, 6); if (pin.value.length === 6 && !preview) el.querySelector('form').requestSubmit(); };
@@ -148,6 +161,17 @@ export async function initAuth() {
   if (!me.user) { await showLogin(me.signup, { quick: me.quick }); me = await req('GET', '/api/me'); }
   AUTH.mode = 'account'; AUTH.user = me.user; AUTH.signup = !!me.signup;
   const st = await req('GET', '/api/state'); AUTH.version = st.version;
-  AUTH.storage = makeAdapter(st.state ?? JSON.stringify(emptyState())); // 새 계정은 가상 데이터 없이 빈 상태로 시작
+  let initial = st.state ?? JSON.stringify(emptyState()); // 새 계정은 가상 데이터 없이 빈 상태로 시작
+  // 지난번에 서버에 올리지 못한 변경이 이 기기에 남아 있으면: 서버가 그대로면 자동으로 되살리고, 그 사이 다른 기기가 저장했으면 내려받기만 권한다
+  let restore = false; const ls = lsRaw(); const pend = ls ? readPending(ls, me.user.email) : null;
+  if (pend) {
+    let valid = false; try { validateState(JSON.parse(pend.state)); valid = true; } catch { /* 손상된 임시 보관은 버린다 */ }
+    const act = valid ? pendingAction(pend, { state: st.state, version: st.version }) : 'none';
+    if (act === 'restore') { initial = pend.state; restore = true; AUTH.pendingNote = `저장하지 못했던 변경(${new Date(pend.at).toLocaleString('ko-KR')})을 되살려 다시 저장해요.`; }
+    else if (act === 'conflict') AUTH.pendingConflict = pend;
+    else clearPending(ls, me.user.email);
+  }
+  AUTH.storage = makeAdapter(initial);
+  if (restore) AUTH.storage.setItem(KEY, initial); // 변경으로 취급해 서버에 다시 올린다
   return AUTH;
 }

@@ -452,3 +452,9 @@ table.orderedit input, table.orderedit textarea { width:100%; }
 .docprint h1.doctitle { text-align:center; font-size:22px; margin:0 0 12px; } .docprint h3 { margin:14px 0 4px; font-size:15px; }
 .docprint table { border-collapse:collapse; width:100%; margin:4px 0; } .docprint th, .docprint td { border:1px solid #000; padding:4px 6px; font-size:12px; vertical-align:top; } .docprint th { background:#e8e8e8; font-weight:700; text-align:center; }
 .docprint table.approve { width:auto; margin-left:auto; } .docprint table.approve td { height:46px; min-width:70px; } .docprint .docbox { border:1px solid #000; min-height:70px; padding:6px; white-space:pre-wrap; font-size:12px; }
+
+/* MB12.7 복구 화면·키보드 포커스 */
+#recover { position:fixed; inset:0; z-index:9999; background:rgba(20,33,26,.78); display:flex; align-items:center; justify-content:center; padding:16px; overflow:auto; }
+.recover-card { background:#fff; color:#1f2a24; max-width:780px; width:100%; max-height:92vh; overflow:auto; border-radius:14px; padding:22px 24px; box-shadow:0 12px 40px rgba(0,0,0,.35); } .recover-card h2 { margin:0 0 8px; }
+ol.recover-steps { padding-left:20px; display:grid; gap:14px; margin:12px 0; }
+a[tabindex]:focus-visible, [data-open][tabindex]:focus-visible, .tabs a:focus-visible { outline:2px solid var(--primary,#15803d); outline-offset:2px; border-radius:6px; } tr[data-open][tabindex]:focus-visible { outline-offset:-2px; background:var(--soft,#f4f6f2); }

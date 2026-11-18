@@ -59,9 +59,29 @@ test('가져오기 검증: 구조가 깨진 파일은 거부하고 현재 데이
   s.importJson(JSON.stringify(good)); assert.equal(s.people().length, good.people.filter(p => p.status === 'active').length);
 });
 
-test('손상된 저장값은 가상 데이터로 덮어쓰기 전에 원본을 따로 보관', () => {
-  const st = mem(); st.setItem(KEY, '{"version":1,"depts":"oops"}'); const s = createStore(st, () => '2026-11-10');
-  assert.ok(s.wasRecovered()); assert.equal(st.getItem(KEY + ':broken'), '{"version":1,"depts":"oops"}'); assert.ok(s.get().demo);
+test('MB12.7 읽지 못한 저장값은 절대 덮어쓰지 않고, 저장을 막고, 복구 길을 준다', () => {
+  const raw = '{"version":1,"depts":"oops"}'; const st = mem(); st.setItem(KEY, raw); let writes = 0; const set = st.setItem; st.setItem = (k, v) => { writes++; set(k, v); };
+  const s = createStore(st, () => '2026-11-10'); const f = s.loadFailure();
+  assert.ok(f && /손상/.test(f.message) && f.size === raw.length && f.canSalvage === false); assert.equal(st.getItem(KEY), raw, '원본 그대로'); assert.equal(writes, 0, '아무것도 쓰지 않음');
+  assert.throws(() => s.addPerson({ name: '가', dept_id: 1 }), /저장을 멈췄어요/); assert.equal(st.getItem(KEY), raw); assert.equal(s.loadFailureRaw(), raw);
+  assert.throws(() => s.openSalvaged(), /자동으로 열 수 없는/); assert.equal(st.getItem(KEY), raw);
+  s.recoverStartFresh(); assert.equal(st.getItem(KEY + ':broken'), raw, '새로 시작하기 전에 원본을 한 부 남김'); assert.equal(s.loadFailure(), null); assert.equal(s.get().demo, false); assert.equal(s.people().length, 0);
+  s.addPerson({ name: '다시', dept_id: 1 }); // 이제 저장된다
+  // 깨진 JSON도 같은 길
+  const st2 = mem(); st2.setItem(KEY, '{not json'); const s2 = createStore(st2, () => '2026-11-10'); assert.ok(s2.loadFailure()); assert.equal(st2.getItem(KEY), '{not json');
+  // 정상 데이터는 그대로 열리고 loadFailure가 없다
+  const st3 = mem(); const ok = createStore(st3, () => '2026-11-10'); assert.equal(ok.loadFailure(), null); const s3 = createStore(st3, () => '2026-11-10'); assert.equal(s3.loadFailure(), null);
+});
+
+test('MB12.7 문제가 된 선택 항목만 비우고 열기(실제 학생 기록은 지켜진다)', () => {
+  const base = JSON.parse(createStore(mem(), () => '2026-11-10').exportJson()); base.demo = false; base.people.push({ id: 5000, name: '실제 학생', kind: 'child', dept_id: 1, class_name: 'a', birth_year: 2018, status: 'active' });
+  base.docs = [{ form: 'annual', values: null }]; base.people[0].info = [1]; const raw = JSON.stringify(base);
+  const st = mem(); st.setItem(KEY, raw); const s = createStore(st, () => '2026-11-10'); const f = s.loadFailure(); assert.ok(f.canSalvage); assert.equal(st.getItem(KEY), raw);
+  const dropped = s.openSalvaged(); assert.deepEqual(dropped.sort(), ['사람 상세 정보', '행정 문서'].sort());
+  assert.ok(s.get().people.some(p => p.name === '실제 학생')); assert.equal(s.get().docs.length, 0); assert.equal(s.loadFailure(), null);
+  assert.notEqual(st.getItem(KEY), raw); assert.ok(JSON.parse(st.getItem(KEY)).people.some(p => p.name === '실제 학생'));
+  // 필수 목록이 깨졌으면 비우기로 열 수 없다
+  const bad = JSON.parse(raw); bad.attendance = 'x'; const st2 = mem(); st2.setItem(KEY, JSON.stringify(bad)); assert.equal(createStore(st2, () => '2026-11-10').loadFailure().canSalvage, false);
 });
 
 test('저장 실패는 조용히 넘어가지 않고 알린다', () => {
@@ -105,4 +125,25 @@ test('MB12.4 연락처 도구: 전화 링크, 가리기, 생일 달', async () =
   assert.equal(maskPhone('010-1234-5678'), '010-****-5678'); assert.equal(maskPhone('02-123-4567'), '02-***-4567');
   assert.ok(birthdayIn({ birth: '2018-11-15' }, '2026-11-16')); assert.ok(!birthdayIn({}, '2026-11-16'));
   assert.equal(mainPhone({ guardian_phone: '010-0000-0002' }), '010-0000-0002'); assert.equal(mainPhone(undefined), '');
+});
+
+test('MB12.7 기기 임시 보관: 계정별, 손상 무시, 서버와 비교해 되살림·충돌 가름', async () => {
+  const { writePending, readPending, clearPending, pendingKey, pendingAction } = await import('../public/js/pending.js');
+  const m = new Map(); const ls = { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) };
+  assert.equal(readPending(ls, 'a@church.kr'), null); assert.ok(writePending(ls, 'A@Church.kr', '{"x":1}', 7, 1000));
+  assert.deepEqual(readPending(ls, 'a@church.kr'), { state: '{\"x\":1}', base: 7, at: 1000 }, '이메일 대소문자 무시');
+  assert.equal(readPending(ls, 'b@church.kr'), null, '다른 계정과 섞이지 않음'); assert.equal(pendingKey(' A@Church.kr '), pendingKey('a@church.kr'));
+  m.set(pendingKey('a@church.kr'), 'not json'); assert.equal(readPending(ls, 'a@church.kr'), null); m.set(pendingKey('a@church.kr'), JSON.stringify({ state: 5, base: 1, at: 1 })); assert.equal(readPending(ls, 'a@church.kr'), null);
+  writePending(ls, 'a@church.kr', 'S1', 7); clearPending(ls, 'a@church.kr'); assert.equal(readPending(ls, 'a@church.kr'), null);
+  const full = { getItem: () => null, setItem: () => { throw new Error('quota'); }, removeItem: () => {} }; assert.equal(writePending(full, 'a@b.kr', 'x', 1), false);
+  assert.equal(pendingAction(null, { state: 'S', version: 3 }), 'none'); assert.equal(pendingAction({ state: 'S', base: 3, at: 1 }, { state: 'S', version: 4 }), 'none', '서버와 같으면 할 일 없음');
+  assert.equal(pendingAction({ state: 'N', base: 3, at: 1 }, { state: 'S', version: 3 }), 'restore'); assert.equal(pendingAction({ state: 'N', base: 3, at: 1 }, { state: 'S', version: 4 }), 'conflict');
+});
+
+test('MB12.7 화면 코드 점검: 제목 이중 이스케이프 없음, 주소 없는 링크는 키보드 처리가 있다', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
+  assert.ok(!/\bpage\([^,\n]+,\s*(esc\(|`[^`\n]*\$\{esc\()/.test(app), 'page()는 제목을 스스로 이스케이프하므로 esc()로 미리 감싸면 &가 &amp;로 보인다');
+  assert.ok(app.includes('function a11yPass') && app.includes("el.matches('a:not([href])[tabindex]") && app.includes('a11yPass();'));
+  assert.ok(app.includes('A.snapNext = true; store.resetDemo()') && app.includes('A.snapNext = true; store.startEmpty()') && app.includes('A.snapNext = true; store.importJson(txt)'), '비우기·초기화·가져오기는 서버에 이전 상태를 꼭 보관하게 한다');
+  assert.ok(app.includes('if (store.loadFailure()) showRecovery(); else render();'));
 });

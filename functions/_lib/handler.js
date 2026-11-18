@@ -112,6 +112,33 @@ async function currentDevice(db, request, secure, now) {
 const maskEmail = e => { const [a, b] = String(e).split('@'); return `${a.slice(0, 2)}${'*'.repeat(Math.max(1, Math.min(6, a.length - 2)))}@${b}`; };
 async function dropDevices(db, userId, exceptId = '') { await ensureDevices(db); await db.prepare('DELETE FROM devices WHERE user_id=? AND id<>?').bind(userId, exceptId).run(); }
 
+// ---- 저장 이력(되돌리기용, MB12.7): 덮어쓰기 직전의 상태를 일정 간격으로 보관한다 ----
+// 표는 처음 쓸 때 자동으로 만든다. 계정마다 최근 30개만 남기고, 로그인한 본인 것만 볼 수 있다.
+const HISTORY_KEEP = 30;
+const HISTORY_GAP_MS = 30 * 60e3;          // 편집 중에는 30분에 한 번만 보관(저장마다 보관하지 않음)
+const SHRINK_RATIO = 0.6;                  // 데이터가 갑자기 40% 넘게 줄어드는 저장은 사고일 수 있어 항상 보관
+const HISTORY_ID = /^\/api\/history\/(\d{1,12})$/;
+const historyReady = new WeakSet();
+async function ensureHistory(db) {
+  if (historyReady.has(db)) return;
+  await db.prepare('CREATE TABLE IF NOT EXISTS state_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, version INTEGER NOT NULL, state TEXT NOT NULL, bytes INTEGER NOT NULL, people INTEGER NOT NULL DEFAULT 0, att INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)').bind().run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_history_user ON state_history(user_id, id)').bind().run();
+  historyReady.add(db);
+}
+// 지금 저장돼 있는 상태(user_state)를 이력에 복사한다. 큰 글을 자바스크립트로 읽지 않고 SQL 안에서 복사한다.
+async function snapshot(db, userId, now) {
+  await ensureHistory(db);
+  try { await db.prepare("INSERT INTO state_history(user_id,version,state,bytes,people,att,created_at) SELECT user_id, version, state, LENGTH(state), COALESCE(json_array_length(state, '$.people'), 0), COALESCE(json_array_length(state, '$.attendance'), 0), ? FROM user_state WHERE user_id=?").bind(now, userId).run(); }
+  catch { await db.prepare('INSERT INTO state_history(user_id,version,state,bytes,people,att,created_at) SELECT user_id, version, state, LENGTH(state), 0, 0, ? FROM user_state WHERE user_id=?').bind(now, userId).run(); } // JSON 함수를 못 쓰는 환경 대비
+  await db.prepare('DELETE FROM state_history WHERE user_id=? AND id NOT IN (SELECT id FROM state_history WHERE user_id=? ORDER BY id DESC LIMIT ?)').bind(userId, userId, HISTORY_KEEP).run();
+}
+async function snapshotIfNeeded(db, userId, now, { force = false, newLen = 0 } = {}) {
+  await ensureHistory(db);
+  const last = await db.prepare('SELECT created_at FROM state_history WHERE user_id=? ORDER BY id DESC LIMIT 1').bind(userId).first();
+  const cur = await db.prepare('SELECT LENGTH(state) AS n FROM user_state WHERE user_id=?').bind(userId).first();
+  if (force || !last || now - last.created_at >= HISTORY_GAP_MS || (cur && newLen < cur.n * SHRINK_RATIO)) await snapshot(db, userId, now);
+}
+
 export async function handle(request, env, now = Date.now()) {
   const url = new URL(request.url); const path = url.pathname.replace(/\/+$/, '') || '/'; const secure = url.protocol === 'https:'; const method = request.method.toUpperCase();
   try {
@@ -209,6 +236,27 @@ export async function handle(request, env, now = Date.now()) {
       const mine = await currentDevice(db, request, secure, now); if (mine && mine.user_id === user.id) await db.prepare('DELETE FROM devices WHERE id=?').bind(mine.id).run();
       return json({ ok: true }, 200, { 'Set-Cookie': setDeviceCookie(secure, '', 0) });
     }
+    // ---- 저장 이력: 목록 · 한 건 내려받기 · 되돌리기 (항상 '내' 이력만: user_id는 세션에서만 얻는다) ----
+    if (path === '/api/history' && method === 'GET') {
+      await ensureHistory(db);
+      const rows = (await db.prepare('SELECT id, version, bytes, people, att, created_at FROM state_history WHERE user_id=? ORDER BY id DESC LIMIT ?').bind(user.id, HISTORY_KEEP).all()).results;
+      return json({ ok: true, keep: HISTORY_KEEP, items: rows.map(r => ({ id: r.id, version: r.version, bytes: r.bytes, people: r.people, att: r.att, at: r.created_at })) });
+    }
+    const hm = HISTORY_ID.exec(path);
+    if (hm && method === 'GET') {
+      await ensureHistory(db); const row = await db.prepare('SELECT state, created_at FROM state_history WHERE id=? AND user_id=?').bind(Number(hm[1]), user.id).first();
+      if (!row) throw new HttpError(404, '저장본을 찾을 수 없습니다.'); return json({ ok: true, at: row.created_at, state: row.state });
+    }
+    if (path === '/api/history/restore' && method === 'POST') {
+      const b = await body(request); const id = Number(b.id); if (!Number.isSafeInteger(id) || id < 1) throw new HttpError(400, '저장본을 골라 주세요.');
+      await ensureHistory(db); const row = await db.prepare('SELECT state FROM state_history WHERE id=? AND user_id=?').bind(id, user.id).first();
+      if (!row) throw new HttpError(404, '저장본을 찾을 수 없습니다.');
+      let parsed; try { parsed = JSON.parse(row.state); validateState(parsed); } catch { throw new HttpError(422, '이 저장본은 지금 버전에서 열 수 없어요. 내려받아서 확인하세요.'); }
+      if (!(await db.prepare('SELECT 1 x FROM user_state WHERE user_id=?').bind(user.id).first())) throw new HttpError(404, '저장된 데이터가 없습니다.');
+      await snapshot(db, user.id, now); // 되돌리기 직전 상태도 이력에 남겨 다시 되돌릴 수 있게
+      await db.prepare('UPDATE user_state SET version=version+1, state=?, updated_at=? WHERE user_id=?').bind(row.state, now, user.id).run();
+      const v = await db.prepare('SELECT version FROM user_state WHERE user_id=?').bind(user.id).first(); return json({ ok: true, version: v.version });
+    }
     if (path === '/api/state' && method === 'GET') { // 항상 '내' 줄만 조회: user_id는 세션에서만 얻는다
       const r = await db.prepare('SELECT version, state FROM user_state WHERE user_id=?').bind(user.id).first();
       return json({ ok: true, version: r ? r.version : 0, state: r ? r.state : null });
@@ -223,6 +271,7 @@ export async function handle(request, env, now = Date.now()) {
       if (!cur) { const r = await db.prepare('INSERT INTO user_state(user_id,version,state,updated_at) VALUES(?,1,?,?) ON CONFLICT(user_id) DO NOTHING').bind(user.id, b.state, now).run(); if (r.meta.changes === 1) return json({ ok: true, version: 1 }); }
       const latest = await db.prepare('SELECT version FROM user_state WHERE user_id=?').bind(user.id).first();
       if (!b.force && latest.version !== base) throw new HttpError(409, '다른 기기에서 먼저 저장했습니다.', { version: latest.version });
+      await snapshotIfNeeded(db, user.id, now, { force: b.force === true || b.snap === true, newLen: b.state.length }); // 덮어쓰기 직전 상태를 이력에 남긴다
       const r = await db.prepare('UPDATE user_state SET version=version+1, state=?, updated_at=? WHERE user_id=? AND version=?').bind(b.state, now, user.id, latest.version).run();
       if (r.meta.changes !== 1) throw new HttpError(409, '다른 기기에서 먼저 저장했습니다.', { version: latest.version });
       return json({ ok: true, version: latest.version + 1 });
@@ -240,7 +289,7 @@ export async function handle(request, env, now = Date.now()) {
       const b = await body(request); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
       if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
       if (!(await verifyPassword(String(b.password || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '비밀번호가 맞지 않습니다.'); }
-      await ensureReceipts(db); await db.prepare('DELETE FROM receipts WHERE user_id=?').bind(user.id).run(); await dropDevices(db, user.id); await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
+      await ensureReceipts(db); await db.prepare('DELETE FROM receipts WHERE user_id=?').bind(user.id).run(); await dropDevices(db, user.id); await ensureHistory(db); await db.prepare('DELETE FROM state_history WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
     }
     // ---- 영수증 사진 (항상 '내' 사진만: user_id는 세션에서만 얻는다) ----
