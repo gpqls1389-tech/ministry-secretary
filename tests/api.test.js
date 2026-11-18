@@ -203,3 +203,45 @@ test('MB12.3 간편 로그인 해제: 이 기기·모든 기기, 비밀번호 �
   // 로그인 없이 /api/pin 설정 불가
   assert.equal((await call(env, 'POST', '/api/pin', { body: { password: PW, pin: '482915' } })).status, 401);
 });
+
+const bigState = () => { const s = createStore(mem(), () => '2026-11-10'); s.startEmpty(); for (let i = 0; i < 150; i++) s.addPerson({ name: '학생' + i, dept_id: 1 }); return s.exportJson(); };
+const hcount = env => { try { return env.DB.raw.prepare('SELECT COUNT(*) c FROM state_history').get().c; } catch { return 0; } };
+
+test('MB12.7 저장 이력: 첫 저장은 보관 안 함, 30분 간격·급감·snap 표시가 있을 때 보관, 목록은 최신순', async () => {
+  const env = envOf(); const ck = await signup(env); const t0 = Date.now(); const big = bigState(), small = stateJson();
+  const put = async (state, base, now, extra = {}) => { const r = await call(env, 'PUT', '/api/state', { cookie: ck, body: { baseVersion: base, state, ...extra }, now }); assert.equal(r.status, 200, JSON.stringify(r.json)); return r.json.version; };
+  let v = await put(small, 0, t0); assert.equal(v, 1); assert.equal(hcount(env), 0, '첫 저장은 보관할 이전 상태가 없다');
+  v = await put(big, v, t0 + 1000); assert.equal(hcount(env), 1, '이력이 없으면 처음 덮어쓸 때 보관');
+  v = await put(big, v, t0 + 2000); assert.equal(hcount(env), 1, '30분 안에는 다시 보관하지 않는다(저장마다 쌓지 않음)');
+  v = await put(small, v, t0 + 3000); assert.equal(hcount(env), 2, '데이터가 40% 넘게 줄어드는 저장은 항상 보관');
+  v = await put(small, v, t0 + 31 * 60e3); assert.equal(hcount(env), 3, '30분이 지나면 보관');
+  v = await put(small, v, t0 + 31 * 60e3 + 1000, { snap: true }); assert.equal(hcount(env), 4, '비우기·가져오기 같은 저장은 snap 표시로 항상 보관');
+  const L = await call(env, 'GET', '/api/history', { cookie: ck }); assert.equal(L.status, 200); assert.equal(L.json.items.length, 4); assert.ok(L.json.items[0].id > L.json.items[3].id, '최신순');
+  const shrinkSnap = L.json.items.find(x => x.people >= 150); assert.ok(shrinkSnap, '급감 직전(큰 상태)이 보관돼 있고 인원 수가 기록됨'); assert.ok(shrinkSnap.att >= 0 && shrinkSnap.bytes > 5000);
+  assert.ok(!('state' in L.json.items[0]), '목록에는 본문이 없다');
+});
+
+test('MB12.7 저장 이력: 최근 30개만, 본인 것만, 되돌리기(직전 상태도 보관), 열 수 없는 저장본은 거부, 계정 삭제 시 삭제', async () => {
+  const env = envOf(); const ck = await signup(env, 'a@church.kr', '1.1.1.1'); const other = await signup(env, 'b@church.kr', '2.2.2.2'); const t0 = Date.now(); const big = bigState(), small = stateJson();
+  let v = 0; const put = async (state, extra = {}, now = t0) => { const r = await call(env, 'PUT', '/api/state', { cookie: ck, body: { baseVersion: v, state, ...extra }, now }); assert.equal(r.status, 200, JSON.stringify(r.json)); v = r.json.version; };
+  await put(small); for (let i = 0; i < 34; i++) await put(i % 2 ? big : small, { force: true }, t0 + i);
+  assert.equal(hcount(env), 30, '최근 30개만 남는다');
+  const L = (await call(env, 'GET', '/api/history', { cookie: ck })).json.items; assert.equal(L.length, 30);
+  // 본인 것만
+  const id = L[0].id; assert.equal((await call(env, 'GET', '/api/history/' + id, { cookie: other })).status, 404); assert.equal((await call(env, 'POST', '/api/history/restore', { cookie: other, body: { id } })).status, 404);
+  assert.deepEqual((await call(env, 'GET', '/api/history', { cookie: other })).json.items, []); assert.equal((await call(env, 'GET', '/api/history')).status, 401);
+  // 한 건 내려받기 → 되돌리기
+  const bigItem = L.find(x => x.people >= 150); const got = await call(env, 'GET', '/api/history/' + bigItem.id, { cookie: ck }); assert.equal(got.status, 200); assert.equal(JSON.parse(got.json.state).people.length, 150);
+  await put(small, { force: true }, t0 + 99); const before = hcount(env);
+  const rs = await call(env, 'POST', '/api/history/restore', { cookie: ck, body: { id: bigItem.id } }); assert.equal(rs.status, 200); assert.equal(rs.json.version, v + 1);
+  const cur = await call(env, 'GET', '/api/state', { cookie: ck }); assert.equal(JSON.parse(cur.json.state).people.length, 150, '되돌린 상태'); assert.equal(cur.json.version, v + 1);
+  assert.equal(hcount(env), Math.min(30, before + 1), '되돌리기 직전 상태도 이력에 남는다');
+  assert.equal((await call(env, 'GET', '/api/state', { cookie: other })).json.state, null, '다른 계정 데이터는 그대로');
+  // 열 수 없는 저장본(예: 규칙이 바뀐 뒤)은 거부하고 현재 데이터를 건드리지 않는다
+  const uid = env.DB.raw.prepare('SELECT id FROM users WHERE email=?').get('a@church.kr').id; env.DB.raw.prepare("INSERT INTO state_history(user_id,version,state,bytes,people,att,created_at) VALUES(?,?,?,?,?,?,?)").run(uid, 1, '{"version":1,"depts":"oops"}', 10, 0, 0, t0);
+  const badId = env.DB.raw.prepare('SELECT MAX(id) m FROM state_history').get().m; const verBefore = (await call(env, 'GET', '/api/state', { cookie: ck })).json.version;
+  const bad = await call(env, 'POST', '/api/history/restore', { cookie: ck, body: { id: badId } }); assert.equal(bad.status, 422); assert.match(bad.json.error, /내려받/); assert.equal((await call(env, 'GET', '/api/state', { cookie: ck })).json.version, verBefore);
+  assert.equal((await call(env, 'POST', '/api/history/restore', { cookie: ck, body: { id: 'x' } })).status, 400); assert.equal((await call(env, 'POST', '/api/history/restore', { cookie: ck, body: { id }, origin: 'https://evil.test' })).status, 403);
+  // 계정 삭제 → 이력도 삭제
+  assert.equal((await call(env, 'POST', '/api/delete-account', { cookie: ck, body: { password: PW } })).status, 200); assert.equal(env.DB.raw.prepare('SELECT COUNT(*) c FROM state_history WHERE user_id=?').get(uid).c, 0);
+});

@@ -319,3 +319,11 @@ test('MB12.6 한글(HWPX): 파일 구조(mimetype 먼저·무압축), XML 이스
   // 바탕 header.xml에 표 테두리·굵은 글자·가운데 정렬 모양이 있다
   for (const t of ['<hh:borderFill id="3"', '<hh:borderFill id="4"', '<hh:charPr id="8"', '<hh:paraPr id="20"']) assert.ok(base['header.xml'].includes(t), t);
 });
+
+test('MB12.7 가정 메시지 받는 사람: 같은 번호(형제)는 한 곳으로, 번호 없는 사람은 따로', () => {
+  const s = mk(); const a = s.addPerson({ name: '형', kind: 'child', dept_id: 1 }), b = s.addPerson({ name: '동생', kind: 'child', dept_id: 1 }), c = s.addPerson({ name: '다른집', kind: 'child', dept_id: 1 }), d = s.addPerson({ name: '번호없음', kind: 'child', dept_id: 1 });
+  s.setPersonInfo(a, { guardian: '어머니', guardian_phone: '010-1111-2222' }); s.setPersonInfo(b, { guardian_phone: '010 1111 2222, 02-000-0000' }); s.setPersonInfo(c, { guardian_phone: '010-3333-4444' });
+  const sv = s.upcomingService(1, TODAY); const R = s.weeklyData(sv.id, TODAY).recipients;
+  const sib = R.find(r => r.ids.includes(a)); assert.deepEqual(sib.ids.sort(), [a, b].sort()); assert.equal(sib.name, '형·동생'); assert.equal(R.filter(r => /1111/.test(r.phone.replace(/\D/g, ''))).length, 1);
+  assert.equal(R.find(r => r.ids.includes(c)).ids.length, 1); const none = R.find(r => r.ids.includes(d)); assert.equal(none.phone, ''); assert.equal(none.ids.length, 1);
+});
