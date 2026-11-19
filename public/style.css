@@ -474,3 +474,17 @@ a.cpost.pinned { background:#fffbea; } a.cpost.hiddenpost, .cfull.hiddenpost { o
 .cform { margin-top:12px; } .cform textarea { width:100%; } .adminrow { align-items:center; border-top:1px dashed var(--line,#e2e0d8); padding-top:8px; margin-top:10px; }
 .reportbox { margin-bottom:14px; border-color:#f2b8b8; } .reportbox summary { cursor:pointer; padding:10px 14px; } .reportitem { display:flex; gap:10px; justify-content:space-between; align-items:flex-start; padding:8px 0; border-top:1px solid var(--line,#e2e0d8); } .reportitem:first-child { border-top:0; }
 @media (max-width:760px) { .reportitem { flex-direction:column; } }
+
+/* MB12.10 쪽지·사람 찾기·내 소개 */
+.commmain { margin:12px 0 0; flex-wrap:wrap; } .commmain a { position:relative; } .ctabbadge { margin-left:6px; vertical-align:middle; display:inline-block; }
+.commchips { margin:8px 0 0; flex-wrap:wrap; } .commchips a { font-size:13px; }
+form.csearch { display:flex; gap:6px; flex:1; min-width:200px; max-width:420px; } form.csearch input { flex:1; min-width:0; }
+.authorbtn { background:none; border:0; padding:0; font:inherit; font-weight:700; color:var(--primary,#15803d); text-decoration:underline dotted; text-underline-offset:3px; cursor:pointer; }
+a.cpost.unreadpost { border-color:var(--primary,#15803d); background:#f3faf5; }
+.pcard { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; padding:12px 14px; margin-bottom:8px; background:#fff; border:1px solid var(--line,#e2e0d8); border-radius:10px; }
+.dmlist { display:flex; flex-direction:column; gap:8px; margin:8px 0 14px; }
+.dmmsg { max-width:min(560px,88%); padding:8px 12px; border-radius:12px; border:1px solid var(--line,#e2e0d8); background:#fff; } .dmmsg.mine { align-self:flex-end; background:#e8f5ec; border-color:#bfe0c9; } .dmmsg.theirs { align-self:flex-start; }
+.dmbody { white-space:pre-wrap; word-break:break-word; } .cbody a { color:var(--primary,#15803d); word-break:break-all; }
+.meform { max-width:640px; } .meform textarea, .meform input[name=nick], .meform input[name=church], .meform input[name=role] { width:100%; }
+@media (max-width:760px) { .pcard { flex-direction:column; } form.csearch { max-width:none; } }
+.ctabbadge[hidden] { display:none; }

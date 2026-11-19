@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB12.9';
+export const VERSION = 'MB12.10';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '12.9.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '12.10.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB12.10', date: '2026-11-19', items: ['커뮤니티 교류: 내 소개(표시 이름·교회·맡은 사역·한마디, 공개는 선택)와 사람 찾기, 글쓴이 이름을 눌러 소개 보기', '1:1 쪽지: 보내기·받기·읽음 표시·지우기, 새 쪽지 알림 배지, 차단, 쪽지 받기 끄기, 신고(신고한 쪽지만 관리자에게 보임)', '게시판 보완: 글 검색, 내가 쓴 글·내가 댓글 단 글, 내 글의 새 댓글 알림, 글·댓글·쪽지 속 웹 주소 링크, 관리자 계정 표시', '설치 프로그램 12.10.0(화면은 사이트가 제공해서 다시 설치하지 않아도 됨)'] },
   { v: 'MB12.9', date: '2026-11-19', items: ['새 메뉴 ‘커뮤니티’: 로그인한 계정끼리 글·댓글·도움이 돼요를 나누는 게시판(공지·자료 나눔·질문·상담·나눔·소식·기도 제목·자유). 인터넷만 연결되면 데스크톱 프로그램·휴대폰·컴퓨터에서 똑같이 사용', '신고, 관리자의 공지·고정·숨기기·지우기·신고 처리, 새 글·댓글 알림 배지, 전화번호 같은 개인정보가 들어 있으면 올리기 전 확인', '글·댓글 횟수 제한, 이메일 비노출(이름 또는 앞 두 글자), 계정 삭제 시 내 글·댓글 함께 삭제', '설치 프로그램 12.9.0(화면은 사이트가 제공해서 다시 설치하지 않아도 됨)'] },
   { v: 'MB12.8', date: '2026-11-19', items: ['날짜 입력칸의 달력에서 날짜를 눌러도 입력되지 않던 문제 고침: 달력이 대화상자 뒤쪽 취급(클릭 불가)이던 것을 대화상자 안으로 옮기고 입력칸 아래(공간이 없으면 위)에 맞춰 보여 줌', '달력에서 달 넘기기·날짜 고르기·Esc로 닫기, 대화상자를 스크롤해도 달력이 입력칸을 따라감', '설치 프로그램 12.8.0'] },
   { v: 'MB12.7', date: '2026-11-18', items: ['데이터 안전: 저장된 데이터를 읽지 못해도 가상 데이터로 덮어쓰지 않고 저장을 멈춘 채 복구 화면을 보여 줘요(원본 내려받기·서버 저장본으로 되돌리기·문제 항목만 비우고 열기·비어 있는 데이터로 새로 시작)', '서버가 이전 저장본을 최근 30개 보관(편집 중 30분마다, 비우기·가져오기·덮어쓰기·데이터 급감 직전)하고, 설정에서 되돌리거나 내려받기', '서버에 올리지 못한 변경을 이 기기에 임시 보관했다가 다음 로그인 때 되살리기(다른 기기가 먼저 저장했으면 내려받기만)', '가정 메시지: 같은 번호(형제·자매)는 한 번만 보내기, 교사 브리핑·문서 제목의 &가 &amp;로 보이던 오류 고침', '키보드: 탭·이름·표 행·메뉴를 Tab과 Enter·Space로 쓸 수 있고 포커스 표시', '설치 프로그램 12.7.0'] },
