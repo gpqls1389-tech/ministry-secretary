@@ -147,3 +147,10 @@ test('MB12.7 화면 코드 점검: 제목 이중 이스케이프 없음, 주소 
   assert.ok(app.includes('A.snapNext = true; store.resetDemo()') && app.includes('A.snapNext = true; store.startEmpty()') && app.includes('A.snapNext = true; store.importJson(txt)'), '비우기·초기화·가져오기는 서버에 이전 상태를 꼭 보관하게 한다');
   assert.ok(app.includes('if (store.loadFailure()) showRecovery(); else render();'));
 });
+
+test('MB12.8 날짜 달력: 모달 대화상자 안으로 옮겨 클릭이 닿게 하고, 입력칸 기준 fixed로 놓는다(코드 점검)', async () => {
+  const fs = await import('node:fs'); const ui = fs.readFileSync(new URL('../public/js/ui.js', import.meta.url), 'utf8');
+  assert.ok(ui.includes("root.tagName === 'DIALOG' && m.parentElement !== root) root.appendChild(m)"), '대화상자 밖에 있는 달력은 모달이 inert로 막아 날짜를 눌러도 반응이 없다');
+  assert.ok(ui.includes("position: 'fixed'") && ui.includes('toTop(self.context.mainElement, input)') && ui.includes('place(m, input)'));
+  assert.ok(ui.includes("root.addEventListener('scroll'") && ui.includes("root.addEventListener('close'"));
+});
