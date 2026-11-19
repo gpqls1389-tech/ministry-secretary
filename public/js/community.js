@@ -27,7 +27,7 @@ export function linkify(escaped) {
 }
 
 export function makeCommunity({ $, $$, esc, page, toast, ask, modal, A, UI, api, render }) {
-  const S = (UI.comm = UI.comm || { tab: 'board', cat: '', q: '', mine: '', items: [], next: 0, admin: false, reports: 0, dm: 0, mineNew: 0, feed: 0 });
+  const S = (UI.comm = UI.comm || { tab: 'board', cat: '', q: '', mine: '', items: [], next: 0, admin: false, reports: 0, dm: 0, mineNew: 0, feed: 0, chat: 0 });
   const here = h => (location.hash || '').startsWith(h);
   const fail = e => toast(e && e.message ? e.message : '문제가 생겼어요. 잠시 뒤에 다시 해 주세요.', true);
   const catTag = c => `<span class="tag ccat">${CAT_ICON[c] || ''} ${esc(c)}</span>`;
@@ -44,13 +44,13 @@ export function makeCommunity({ $, $$, esc, page, toast, ask, modal, A, UI, api,
   function paintBadge() {
     const a = $('#nav a[data-go="#community"]'); if (a) { let b = a.querySelector('.navbadge');
       if (!UI.commUnread) { if (b) b.remove(); } else { if (!b) { b = document.createElement('span'); b.className = 'navbadge'; b.setAttribute('aria-label', '새 글·댓글·쪽지'); a.appendChild(b); } b.textContent = badgeText(UI.commUnread); } }
-    const t = $('[data-ctab=dm] .ctabbadge'); if (t) { t.hidden = !S.dm; t.textContent = badgeText(S.dm || 0); }
+    for (const [tab, n] of [['dm', S.dm], ['chat', S.chat]]) { const t = $(`[data-ctab=${tab}] .ctabbadge`); if (t) { t.hidden = !n; t.textContent = badgeText(n || 0); } }
   }
-  const setCounts = (feed, dm) => { S.feed = feed; S.dm = dm; UI.commUnread = feed + dm; paintBadge(); };
+  const setCounts = (feed, dm, chat = S.chat) => { S.feed = feed; S.dm = dm; S.chat = chat || 0; UI.commUnread = feed + dm + S.chat; paintBadge(); };
   let lastPoll = 0;
   async function refreshBadge() {
     if (A.mode !== 'account' || document.visibilityState !== 'visible') return; lastPoll = Date.now();
-    try { const r = await api.summary(); S.admin = r.admin; S.reports = r.reports || 0; S.mineNew = r.mine || 0; setCounts(here('#community') || here('#post') ? 0 : r.unread, r.dm); } catch { /* 오프라인이거나 로그인이 끝났으면 조용히 넘어간다 */ }
+    try { const r = await api.summary(); S.admin = r.admin; S.reports = r.reports || 0; S.mineNew = r.mine || 0; setCounts(here('#community') || here('#post') ? 0 : r.unread, r.dm, r.chat || 0); } catch { /* 오프라인이거나 로그인이 끝났으면 조용히 넘어간다 */ }
   }
   function startBadge() {
     if (A.mode !== 'account') return; setTimeout(refreshBadge, 1500); setInterval(refreshBadge, 3 * 60e3);
@@ -86,8 +86,13 @@ export function makeCommunity({ $, $$, esc, page, toast, ask, modal, A, UI, api,
     const box = $('#commreports'); if (!box) return;
     try {
       const r = await api.reports(); if (!here('#community') || S.tab !== 'board') return; S.reports = r.items.length; if (!r.items.length) { box.innerHTML = ''; return; }
-      const KIND = { post: '글', comment: '댓글', dm: '쪽지' };
-      box.innerHTML = `<details class="box reportbox" open><summary><b>🚩 신고된 글·댓글·쪽지 ${r.items.length}건</b> <span class="mute small">(관리자만 보여요 · 신고된 쪽지는 신고한 분이 보낸 그 쪽지만 보여요)</span></summary><div class="cardb">${r.items.map(x => `<div class="reportitem"><div><span class="tag ${x.kind === 'post' ? '' : 'warn'}">${KIND[x.kind]}</span> ${x.kind === 'post' && x.title ? `<b>${esc(x.title)}</b> ` : ''}<span class="mute small">${esc(x.author)} · 신고 ${x.count}건${x.hidden ? ' · 숨김 중' : ''}</span><p class="small" style="margin:4px 0">${esc(x.excerpt)}</p>${x.reasons.length ? `<p class="small mute" style="margin:0">사유: ${x.reasons.map(esc).join(' / ')}</p>` : ''}</div><div class="row">${x.kind === 'dm' ? `<button class="sm dng" data-rdel="${x.id}">쪽지 지우기</button>` : `<a class="btnlike sm" href="#post/${x.postId}">보기</a><button class="sm" data-rhide="${x.kind}:${x.id}:${x.hidden ? 0 : 1}">${x.hidden ? '숨김 풀기' : '숨기기'}</button>`}<button class="sm ghost" data-rclear="${x.kind}:${x.id}">신고 지우기</button></div></div>`).join('')}</div></details>`;
+      const KIND = { post: '글', comment: '댓글', dm: '쪽지', chat: '대화' };
+      const reportActions = x => x.kind === 'dm' ? `<button class="sm dng" data-rdel="${x.id}">쪽지 지우기</button>`
+        : x.kind === 'chat' ? `<a class="btnlike sm" href="#chat/${x.postId}">보기</a><button class="sm" data-rchat="${x.id}:${x.hidden ? 0 : 1}">${x.hidden ? '숨김 풀기' : '숨기기'}</button><button class="sm dng" data-rcdel="${x.id}">지우기</button>`
+          : `<a class="btnlike sm" href="#post/${x.postId}">보기</a><button class="sm" data-rhide="${x.kind}:${x.id}:${x.hidden ? 0 : 1}">${x.hidden ? '숨김 풀기' : '숨기기'}</button>`;
+      box.innerHTML = `<details class="box reportbox" open><summary><b>🚩 신고된 글·댓글·쪽지·대화 ${r.items.length}건</b> <span class="mute small">(관리자만 보여요 · 신고된 쪽지는 신고한 분이 보낸 그 쪽지만 보여요)</span></summary><div class="cardb">${r.items.map(x => `<div class="reportitem"><div><span class="tag ${x.kind === 'post' ? '' : 'warn'}">${KIND[x.kind]}</span> ${(x.kind === 'post' || x.kind === 'chat') && x.title ? `<b>${esc(x.title)}</b> ` : ''}<span class="mute small">${esc(x.author)} · 신고 ${x.count}건${x.hidden ? ' · 숨김 중' : ''}</span><p class="small" style="margin:4px 0">${esc(x.excerpt)}</p>${x.reasons.length ? `<p class="small mute" style="margin:0">사유: ${x.reasons.map(esc).join(' / ')}</p>` : ''}</div><div class="row">${reportActions(x)}<button class="sm ghost" data-rclear="${x.kind}:${x.id}">신고 지우기</button></div></div>`).join('')}</div></details>`;
+      $$('[data-rchat]', box).forEach(b => { b.onclick = async () => { const [id, h] = b.dataset.rchat.split(':'); run(async () => { await api.hideChat(id, h === '1'); loadReports(); }, h === '1' ? '숨겼어요.' : '숨김을 풀었어요.'); }; });
+      $$('[data-rcdel]', box).forEach(b => { b.onclick = async () => { if (!(await ask('이 대화방 글을 지울까요? 되돌릴 수 없어요.', '지우기'))) return; run(async () => { await api.delChat(b.dataset.rcdel); loadReports(); }, '지웠어요.'); }; });
       $$('[data-rhide]', box).forEach(b => { b.onclick = async () => { const [k, id, h] = b.dataset.rhide.split(':'); try { await (k === 'post' ? api.hidePost(id, h === '1') : api.hideComment(id, h === '1')); toast(h === '1' ? '숨겼어요.' : '숨김을 풀었어요.'); loadReports(); loadList(true); } catch (e) { fail(e); } }; });
       $$('[data-rdel]', box).forEach(b => { b.onclick = async () => { if (!(await ask('신고된 이 쪽지를 지울까요? 보낸 사람과 받은 사람 모두에게서 사라지고 되돌릴 수 없어요.', '지우기'))) return; run(async () => { await api.delDm(b.dataset.rdel); loadReports(); }, '지웠어요.'); }; });
       $$('[data-rclear]', box).forEach(b => { b.onclick = async () => { const [k, id] = b.dataset.rclear.split(':'); try { await api.clearReports(k, id); loadReports(); } catch (e) { fail(e); } }; });
@@ -140,13 +145,81 @@ export function makeCommunity({ $, $$, esc, page, toast, ask, modal, A, UI, api,
     const f = $('#meform'); f.onsubmit = async e => { e.preventDefault(); const el = f.elements; try { await api.saveMe({ nick: el.nick.value, church: el.church.value, role: el.role.value, bio: el.bio.value, listed: el.listed.checked, dm_ok: el.dm_ok.checked }); toast('저장했어요.'); } catch (er) { $('.err', f).textContent = er.message; } };
   }
   function showTab() {
-    $$('[data-ctab]').forEach(a => a.classList.toggle('on', a.dataset.ctab === S.tab)); stopDmTimer();
-    ({ board: drawBoard, dm: drawInbox, people: () => drawPeople(true), me: drawMe }[S.tab] || drawBoard)();
+    $$('[data-ctab]').forEach(a => a.classList.toggle('on', a.dataset.ctab === S.tab)); stopDmTimer(); stopChat();
+    ({ board: drawBoard, chat: drawRooms, dm: drawInbox, people: () => drawPeople(true), me: drawMe }[S.tab] || drawBoard)();
   }
   function vCommunity() {
     if (A.mode !== 'account') return needLogin();
-    page('💬', '커뮤니티', '같은 목회 비서를 쓰는 선생님·교역자가 자료와 이야기를 나누고 서로 만나는 공간이에요.', `<div class="tabs commmain" role="tablist">${[['board', '📋 게시판'], ['dm', '✉️ 쪽지'], ['people', '🧑‍🤝‍🧑 사람 찾기'], ['me', '🙋 내 소개']].map(([k, l]) => `<a data-ctab="${k}" class="${S.tab === k ? 'on' : ''}">${l}<span class="navbadge ctabbadge" hidden></span></a>`).join('')}</div><div id="commbody"></div>`);
+    page('💬', '커뮤니티', '같은 목회 비서를 쓰는 선생님·교역자가 자료와 이야기를 나누고 서로 만나는 공간이에요.', `<div class="tabs commmain" role="tablist">${[['board', '📋 게시판'], ['chat', '🗨️ 대화방'], ['dm', '✉️ 쪽지'], ['people', '🧑‍🤝‍🧑 사람 찾기'], ['me', '🙋 내 소개']].map(([k, l]) => `<a data-ctab="${k}" class="${S.tab === k ? 'on' : ''}">${l}<span class="navbadge ctabbadge" hidden></span></a>`).join('')}</div><div id="commbody"></div>`);
     $$('[data-ctab]').forEach(a => { a.onclick = () => { S.tab = a.dataset.ctab; showTab(); }; }); paintBadge(); showTab();
+  }
+
+  // ----- 단체 대화방(MB12.11): 웹소켓 없이 몇 초마다 새 글만 가져온다 -----
+  let chatTimer = null, chatCleanup = null; const stopChat = () => { if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; } if (chatCleanup) { chatCleanup(); chatCleanup = null; } };
+  window.addEventListener('hashchange', () => { if (!here('#chat/')) stopChat(); });
+  const stamp = ms => { const k = x => new Date(x + 9 * 3600e3); const d = k(ms), n = k(Date.now()); const hm = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; return d.toISOString().slice(0, 10) === n.toISOString().slice(0, 10) ? hm : `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${hm}`; };
+  function openRoomForm(room) {
+    const d = modal(`<form method="dialog" class="dlg"><h3>${room ? '대화방 고치기' : '+ 대화방 만들기'}</h3><label class="f">방 이름 (2~20자)<input name="name" maxlength="20" required value="${esc(room ? room.name : '')}"></label><label class="f">한 줄 소개 (60자까지)<input name="topic" maxlength="60" value="${esc(room ? room.topic : '')}"></label>${room ? `<label class="chk" style="display:flex;gap:8px;margin:8px 0"><input type="checkbox" name="closed"${room.closed ? ' checked' : ''}> <span>방 닫기 — 읽을 수만 있고 새 글은 보낼 수 없어요</span></label>` : ''}<div class="err"></div><div class="dlg-foot"><button type="button" data-x>취소</button><button class="pri">${room ? '저장' : '만들기'}</button></div></form>`);
+    $('[data-x]', d).onclick = () => d.close();
+    $('form', d).onsubmit = async e => { e.preventDefault(); const el = e.target.elements; const b = { name: el.name.value, topic: el.topic.value, closed: room ? el.closed.checked : false }; try { await (room ? api.saveRoom(room.id, b) : api.createRoom(b)); d.close(); toast(room ? '저장했어요.' : '만들었어요.'); drawRooms(); } catch (er) { $('.err', d).textContent = er.message; } };
+  }
+  async function drawRooms() {
+    const box = $('#commbody'); if (!box) return; box.innerHTML = '<p class="mute small" style="margin-top:12px">불러오는 중…</p>';
+    try {
+      const r = await api.rooms(); if (!here('#community') || S.tab !== 'chat') return; S.admin = r.admin; setCounts(S.feed, S.dm, r.items.reduce((a, x) => a + x.unread, 0));
+      box.innerHTML = `<p class="mute small" style="margin:10px 0">같은 방에 있는 분들과 바로 이야기해요. 새 글은 몇 초마다 확인해요(실시간 연결이 아니라서 몇 초 늦을 수 있어요). 글은 방마다 최근 500개만 남고, 이 목회 비서에 로그인한 모든 계정이 볼 수 있어요.</p>${r.admin ? '<div class="row" style="margin-bottom:8px"><button class="sm" data-cm="newroom">+ 대화방 만들기</button></div>' : ''}${r.items.map(x => `<div class="roomrow"><a class="cpost${x.unread ? ' unreadpost' : ''}" href="#chat/${x.id}"><div class="ctop"><b>${esc(x.name)}</b>${x.closed ? '<span class="tag bad">닫힘</span>' : ''}${x.unread ? `<span class="navbadge">${badgeText(x.unread)}</span>` : ''}${x.active ? `<span class="tag ok">🟢 최근 5분 ${x.active}명</span>` : ''}</div><p class="cprev">${esc(x.topic)}</p><div class="cmeta">${x.last ? `<span>${esc(x.last.author)}: ${esc(x.last.excerpt)}</span><span>${esc(agoText(x.last.at))}</span>` : '<span>아직 글이 없어요. 첫 인사를 남겨 보세요.</span>'}</div></a>${r.admin ? `<div class="row adminrow noprint"><span class="mute small">관리자</span><button class="sm" data-roomedit="${x.id}">고치기</button><button class="sm dng" data-roomdel="${x.id}">지우기</button></div>` : ''}</div>`).join('')}`;
+      const nr = $('[data-cm=newroom]'); if (nr) nr.onclick = () => openRoomForm(null);
+      $$('[data-roomedit]', box).forEach(b => { b.onclick = () => openRoomForm(r.items.find(x => String(x.id) === b.dataset.roomedit)); });
+      $$('[data-roomdel]', box).forEach(b => { b.onclick = async () => { if (!(await ask('이 대화방을 지울까요? 방의 모든 글이 사라지고 되돌릴 수 없어요.', '지우기'))) return; run(async () => { await api.delRoom(b.dataset.roomdel); drawRooms(); }, '지웠어요.'); }; });
+    } catch (e) { box.innerHTML = offline(e.message, 'data-cm="retry"'); const b = $('[data-cm=retry]'); if (b) b.onclick = drawRooms; }
+  }
+  const chatMsg = (x, prev, admin) => (x.hidden && !admin && !x.mine ? '<div class="chatmsg hiddenc"><span class="mute small">관리자가 숨긴 메시지예요.</span></div>'
+    : `<div class="chatmsg${x.mine ? ' mine' : ''}${x.hidden ? ' hiddenc' : ''}" data-cid="${x.id}">${prev && prev.mid === x.mid && !prev.hidden && x.at - prev.at < 120e3 ? '' : `<div class="cmeta">${authorBtn(x)}<span>${esc(stamp(x.at))}</span>${x.hidden ? '<span class="tag bad">숨김</span>' : ''}</div>`}<div class="chatbody cbody">${body(x.body)}</div><div class="chatact noprint">${x.mine || admin ? `<button class="sm ghost" data-xdel="${x.id}">지우기</button>` : `<button class="sm ghost" data-xrep="${x.id}">신고</button>`}${admin ? `<button class="sm ghost" data-xhide="${x.id}:${x.hidden ? 0 : 1}">${x.hidden ? '숨김 풀기' : '숨기기'}</button>` : ''}</div></div>`);
+  function vChat(rid) {
+    if (A.mode !== 'account') return needLogin(); stopChat(); stopDmTimer();
+    let T = { room: null, items: [], last: 0, active: 0, admin: false }; let quiet = 0, lastAct = Date.now(), paused = false, busy = false;
+    page('🗨️', '대화방', '', `<div class="row noprint" style="margin-bottom:8px;align-items:center"><a class="btnlike" href="#community" id="chatback">◀ 대화방</a><div><b id="chatname"></b><div class="small mute" id="chattopic"></div></div><span class="sp"></span><span class="small mute" id="chatactive"></span><button class="sm ghost" id="chatrefresh">새로 고침</button></div>
+      <div id="chatpause" class="callout warn small noprint" hidden><span>⏸️</span><div class="sp">한동안 아무것도 하지 않아 자동 새로 고침을 멈췄어요.</div><button class="sm" id="chatresume">다시 켜기</button></div>
+      <div id="chatlist" class="chatlist" aria-live="polite" tabindex="0"><p class="mute small">불러오는 중…</p></div>
+      <form id="chatform" class="chatform noprint"><textarea name="body" rows="2" maxlength="500" placeholder="메시지 (Enter로 보내기, Shift+Enter로 줄바꿈 · 500자까지)" aria-label="메시지" required></textarea><button class="pri">보내기</button></form>
+      <p class="mute small noprint">새 글은 몇 초마다 확인해요. 아이들의 개인정보와 저작권이 있는 자료는 올리지 마세요. 이 방의 글은 로그인한 모든 계정이 볼 수 있어요.</p>`);
+    $('#chatback').onclick = () => { S.tab = 'chat'; };
+    const list = $('#chatlist');
+    const draw = stick => {
+      if (!T.room) return; $('#chatname').textContent = T.room.name; $('#chattopic').textContent = T.room.topic; $('#chatactive').textContent = T.active ? `🟢 최근 5분 ${T.active}명이 이야기했어요` : '';
+      const f = $('#chatform'); const closed = T.room.closed; f.elements.body.disabled = closed; f.querySelector('button').disabled = closed; f.elements.body.placeholder = closed ? '닫힌 방이라 글을 보낼 수 없어요' : '메시지 (Enter로 보내기, Shift+Enter로 줄바꿈 · 500자까지)';
+      const near = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+      list.innerHTML = T.items.length ? T.items.map((x, i) => chatMsg(x, T.items[i - 1], T.admin)).join('') : '<p class="mute small">아직 글이 없어요. 첫 인사를 남겨 보세요.</p>'; bindAuthors(list);
+      $$('[data-xdel]', list).forEach(b => { b.onclick = async () => { if (!(await ask('이 글을 지울까요? 모두에게서 사라져요.', '지우기'))) return; run(async () => { await api.delChat(b.dataset.xdel); T.items = T.items.filter(x => String(x.id) !== b.dataset.xdel); draw(false); }); }; });
+      $$('[data-xrep]', list).forEach(b => { b.onclick = () => report('chat', b.dataset.xrep); });
+      $$('[data-xhide]', list).forEach(b => { b.onclick = () => run(async () => { const [id, h] = b.dataset.xhide.split(':'); await api.hideChat(id, h === '1'); const it = T.items.find(x => String(x.id) === id); if (it) it.hidden = h === '1'; draw(false); }); });
+      if (stick || near) list.scrollTop = list.scrollHeight;
+    };
+    const poll = async initial => {
+      if (busy) return; busy = true;
+      try {
+        const r = await api.roomMessages(rid, initial ? 0 : T.last); if (!here('#chat/' + rid)) return; T.room = r.room; T.active = r.active; T.admin = !!r.admin; S.admin = T.admin;
+        if (initial) T.items = r.items; else if (r.items.length) T.items = [...T.items, ...r.items].slice(-300); T.last = Math.max(T.last, r.last); quiet = r.items.length ? 0 : quiet + 1;
+        draw(initial); if (initial) api.summary().then(s => setCounts(S.feed, s.dm, s.chat || 0)).catch(() => {});
+      } catch (e) { if (initial) list.innerHTML = `<div class="callout bad"><span>🙈</span><div class="sp">${esc(e.message)}</div></div>`; } finally { busy = false; }
+    };
+    const delay = () => (quiet < 5 ? 4000 : quiet < 15 ? 8000 : quiet < 30 ? 15000 : 30000); // 조용할수록 천천히(서버 요청을 아낀다)
+    const tick = async () => {
+      chatTimer = null; if (!here('#chat/' + rid)) return;
+      if (Date.now() - lastAct > 10 * 60e3) { paused = true; $('#chatpause').hidden = false; return; } // 10분 동안 아무것도 안 하면 자동 새로 고침을 멈춘다
+      if (document.visibilityState === 'visible') await poll(false); chatTimer = setTimeout(tick, delay());
+    };
+    const resume = () => { paused = false; lastAct = Date.now(); quiet = 0; $('#chatpause').hidden = true; if (!chatTimer) chatTimer = setTimeout(tick, 300); };
+    const act = () => { lastAct = Date.now(); if (paused) resume(); };
+    const vis = () => { if (document.visibilityState === 'visible' && !paused) { quiet = 0; if (chatTimer) clearTimeout(chatTimer); chatTimer = setTimeout(tick, 200); } };
+    ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, act, { passive: true })); document.addEventListener('visibilitychange', vis);
+    chatCleanup = () => { ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.removeEventListener(ev, act)); document.removeEventListener('visibilitychange', vis); };
+    $('#chatresume').onclick = resume; $('#chatrefresh').onclick = () => { T.last = 0; poll(true); };
+    poll(true).then(() => { if (here('#chat/' + rid) && !chatTimer) chatTimer = setTimeout(tick, delay()); });
+    const f = $('#chatform'); const ta = f.elements.body;
+    ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); f.requestSubmit(); } };
+    f.onsubmit = async e => { e.preventDefault(); const text = ta.value.trim(); if (!text || T.room?.closed) return; if (hasPersonalInfo(text) && !(await ask('글에 전화번호나 주민등록번호처럼 보이는 숫자가 들어 있어요. 이 방은 모두가 볼 수 있어요. 그래도 보낼까요?', '보내기'))) return;
+      const btn = f.querySelector('button.pri'); btn.disabled = true; try { await api.sendChat(rid, text); ta.value = ''; quiet = 0; lastAct = Date.now(); await poll(false); list.scrollTop = list.scrollHeight; } catch (er) { fail(er); } btn.disabled = !!T.room?.closed; ta.focus(); };
   }
 
   // ----- 쪽지 대화 -----
@@ -234,5 +307,5 @@ export function makeCommunity({ $, $$, esc, page, toast, ask, modal, A, UI, api,
       catch (er) { btn.disabled = false; $('.err', d).textContent = er.message; }
     };
   }
-  return { vCommunity, vPost, vDm, refreshBadge, startBadge, paintBadge };
+  return { vCommunity, vPost, vDm, vChat, refreshBadge, startBadge, paintBadge };
 }

@@ -162,7 +162,7 @@ test('MB12.9 커뮤니티 화면 도우미: 시간 표시, 개인정보 꼴 감�
   assert.ok(c.hasPersonalInfo('문의 010-1234-5678')); assert.ok(c.hasPersonalInfo('01012345678')); assert.ok(c.hasPersonalInfo('주민 900101-1234567')); assert.ok(!c.hasPersonalInfo('2026-11-29 대림절 첫째 주, 1부 9시 예배')); assert.ok(!c.hasPersonalInfo('요한복음 1:14 · 누가복음 2:1-7'));
   assert.equal(c.badgeText(3), '3'); assert.equal(c.badgeText(100), '99+');
   const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8'); const ui = fs.readFileSync(new URL('../public/js/community.js', import.meta.url), 'utf8');
-  assert.ok(app.includes("['community', '💬', '커뮤니티']") && app.includes('community: vCommunity, post: vPost') && app.includes("view === 'post' || view === 'dm' ? 'community'") && app.includes('dm: vDm') && app.includes('COMM.startBadge()'));
+  assert.ok(app.includes("['community', '💬', '커뮤니티']") && app.includes('community: vCommunity, post: vPost') && app.includes("view === 'post' || view === 'dm' || view === 'chat' ? 'community'") && app.includes('dm: vDm, chat: vChat') && app.includes('COMM.startBadge()'));
   assert.ok(!/\$\{(?!esc\()[a-z]+\.(title|body|author|excerpt|preview|reason|message)\}/i.test(ui), '글·댓글·작성자 글자는 ${esc()} 없이 그대로 화면에 넣지 않는다(값만 들어가는 보간 검사)');
   assert.ok((ui.match(/\$\{esc\(/g) || []).length > 20, '화면 글자는 esc()를 거친다');
 });
@@ -181,4 +181,13 @@ test('MB12.10 링크 자동 연결: http(s)만, 속성 탈출·스크립트 주�
   const fs = await import('node:fs'); const ui = fs.readFileSync(new URL('../public/js/community.js', import.meta.url), 'utf8');
   assert.ok(ui.includes('const body = t => linkify(esc(t))') && ui.includes('${body(p.body)}') && ui.includes('${body(c.body)}') && ui.includes('${body(x.body)}'));
   assert.ok(!/\$\{(?!esc\()[a-z]+\.(name|church|role|bio|nick|last|reason|excerpt)\}/i.test(ui), '이름·교회·소개·쪽지 미리보기도 esc() 없이 넣지 않는다');
+});
+
+test('MB12.11 대화방 화면 코드 점검: 조용할수록 느리게·10분 뒤 멈춤, hidden 속성이 항상 이긴다, 글자는 esc를 거친다', async () => {
+  const fs = await import('node:fs'); const ui = fs.readFileSync(new URL('../public/js/community.js', import.meta.url), 'utf8'); const css = fs.readFileSync(new URL('../public/style.css', import.meta.url), 'utf8'); const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
+  assert.ok(ui.includes('quiet < 5 ? 4000 : quiet < 15 ? 8000 : quiet < 30 ? 15000 : 30000'), '4→8→15→30초로 간격을 늘린다(서버 요청을 아낀다)'); assert.ok(ui.includes('10 * 60e3') && ui.includes("document.visibilityState === 'visible'"), '10분 동안 아무것도 안 하면 멈추고 숨겨진 창에서는 확인하지 않는다');
+  assert.ok(ui.includes('chatCleanup') && ui.includes("if (!here('#chat/'))") && ui.includes('stopChat()'), '대화방을 떠나면 타이머와 리스너를 치운다');
+  assert.ok(/\[hidden\]\s*\{\s*display:\s*none\s*!important/.test(css), '.callout 같은 display 규칙에 밀려 hidden 요소가 보이던 문제를 막는다');
+  assert.ok(ui.includes('${body(x.body)}') && ui.includes('${esc(x.last.author)}') && ui.includes('${esc(x.topic)}'), '대화방 글·마지막 글·소개는 esc를 거친다');
+  assert.ok(app.includes("view === 'chat' ? 'community'") && app.includes('chat: vChat') && app.includes('const { vCommunity, vPost, vDm, vChat } = COMM'));
 });

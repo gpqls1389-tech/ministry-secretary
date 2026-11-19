@@ -4,11 +4,14 @@
 // 사람은 이메일·계정 번호 대신 작은 정수 번호(members.id)로만 가리킨다.
 export const COMMUNITY_CATS = ['공지', '자료 나눔', '질문·상담', '나눔·소식', '기도 제목', '자유'];
 const ADMIN_ONLY = new Set(['공지']);
-export const COMMUNITY_LIMITS = { title: 60, post: 4000, comment: 1000, report: 200, page: 20, dm: 1000, nick: 20, church: 30, role: 30, bio: 200, query: 30 };
+export const COMMUNITY_LIMITS = { title: 60, post: 4000, comment: 1000, report: 200, page: 20, dm: 1000, nick: 20, church: 30, role: 30, bio: 200, query: 30, chat: 500, room: 20, topic: 60, rooms: 20, keep: 500 };
+// 기본 대화방(처음 쓸 때 자동으로 만든다). 관리자가 더하거나 고치거나 닫을 수 있다.
+export const DEFAULT_ROOMS = [['전체 이야기', '자유롭게 인사하고 이야기해요'], ['성탄·대림절 준비', '대림절·성탄 행사, 공과, 예배 준비를 나눠요'], ['아동부·유치부', '어린이 사역 이야기'], ['중고등부', '청소년 사역 이야기'], ['청년부', '청년 사역 이야기'], ['질문 있어요', '궁금한 것을 가볍게 물어봐요']];
 // 이름, [횟수, 기간(ms), 안내 문장]
 const RATE = {
   post: ['cp', 10, 3600e3, '글은 한 시간에 10개까지 올릴 수 있어요. 잠시 뒤에 다시 해 주세요.'], comment: ['cc', 40, 3600e3, '댓글은 한 시간에 40개까지 달 수 있어요. 잠시 뒤에 다시 해 주세요.'],
   report: ['cr', 20, 24 * 3600e3, '신고는 하루에 20건까지 할 수 있어요.'], dm: ['cd', 30, 3600e3, '쪽지는 한 시간에 30개까지 보낼 수 있어요. 잠시 뒤에 다시 해 주세요.'],
+  chat: ['ch', 20, 60e3, '너무 빨리 보내고 있어요. 1분에 20개까지 보낼 수 있어요. 잠시 뒤에 다시 해 주세요.'],
 };
 const clean = s => String(s ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '').trim();
 const one = s => clean(s).replace(/\s+/g, ' '); // 한 줄 글(이름·교회 등)
@@ -33,6 +36,12 @@ async function ensure(db) {
   await q('CREATE INDEX IF NOT EXISTS idx_dms_to ON dms(to_m, read_at)'); await q('CREATE INDEX IF NOT EXISTS idx_dms_pair ON dms(from_m, to_m, id)');
   await q('CREATE TABLE IF NOT EXISTS member_blocks (blocker INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE, blocked INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE, PRIMARY KEY (blocker, blocked))');
   await q('INSERT OR IGNORE INTO members(user_id) SELECT user_id FROM posts UNION SELECT user_id FROM comments'); // MB12.9에서 글·댓글을 쓴 사람에게도 번호를 준다
+  // MB12.11: 단체 대화방(몇 초마다 새 글을 확인하는 방식). 방마다 최근 500개만 남긴다.
+  await q('CREATE TABLE IF NOT EXISTS chat_rooms (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, topic TEXT NOT NULL DEFAULT \'\', closed INTEGER NOT NULL DEFAULT 0, sort INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0)');
+  await q('CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE, member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE, body TEXT NOT NULL, hidden INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)');
+  await q('CREATE INDEX IF NOT EXISTS idx_chat_room ON chat_messages(room_id, id)');
+  await q('CREATE TABLE IF NOT EXISTS chat_reads (member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE, room_id INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE, last_id INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (member_id, room_id))');
+  if (!(await db.prepare('SELECT 1 x FROM chat_rooms LIMIT 1').bind().first())) for (const [i, [name, topic]] of DEFAULT_ROOMS.entries()) await db.prepare("INSERT INTO chat_rooms(name, topic, sort, created_at) VALUES(?,?,?, CAST(strftime('%s','now') AS INTEGER) * 1000)").bind(name, topic, i).run();
   ready.add(db);
 }
 
@@ -47,6 +56,7 @@ export async function isCommunityAdmin(db, env, user) {
 export async function communityPurge(db, userId) {
   await ensure(db);
   for (const sql of ['DELETE FROM post_likes WHERE user_id=?', 'DELETE FROM community_reports WHERE user_id=?', 'DELETE FROM comments WHERE user_id=?', 'DELETE FROM comments WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', 'DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE user_id=?)', 'DELETE FROM posts WHERE user_id=?', 'DELETE FROM community_seen WHERE user_id=?',
+    "DELETE FROM community_reports WHERE kind='chat' AND target_id IN (SELECT id FROM chat_messages WHERE member_id IN (SELECT id FROM members WHERE user_id=?))", 'DELETE FROM chat_messages WHERE member_id IN (SELECT id FROM members WHERE user_id=?)', 'DELETE FROM chat_reads WHERE member_id IN (SELECT id FROM members WHERE user_id=?)',
     "DELETE FROM community_reports WHERE kind='dm' AND target_id IN (SELECT id FROM dms WHERE from_m IN (SELECT id FROM members WHERE user_id=?) OR to_m IN (SELECT id FROM members WHERE user_id=?))",
     'DELETE FROM dms WHERE from_m IN (SELECT id FROM members WHERE user_id=?) OR to_m IN (SELECT id FROM members WHERE user_id=?)', 'DELETE FROM member_blocks WHERE blocker IN (SELECT id FROM members WHERE user_id=?) OR blocked IN (SELECT id FROM members WHERE user_id=?)', 'DELETE FROM members WHERE user_id=?']) {
     const n = (sql.match(/\?/g) || []).length; await db.prepare(sql).bind(...Array(n).fill(userId)).run();
@@ -71,6 +81,8 @@ export async function handleCommunity({ db, env, user, request, path, method, no
   if (!me) { await db.prepare('INSERT OR IGNORE INTO members(user_id) VALUES(?)').bind(user.id).run(); me = await db.prepare('SELECT id, listed, dm_ok, nick, church, role, bio FROM members WHERE user_id=?').bind(user.id).first(); }
   // 운영진 표시(사칭 방지): 관리자 계정의 글·댓글에는 관리자 표시를 붙인다
   let staffIds = null; const staffOf = async () => { if (staffIds) return staffIds; const list = adminEmails(env); const rows = list.length ? (await db.prepare(`SELECT id FROM users WHERE LOWER(email) IN (${list.map(() => '?').join(',')})`).bind(...list).all()).results : [await db.prepare('SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1').bind().first()].filter(Boolean); return (staffIds = new Set(rows.map(r => r.id))); };
+  // 대화방: 처음 보는 방은 ‘지금까지 쓴 글’을 읽은 것으로 두고 그 뒤부터 읽지 않은 글을 센다
+  const startReading = () => db.prepare('INSERT OR IGNORE INTO chat_reads(member_id, room_id, last_id) SELECT ?, r.id, COALESCE((SELECT MAX(id) FROM chat_messages WHERE room_id = r.id), 0) FROM chat_rooms r').bind(me.id).run();
   const person = async r => ({ author: authorOf(r), mid: r.mid || 0, mine: r.user_id === user.id, staff: (await staffOf()).has(r.user_id) });
   const postOut = async r => ({ id: r.id, category: r.category, title: r.title, ...(r.body !== undefined ? { body: r.body } : { preview: r.preview }), pinned: !!r.pinned, hidden: !!r.hidden, ...(await person(r)), at: r.created_at, edited: r.updated_at > r.created_at, comments: r.ncom, likes: r.nlike, liked: !!r.liked, ...(admin ? { admin: true } : {}) });
   const loadPost = async id => {
@@ -87,9 +99,10 @@ export async function handleCommunity({ db, env, user, request, path, method, no
     const seen = await db.prepare('SELECT seen_at FROM community_seen WHERE user_id=?').bind(user.id).first();
     const reports = admin ? (await db.prepare('SELECT COUNT(*) c FROM (SELECT 1 FROM community_reports GROUP BY kind, target_id)').bind().first()).c : 0;
     const dm = (await db.prepare('SELECT COUNT(*) c FROM dms WHERE to_m=? AND read_at IS NULL').bind(me.id).first()).c;
-    if (!seen) { await db.prepare('INSERT OR IGNORE INTO community_seen(user_id, seen_at) VALUES(?,?)').bind(user.id, now).run(); return json({ ok: true, unread: 0, mine: 0, dm, admin, reports }); }
+    await startReading(); const chat = (await db.prepare('SELECT COUNT(*) c FROM chat_messages c JOIN chat_reads cr ON cr.room_id = c.room_id AND cr.member_id = ? WHERE c.id > cr.last_id AND c.member_id <> ? AND c.hidden = 0').bind(me.id, me.id).first()).c; // 대화방은 처음 보는 방부터 ‘지금부터’ 읽지 않은 글을 센다
+    if (!seen) { await db.prepare('INSERT OR IGNORE INTO community_seen(user_id, seen_at) VALUES(?,?)').bind(user.id, now).run(); return json({ ok: true, unread: 0, mine: 0, dm, chat, admin, reports }); }
     const c = await db.prepare('SELECT (SELECT COUNT(*) FROM posts WHERE created_at > ? AND user_id <> ? AND hidden = 0) + (SELECT COUNT(*) FROM comments WHERE created_at > ? AND user_id <> ? AND hidden = 0) AS n, (SELECT COUNT(*) FROM comments c JOIN posts p ON p.id = c.post_id WHERE c.created_at > ? AND c.user_id <> ? AND c.hidden = 0 AND p.user_id = ?) AS mine').bind(seen.seen_at, user.id, seen.seen_at, user.id, seen.seen_at, user.id, user.id).first();
-    return json({ ok: true, unread: c.n, mine: c.mine, dm, admin, reports });
+    return json({ ok: true, unread: c.n, mine: c.mine, dm, chat, admin, reports });
   }
   if (rest === '/seen' && method === 'POST') { await db.prepare('INSERT INTO community_seen(user_id, seen_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET seen_at = excluded.seen_at').bind(user.id, now).run(); return json({ ok: true }); }
 
@@ -217,10 +230,58 @@ export async function handleCommunity({ db, env, user, request, path, method, no
     await db.prepare('DELETE FROM dms WHERE id=?').bind(id).run(); await db.prepare("DELETE FROM community_reports WHERE kind='dm' AND target_id=?").bind(id).run(); return json({ ok: true });
   }
 
+  // ---- 단체 대화방(MB12.11): 방 목록 · 글 읽기(이어서 가져오기) · 글 보내기 · 지우기·숨기기 · 방 관리(관리자) ----
+  const CSEL = 'SELECT c.id, c.room_id, c.body, c.hidden, c.created_at, m.id AS mid, m.nick, m.user_id, u.name, u.email FROM chat_messages c JOIN members m ON m.id = c.member_id JOIN users u ON u.id = m.user_id';
+  const roomRow = async id => { const r = await db.prepare('SELECT id, name, topic, closed FROM chat_rooms WHERE id=?').bind(id).first(); need(r, '대화방을 찾을 수 없어요.', 404); return r; };
+  const roomOut = r => ({ id: r.id, name: r.name, topic: r.topic, closed: !!r.closed });
+  const chatOut = async r => ((r.hidden && !admin && r.user_id !== user.id) ? { id: r.id, hidden: true, body: '', author: '', mid: 0, mine: false, staff: false, at: r.created_at } : { id: r.id, hidden: !!r.hidden, body: r.body, ...(await person(r)), at: r.created_at });
+  const roomForm = async () => { const b = await body(request); const L = COMMUNITY_LIMITS; const name = one(b.name), topic = one(b.topic); need(name.length >= 2 && name.length <= L.room, `방 이름은 2~${L.room}자로 적어 주세요.`); need(topic.length <= L.topic, `방 소개는 ${L.topic}자까지예요.`); return { name, topic, closed: b.closed ? 1 : 0 }; };
+  if (rest === '/rooms' && method === 'GET') {
+    await startReading(); const since = now - 5 * 60e3;
+    const rooms = (await db.prepare('SELECT r.id, r.name, r.topic, r.closed, (SELECT COUNT(*) FROM chat_messages c WHERE c.room_id = r.id AND c.id > cr.last_id AND c.member_id <> ? AND c.hidden = 0) AS unread, (SELECT MAX(id) FROM chat_messages WHERE room_id = r.id AND hidden = 0) AS last_id FROM chat_rooms r JOIN chat_reads cr ON cr.room_id = r.id AND cr.member_id = ? ORDER BY r.sort, r.id').bind(me.id, me.id).all()).results;
+    const ids = rooms.map(r => r.last_id).filter(Boolean); const lastBy = new Map(ids.length ? (await db.prepare(`SELECT c.id, SUBSTR(c.body, 1, 60) AS excerpt, c.created_at, m.nick, u.name, u.email FROM chat_messages c JOIN members m ON m.id = c.member_id JOIN users u ON u.id = m.user_id WHERE c.id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results.map(x => [x.id, x]) : []);
+    const act = new Map((await db.prepare('SELECT room_id, COUNT(DISTINCT member_id) AS n FROM chat_messages WHERE created_at > ? AND hidden = 0 GROUP BY room_id').bind(since).all()).results.map(x => [x.room_id, x.n]));
+    return json({ ok: true, admin, items: rooms.map(r => { const l = lastBy.get(r.last_id); return { ...roomOut(r), unread: r.unread, active: act.get(r.id) || 0, last: l ? { excerpt: l.excerpt, author: authorOf(l), at: l.created_at } : null }; }) });
+  }
+  if (rest === '/rooms' && method === 'POST') {
+    need(admin, '관리자만 할 수 있어요.', 403); const f = await roomForm(); need((await db.prepare('SELECT COUNT(*) c FROM chat_rooms').bind().first()).c < COMMUNITY_LIMITS.rooms, `대화방은 ${COMMUNITY_LIMITS.rooms}개까지 만들 수 있어요.`);
+    const sort = (await db.prepare('SELECT COALESCE(MAX(sort), 0) + 1 AS s FROM chat_rooms').bind().first()).s; const r = await db.prepare('INSERT INTO chat_rooms(name, topic, closed, sort, created_at) VALUES(?,?,?,?,?) RETURNING id').bind(f.name, f.topic, f.closed, sort, now).first(); return json({ ok: true, id: r.id }, 201);
+  }
+  if ((m = /^\/rooms\/(\d{1,12})$/.exec(rest)) && (method === 'PUT' || method === 'DELETE')) {
+    need(admin, '관리자만 할 수 있어요.', 403); const room = await roomRow(num(m[1]));
+    if (method === 'PUT') { const f = await roomForm(); await db.prepare('UPDATE chat_rooms SET name=?, topic=?, closed=? WHERE id=?').bind(f.name, f.topic, f.closed, room.id).run(); return json({ ok: true }); }
+    await db.prepare("DELETE FROM community_reports WHERE kind='chat' AND target_id IN (SELECT id FROM chat_messages WHERE room_id=?)").bind(room.id).run();
+    for (const sql of ['DELETE FROM chat_messages WHERE room_id=?', 'DELETE FROM chat_reads WHERE room_id=?', 'DELETE FROM chat_rooms WHERE id=?']) await db.prepare(sql).bind(room.id).run(); return json({ ok: true });
+  }
+  if ((m = /^\/rooms\/(\d{1,12})\/messages$/.exec(rest))) {
+    const room = await roomRow(num(m[1]));
+    if (method === 'GET') { // after=마지막으로 받은 글 번호: 그 뒤 글만 가져온다(처음에는 최근 50개)
+      const after = Math.max(0, Math.trunc(num(new URL(request.url).searchParams.get('after')) || 0));
+      const rows = after ? (await db.prepare(`${CSEL} WHERE c.room_id = ? AND c.id > ? ORDER BY c.id ASC LIMIT 100`).bind(room.id, after).all()).results : (await db.prepare(`${CSEL} WHERE c.room_id = ? ORDER BY c.id DESC LIMIT 50`).bind(room.id).all()).results.reverse();
+      const last = rows.length ? rows[rows.length - 1].id : after;
+      if (rows.length) await db.prepare('INSERT INTO chat_reads(member_id, room_id, last_id) VALUES(?,?,?) ON CONFLICT(member_id, room_id) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)').bind(me.id, room.id, last).run();
+      const active = (await db.prepare('SELECT COUNT(DISTINCT member_id) c FROM chat_messages WHERE room_id = ? AND created_at > ? AND hidden = 0').bind(room.id, now - 5 * 60e3).first()).c;
+      return json({ ok: true, room: roomOut(room), items: await Promise.all(rows.map(chatOut)), last, active, now, admin });
+    }
+    if (method === 'POST') {
+      need(!room.closed, '닫힌 대화방이에요. 글을 보낼 수 없어요.', 403); const b = await body(request, 4000); const text = clean(b.body); need(text.length >= 1 && text.length <= COMMUNITY_LIMITS.chat, `글은 1~${COMMUNITY_LIMITS.chat}자로 적어 주세요.`);
+      const count = await throttle('chat'); const r = await db.prepare('INSERT INTO chat_messages(room_id, member_id, body, created_at) VALUES(?,?,?,?) RETURNING id').bind(room.id, me.id, text, now).first(); await count();
+      await db.prepare('INSERT INTO chat_reads(member_id, room_id, last_id) VALUES(?,?,?) ON CONFLICT(member_id, room_id) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)').bind(me.id, room.id, r.id).run(); // 내가 보낸 글은 읽은 것으로
+      await db.prepare('DELETE FROM chat_messages WHERE room_id = ? AND id NOT IN (SELECT id FROM chat_messages WHERE room_id = ? ORDER BY id DESC LIMIT ?)').bind(room.id, room.id, COMMUNITY_LIMITS.keep).run(); // 오래된 글은 방마다 최근 500개만 남긴다
+      return json({ ok: true, id: r.id }, 201);
+    }
+  }
+  if ((m = /^\/chat\/messages\/(\d{1,12})(\/hide)?$/.exec(rest))) {
+    const id = num(m[1]); const c = await db.prepare('SELECT c.id, m.user_id FROM chat_messages c JOIN members m ON m.id = c.member_id WHERE c.id = ?').bind(id).first(); need(c, '글을 찾을 수 없어요.', 404);
+    if (!m[2] && method === 'DELETE') { need(c.user_id === user.id || admin, '내가 보낸 글만 지울 수 있어요.', 403); await db.prepare('DELETE FROM chat_messages WHERE id=?').bind(id).run(); await db.prepare("DELETE FROM community_reports WHERE kind='chat' AND target_id=?").bind(id).run(); return json({ ok: true }); }
+    if (m[2] && method === 'POST') { need(admin, '관리자만 할 수 있어요.', 403); const b = await body(request); await db.prepare('UPDATE chat_messages SET hidden=? WHERE id=?').bind(b.hidden ? 1 : 0, id).run(); return json({ ok: true, hidden: !!b.hidden }); }
+  }
+
   // ---- 신고(누구나) · 신고 목록·처리(관리자) ----
   if (rest === '/report' && method === 'POST') {
-    const b = await body(request); const kind = ['post', 'comment', 'dm'].includes(b.kind) ? b.kind : ''; need(kind, '신고할 대상이 올바르지 않아요.'); const id = Math.trunc(num(b.id)); need(Number.isSafeInteger(id) && id > 0, '신고할 대상이 올바르지 않아요.');
+    const b = await body(request); const kind = ['post', 'comment', 'dm', 'chat'].includes(b.kind) ? b.kind : ''; need(kind, '신고할 대상이 올바르지 않아요.'); const id = Math.trunc(num(b.id)); need(Number.isSafeInteger(id) && id > 0, '신고할 대상이 올바르지 않아요.');
     if (kind === 'dm') { const d = await db.prepare('SELECT to_m FROM dms WHERE id=?').bind(id).first(); need(d, '신고할 대상을 찾을 수 없어요.', 404); need(d.to_m === me.id, '받은 쪽지만 신고할 수 있어요.', 403); }
+    else if (kind === 'chat') { const c = await db.prepare('SELECT member_id FROM chat_messages WHERE id=?').bind(id).first(); need(c, '신고할 대상을 찾을 수 없어요.', 404); need(c.member_id !== me.id, '내 글은 신고할 수 없어요.'); }
     else { const owner = kind === 'post' ? await db.prepare('SELECT user_id FROM posts WHERE id=?').bind(id).first() : await db.prepare('SELECT user_id FROM comments WHERE id=?').bind(id).first(); need(owner, '신고할 대상을 찾을 수 없어요.', 404); need(owner.user_id !== user.id, '내 글은 신고할 수 없어요.'); }
     const count = await throttle('report'); await db.prepare('INSERT OR IGNORE INTO community_reports(kind, target_id, user_id, reason, created_at) VALUES(?,?,?,?,?)').bind(kind, id, user.id, clean(b.reason).slice(0, COMMUNITY_LIMITS.report), now).run(); await count();
     return json({ ok: true });
@@ -232,10 +293,11 @@ export async function handleCommunity({ db, env, user, request, path, method, no
       const reasons = (await db.prepare("SELECT reason FROM community_reports WHERE kind=? AND target_id=? AND reason <> '' ORDER BY id DESC LIMIT 3").bind(g.kind, g.target_id).all()).results.map(r => r.reason);
       if (g.kind === 'post') { const p = await db.prepare('SELECT p.id, p.title, SUBSTR(p.body,1,120) AS excerpt, p.hidden, u.name, u.email, m.nick FROM posts p JOIN users u ON u.id=p.user_id LEFT JOIN members m ON m.user_id=p.user_id WHERE p.id=?').bind(g.target_id).first(); if (p) items.push({ kind: 'post', id: p.id, postId: p.id, title: p.title, excerpt: p.excerpt, hidden: !!p.hidden, author: authorOf(p), count: g.n, at: g.at, reasons }); }
       else if (g.kind === 'comment') { const c = await db.prepare('SELECT c.id, c.post_id, SUBSTR(c.body,1,120) AS excerpt, c.hidden, u.name, u.email, m.nick FROM comments c JOIN users u ON u.id=c.user_id LEFT JOIN members m ON m.user_id=c.user_id WHERE c.id=?').bind(g.target_id).first(); if (c) items.push({ kind: 'comment', id: c.id, postId: c.post_id, title: '', excerpt: c.excerpt, hidden: !!c.hidden, author: authorOf(c), count: g.n, at: g.at, reasons }); }
+      else if (g.kind === 'chat') { const c = await db.prepare('SELECT c.id, c.room_id, SUBSTR(c.body,1,120) AS excerpt, c.hidden, r.name AS room, u.name, u.email, m.nick FROM chat_messages c JOIN members m ON m.id=c.member_id JOIN users u ON u.id=m.user_id JOIN chat_rooms r ON r.id=c.room_id WHERE c.id=?').bind(g.target_id).first(); if (c) items.push({ kind: 'chat', id: c.id, postId: c.room_id, title: c.room, excerpt: c.excerpt, hidden: !!c.hidden, author: authorOf(c), count: g.n, at: g.at, reasons }); }
       else if (g.kind === 'dm') { const d = await db.prepare('SELECT d.id, SUBSTR(d.body,1,120) AS excerpt, u.name, u.email, m.nick FROM dms d JOIN members m ON m.id=d.from_m JOIN users u ON u.id=m.user_id WHERE d.id=?').bind(g.target_id).first(); if (d) items.push({ kind: 'dm', id: d.id, postId: 0, title: '쪽지', excerpt: d.excerpt, hidden: false, author: authorOf(d), count: g.n, at: g.at, reasons }); }
     }
     return json({ ok: true, items });
   }
-  if (rest === '/reports/clear' && method === 'POST') { need(admin, '관리자만 할 수 있어요.', 403); const b = await body(request); const kind = ['comment', 'dm'].includes(b.kind) ? b.kind : 'post'; await db.prepare('DELETE FROM community_reports WHERE kind=? AND target_id=?').bind(kind, Math.trunc(num(b.id)) || 0).run(); return json({ ok: true }); }
+  if (rest === '/reports/clear' && method === 'POST') { need(admin, '관리자만 할 수 있어요.', 403); const b = await body(request); const kind = ['comment', 'dm', 'chat'].includes(b.kind) ? b.kind : 'post'; await db.prepare('DELETE FROM community_reports WHERE kind=? AND target_id=?').bind(kind, Math.trunc(num(b.id)) || 0).run(); return json({ ok: true }); }
   return null;
 }
