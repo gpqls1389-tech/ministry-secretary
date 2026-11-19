@@ -162,7 +162,23 @@ test('MB12.9 커뮤니티 화면 도우미: 시간 표시, 개인정보 꼴 감�
   assert.ok(c.hasPersonalInfo('문의 010-1234-5678')); assert.ok(c.hasPersonalInfo('01012345678')); assert.ok(c.hasPersonalInfo('주민 900101-1234567')); assert.ok(!c.hasPersonalInfo('2026-11-29 대림절 첫째 주, 1부 9시 예배')); assert.ok(!c.hasPersonalInfo('요한복음 1:14 · 누가복음 2:1-7'));
   assert.equal(c.badgeText(3), '3'); assert.equal(c.badgeText(100), '99+');
   const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8'); const ui = fs.readFileSync(new URL('../public/js/community.js', import.meta.url), 'utf8');
-  assert.ok(app.includes("['community', '💬', '커뮤니티']") && app.includes('community: vCommunity, post: vPost') && app.includes("view === 'post' ? 'community'") && app.includes('COMM.startBadge()'));
+  assert.ok(app.includes("['community', '💬', '커뮤니티']") && app.includes('community: vCommunity, post: vPost') && app.includes("view === 'post' || view === 'dm' ? 'community'") && app.includes('dm: vDm') && app.includes('COMM.startBadge()'));
   assert.ok(!/\$\{(?!esc\()[a-z]+\.(title|body|author|excerpt|preview|reason|message)\}/i.test(ui), '글·댓글·작성자 글자는 ${esc()} 없이 그대로 화면에 넣지 않는다(값만 들어가는 보간 검사)');
   assert.ok((ui.match(/\$\{esc\(/g) || []).length > 20, '화면 글자는 esc()를 거친다');
+});
+
+test('MB12.10 링크 자동 연결: http(s)만, 속성 탈출·스크립트 주소·끝 문장부호 처리', async () => {
+  const { linkify } = await import('../public/js/community.js');
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const L = t => linkify(esc(t));
+  assert.equal(L('자료: https://example.com/a?x=1&y=2 입니다'), '자료: <a href="https://example.com/a?x=1&amp;y=2" target="_blank" rel="noopener noreferrer nofollow">https://example.com/a?x=1&amp;y=2</a> 입니다');
+  assert.equal(L('(https://example.com/가나.)'), '(<a href="https://example.com/가나" target="_blank" rel="noopener noreferrer nofollow">https://example.com/가나</a>.)', '끝의 마침표·닫는 괄호는 링크에서 뺀다');
+  assert.equal(L("'https://a.kr/x'"), '&#39;<a href="https://a.kr/x" target="_blank" rel="noopener noreferrer nofollow">https://a.kr/x</a>&#39;', '따옴표로 감싼 주소');
+  assert.equal(L('javascript:alert(1) data:text/html,x ftp://a.kr'), 'javascript:alert(1) data:text/html,x ftp://a.kr', 'http(s)가 아닌 주소는 링크로 만들지 않는다');
+  const evil = L('https://e.com/"onmouseover="alert(1) <img src=x onerror=alert(1)> https://e.com/<script>'); assert.ok(!/<script|<img|onerror=alert\(1\)>/.test(evil), '글 속의 태그는 글자로만 남는다'); assert.ok(!/href="[^"]*"[^>]*onmouseover/.test(evil), '속성으로 빠져나가지 못한다');
+  assert.equal(L('https://'), 'https://'); assert.equal(L('그냥 글'), '그냥 글');
+  // 화면 코드 점검: 본문·댓글·쪽지는 body() = linkify(esc()) 로만 들어간다
+  const fs = await import('node:fs'); const ui = fs.readFileSync(new URL('../public/js/community.js', import.meta.url), 'utf8');
+  assert.ok(ui.includes('const body = t => linkify(esc(t))') && ui.includes('${body(p.body)}') && ui.includes('${body(c.body)}') && ui.includes('${body(x.body)}'));
+  assert.ok(!/\$\{(?!esc\()[a-z]+\.(name|church|role|bio|nick|last|reason|excerpt)\}/i.test(ui), '이름·교회·소개·쪽지 미리보기도 esc() 없이 넣지 않는다');
 });

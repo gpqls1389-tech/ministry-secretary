@@ -41,7 +41,16 @@ export const imageApi = {
 };
 // 커뮤니티(게시판, MB12.9)
 export const communityApi = {
-  posts: ({ category = '', before = 0 } = {}) => req('GET', `/api/community/posts?category=${encodeURIComponent(category)}&before=${Number(before) || 0}`),
+  posts: ({ category = '', before = 0, q = '', mine = '' } = {}) => req('GET', `/api/community/posts?category=${encodeURIComponent(category)}&before=${Number(before) || 0}&q=${encodeURIComponent(q)}&mine=${encodeURIComponent(mine)}`),
+  me: () => req('GET', '/api/community/me'),
+  saveMe: b => req('PUT', '/api/community/me', b),
+  members: ({ q = '', before = 0 } = {}) => req('GET', `/api/community/members?q=${encodeURIComponent(q)}&before=${Number(before) || 0}`),
+  card: mid => req('GET', '/api/community/members/' + encodeURIComponent(mid)),
+  block: (mid, blocked) => req('POST', '/api/community/block/' + encodeURIComponent(mid), { blocked }),
+  inbox: () => req('GET', '/api/community/dm'),
+  thread: (mid, before = 0) => req('GET', `/api/community/dm/${encodeURIComponent(mid)}?before=${Number(before) || 0}`),
+  sendDm: (mid, body) => req('POST', '/api/community/dm/' + encodeURIComponent(mid), { body }),
+  delDm: id => req('DELETE', '/api/community/dm/message/' + encodeURIComponent(id), {}),
   post: id => req('GET', '/api/community/posts/' + encodeURIComponent(id)),
   create: b => req('POST', '/api/community/posts', b),
   update: (id, b) => req('PUT', '/api/community/posts/' + encodeURIComponent(id), b),
