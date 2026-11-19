@@ -488,3 +488,12 @@ a.cpost.unreadpost { border-color:var(--primary,#15803d); background:#f3faf5; }
 .meform { max-width:640px; } .meform textarea, .meform input[name=nick], .meform input[name=church], .meform input[name=role] { width:100%; }
 @media (max-width:760px) { .pcard { flex-direction:column; } form.csearch { max-width:none; } }
 .ctabbadge[hidden] { display:none; }
+
+/* MB12.11 단체 대화방 */
+.chatlist { height:min(56vh,520px); overflow:auto; padding:10px; background:#fff; border:1px solid var(--line,#e2e0d8); border-radius:10px; display:flex; flex-direction:column; gap:2px; }
+.chatmsg { padding:4px 8px; border-radius:8px; max-width:100%; } .chatmsg:hover { background:#f6f8f6; } .chatmsg.mine .chatbody { background:#e8f5ec; border-radius:10px; padding:4px 10px; display:inline-block; } .chatmsg.hiddenc { opacity:.65; }
+.chatmsg .cmeta { margin-top:6px; } .chatbody { white-space:pre-wrap; word-break:break-word; } .chatact { display:none; gap:6px; } .chatmsg:hover .chatact, .chatmsg:focus-within .chatact { display:flex; }
+@media (hover:none) { .chatact { display:flex; } }
+.chatform { display:flex; gap:8px; margin-top:8px; align-items:flex-end; } .chatform textarea { flex:1; min-width:0; resize:vertical; }
+.roomrow { margin-bottom:8px; } .roomrow .cpost { margin-bottom:4px; } .roomrow .adminrow { margin:0 0 8px; border-top:0; padding-top:0; }
+[hidden] { display:none !important; } /* hidden 속성이 .callout 같은 display 규칙에 밀려 보이던 문제 */
