@@ -39,6 +39,25 @@ export const imageApi = {
   status: () => req('GET', '/api/image/status'),
   generate: b => req('POST', '/api/image/generate', b),
 };
+// 커뮤니티(게시판, MB12.9)
+export const communityApi = {
+  posts: ({ category = '', before = 0 } = {}) => req('GET', `/api/community/posts?category=${encodeURIComponent(category)}&before=${Number(before) || 0}`),
+  post: id => req('GET', '/api/community/posts/' + encodeURIComponent(id)),
+  create: b => req('POST', '/api/community/posts', b),
+  update: (id, b) => req('PUT', '/api/community/posts/' + encodeURIComponent(id), b),
+  removePost: id => req('DELETE', '/api/community/posts/' + encodeURIComponent(id), {}),
+  comment: (id, body) => req('POST', `/api/community/posts/${encodeURIComponent(id)}/comments`, { body }),
+  removeComment: id => req('DELETE', '/api/community/comments/' + encodeURIComponent(id), {}),
+  like: id => req('POST', `/api/community/posts/${encodeURIComponent(id)}/like`, {}),
+  pin: (id, pinned) => req('POST', `/api/community/posts/${encodeURIComponent(id)}/pin`, { pinned }),
+  hidePost: (id, hidden) => req('POST', `/api/community/posts/${encodeURIComponent(id)}/hide`, { hidden }),
+  hideComment: (id, hidden) => req('POST', `/api/community/comments/${encodeURIComponent(id)}/hide`, { hidden }),
+  report: (kind, id, reason) => req('POST', '/api/community/report', { kind, id, reason }),
+  reports: () => req('GET', '/api/community/reports'),
+  clearReports: (kind, id) => req('POST', '/api/community/reports/clear', { kind, id: Number(id) }),
+  summary: () => req('GET', '/api/community/summary'),
+  seen: () => req('POST', '/api/community/seen', {}),
+};
 export const receiptApi = {
   put: data => req('POST', '/api/receipts', { data }),
   remove: id => req('DELETE', '/api/receipts/' + encodeURIComponent(id), {}),

@@ -1,5 +1,6 @@
 // 로그인·사용자별 저장 API (Cloudflare Pages Functions + D1). 웹 표준 API만 사용하므로 Node 테스트에서도 그대로 실행된다.
 import { validateState } from '../../public/js/store.js';
+import { handleCommunity, communityPurge } from './community.js';
 import { IMAGE_KINDS, IMAGE_SIZES, IMAGE_QUALITIES, PROMPT_MIN, PROMPT_MAX, imageConfig, emailAllowed, callOpenAI, rateKeys, DAY_MS } from './imagegen.js';
 
 const ITER = 100000;                       // Workers WebCrypto의 PBKDF2 반복 횟수 상한(확인된 값)
@@ -236,6 +237,9 @@ export async function handle(request, env, now = Date.now()) {
       const mine = await currentDevice(db, request, secure, now); if (mine && mine.user_id === user.id) await db.prepare('DELETE FROM devices WHERE id=?').bind(mine.id).run();
       return json({ ok: true }, 200, { 'Set-Cookie': setDeviceCookie(secure, '', 0) });
     }
+    // ---- 커뮤니티(게시판): 로그인한 계정끼리 글·댓글·좋아요 ----
+    if (path.startsWith('/api/community')) { const res = await handleCommunity({ db, env, user, request, path, method, now, body, json, HttpError, limited, fail }); if (res) return res; throw new HttpError(404, '찾을 수 없습니다.'); }
+
     // ---- 저장 이력: 목록 · 한 건 내려받기 · 되돌리기 (항상 '내' 이력만: user_id는 세션에서만 얻는다) ----
     if (path === '/api/history' && method === 'GET') {
       await ensureHistory(db);
@@ -289,7 +293,7 @@ export async function handle(request, env, now = Date.now()) {
       const b = await body(request); const u = await db.prepare('SELECT pw_hash FROM users WHERE id=?').bind(user.id).first();
       if (await limited(db, `pw:${user.id}`, 8, now)) throw new HttpError(429, '시도가 너무 많습니다. 잠시 후 다시 해 주세요.');
       if (!(await verifyPassword(String(b.password || ''), u.pw_hash))) { await fail(db, `pw:${user.id}`, now); throw new HttpError(401, '비밀번호가 맞지 않습니다.'); }
-      await ensureReceipts(db); await db.prepare('DELETE FROM receipts WHERE user_id=?').bind(user.id).run(); await dropDevices(db, user.id); await ensureHistory(db); await db.prepare('DELETE FROM state_history WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
+      await ensureReceipts(db); await db.prepare('DELETE FROM receipts WHERE user_id=?').bind(user.id).run(); await dropDevices(db, user.id); await ensureHistory(db); await db.prepare('DELETE FROM state_history WHERE user_id=?').bind(user.id).run(); await communityPurge(db, user.id); await db.prepare('DELETE FROM user_state WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run(); await db.prepare('DELETE FROM users WHERE id=?').bind(user.id).run();
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie(secure, '', 0) });
     }
     // ---- 영수증 사진 (항상 '내' 사진만: user_id는 세션에서만 얻는다) ----

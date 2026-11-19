@@ -154,3 +154,15 @@ test('MB12.8 날짜 달력: 모달 대화상자 안으로 옮겨 클릭이 닿�
   assert.ok(ui.includes("position: 'fixed'") && ui.includes('toTop(self.context.mainElement, input)') && ui.includes('place(m, input)'));
   assert.ok(ui.includes("root.addEventListener('scroll'") && ui.includes("root.addEventListener('close'"));
 });
+
+test('MB12.9 커뮤니티 화면 도우미: 시간 표시, 개인정보 꼴 감지, 배지 글자, 분류 목록이 서버와 같다', async () => {
+  const c = await import('../public/js/community.js'); const srv = await import('../functions/_lib/community.js'); const fs = await import('node:fs');
+  assert.deepEqual(c.COMMUNITY_CATS, srv.COMMUNITY_CATS); for (const k of c.COMMUNITY_CATS) assert.ok(c.CAT_ICON[k] && c.CAT_HINT[k], k);
+  const now = Date.UTC(2026, 10, 19, 6, 0, 0); assert.equal(c.agoText(now - 5e3, now), '방금'); assert.equal(c.agoText(now - 5 * 60e3, now), '5분 전'); assert.equal(c.agoText(now - 3 * 3600e3, now), '3시간 전'); assert.equal(c.agoText(now - 2 * 86400e3, now), '2일 전'); assert.equal(c.agoText(Date.UTC(2026, 9, 3, 0, 0, 0), now), '10/3'); assert.equal(c.agoText(now + 9e3, now), '방금', '시계가 어긋나도 음수가 나오지 않음');
+  assert.ok(c.hasPersonalInfo('문의 010-1234-5678')); assert.ok(c.hasPersonalInfo('01012345678')); assert.ok(c.hasPersonalInfo('주민 900101-1234567')); assert.ok(!c.hasPersonalInfo('2026-11-29 대림절 첫째 주, 1부 9시 예배')); assert.ok(!c.hasPersonalInfo('요한복음 1:14 · 누가복음 2:1-7'));
+  assert.equal(c.badgeText(3), '3'); assert.equal(c.badgeText(100), '99+');
+  const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8'); const ui = fs.readFileSync(new URL('../public/js/community.js', import.meta.url), 'utf8');
+  assert.ok(app.includes("['community', '💬', '커뮤니티']") && app.includes('community: vCommunity, post: vPost') && app.includes("view === 'post' ? 'community'") && app.includes('COMM.startBadge()'));
+  assert.ok(!/\$\{(?!esc\()[a-z]+\.(title|body|author|excerpt|preview|reason|message)\}/i.test(ui), '글·댓글·작성자 글자는 ${esc()} 없이 그대로 화면에 넣지 않는다(값만 들어가는 보간 검사)');
+  assert.ok((ui.match(/\$\{esc\(/g) || []).length > 20, '화면 글자는 esc()를 거친다');
+});
