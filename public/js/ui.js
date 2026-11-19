@@ -18,17 +18,34 @@ export async function enhanceDates(root) {
     if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
     const inputs = [...root.querySelectorAll('input[type=date]')]; if (!inputs.length) return;
     const [{ Calendar }] = await Promise.all([once('vcp', () => import('../vendor/vanilla-calendar-pro/index.mjs')), cssLink('vendor/vanilla-calendar-pro/index.css')]);
-    const cals = []; const toTop = m => { try { m.setAttribute('popover', 'manual'); Object.assign(m.style, { margin: '0', right: 'auto', bottom: 'auto', width: 'auto', height: 'auto' }); if (!m.matches(':popover-open')) m.showPopover(); } catch (e) { /* popover 미지원이면 달력이 대화상자 뒤에 가려질 수 있음 */ } };
+    // 달력은 대화상자 위에 보여야 하고 클릭도 받아야 한다. 모달 대화상자는 그 안에 있지 않은 요소를 모두 inert(클릭 불가)로 막으므로,
+    // 달력을 대화상자 안으로 옮기고 입력칸 바로 아래(공간이 모자라면 위)에 화면 기준(fixed)으로 놓는다. (MB12.8)
+    const cals = [];
+    const place = (m, input) => {
+      const ir = input.getBoundingClientRect(); const mr = m.getBoundingClientRect(); const vw = window.innerWidth || document.documentElement.clientWidth || 1024, vh = window.innerHeight || document.documentElement.clientHeight || 768;
+      let top = ir.bottom + 4; if (top + mr.height > vh - 8 && ir.top - mr.height - 4 >= 8) top = ir.top - mr.height - 4;
+      const left = Math.max(8, Math.min(ir.left, vw - mr.width - 8)); m.style.top = top + 'px'; m.style.left = left + 'px';
+      const r2 = m.getBoundingClientRect(); if (Math.abs(r2.top - top) > 1 || Math.abs(r2.left - left) > 1) { m.style.top = (top + (top - r2.top)) + 'px'; m.style.left = (left + (left - r2.left)) + 'px'; } // 조상에 transform 등이 있어 기준이 달라졌다면 차이만큼 보정
+    };
+    const toTop = (m, input) => {
+      try {
+        if (root.tagName === 'DIALOG' && m.parentElement !== root) root.appendChild(m);
+        m.setAttribute('popover', 'manual'); Object.assign(m.style, { position: 'fixed', margin: '0', right: 'auto', bottom: 'auto', width: 'auto', height: 'auto' }); if (!m.matches(':popover-open')) m.showPopover();
+        place(m, input); requestAnimationFrame(() => { if (m.matches(':popover-open')) place(m, input); }); // 라이브러리가 뒤늦게 위치를 바꿔도 다시 맞춘다
+      } catch (e) { /* popover 미지원이면 달력이 대화상자 뒤에 가려질 수 있음 */ }
+    };
     for (const input of inputs) {
       const v = input.value; input.type = 'text'; input.value = v; input.placeholder = 'YYYY-MM-DD'; input.autocomplete = 'off'; input.maxLength = 10; input.setAttribute('inputmode', 'numeric');
       const cal = new Calendar(input, {
         inputMode: true, locale: 'ko-KR', firstWeekday: 0, selectedTheme: 'light', positionToInput: 'auto', selectedDates: DATE.test(v) ? [v] : [],
-        onShow(self) { const cur = DATE.test(input.value) ? [input.value] : []; self.selectedDates = cur; if (cur[0]) { self.selectedYear = Number(cur[0].slice(0, 4)); self.selectedMonth = Number(cur[0].slice(5, 7)) - 1; } self.update({ dates: true, month: true, year: true }); toTop(self.context.mainElement); },
+        onShow(self) { const cur = DATE.test(input.value) ? [input.value] : []; self.selectedDates = cur; if (cur[0]) { self.selectedYear = Number(cur[0].slice(0, 4)); self.selectedMonth = Number(cur[0].slice(5, 7)) - 1; } self.update({ dates: true, month: true, year: true }); toTop(self.context.mainElement, input); },
         onHide(self) { try { const m = self.context.mainElement; if (m && m.matches(':popover-open')) m.hidePopover(); } catch (e) { /* 이미 닫힘 */ } },
         onChangeToInput(self) { const d = self.context.selectedDates[0]; input.value = d || ''; input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); self.hide(); },
       });
       cal.init(); cals.push(cal);
     }
+    // 대화상자 안쪽을 스크롤하면 열린 달력도 입력칸을 따라가게 한다.
+    root.addEventListener('scroll', () => inputs.forEach((inp, i) => { const m = cals[i] && cals[i].context.mainElement; if (m && m.matches(':popover-open')) place(m, inp); }), true);
     // 대화상자가 닫히면(Esc 포함) 열려 있던 달력도 함께 치운다.
     root.addEventListener('close', () => cals.forEach(c => { let m = null; try { m = c.context.mainElement; if (m && m.matches(':popover-open')) m.hidePopover(); c.destroy(); } catch (e) { /* 이미 정리됨 */ } if (m && m.isConnected) m.remove(); }));
   } catch (e) { /* 달력 없이도 입력은 가능 */ }
