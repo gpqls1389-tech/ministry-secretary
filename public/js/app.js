@@ -1,6 +1,7 @@
 import { createStore, kstToday } from './store.js';
 import { EVENT_TEMPLATES, SERVICE_TEMPLATES, BUDGET_SUGGESTIONS, GUIDE_STEPS, TIPS, GLOSSARY, FAQ, churchInfo, churchLabel, churchYear, REPEAT_RULES, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS, eventNotice, serviceNotice, weekNotice } from './templates.js';
 import { toCsv, parseTable, decodeText } from './csv.js';
+import { IC, ILLUS } from './icons.js';
 import { visiblePeople, inClass, scopeText } from './attsearch.js';
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장소 사용 불가 */ } };
@@ -126,6 +127,8 @@ function openHelp(tab = 'start') {
 
 // ----- 라우터 -----
 const NAV = [['home', '🏠', '홈'], ['plan', '🗓️', '일정·계획'], ['events', '🎉', '행사'], ['services', '⛪', '예배'], ['people', '👥', '인원·출석'], ['ministry', '🌱', '부서 사역'], ['money', '💰', '회계'], ['admin', '🗂️', '행정'], ['community', '💬', '커뮤니티'], ['resources', '📚', '자료실'], ['settings', '⚙️', '설정']];
+const NAV_ICON = { plan: 'calendar', events: 'event', services: 'service' }; // 메뉴 아이콘(직접 그린 SVG, js/icons.js). 나머지는 메뉴 이름과 같은 키
+const SEASON_ART = { 대림절: ['advent', '기다림의 절기'], 성탄절: ['christmas', '성육신 — 하나님이 사람이 되어 우리와 함께하심'], 주현절: ['epiphany', '빛이 드러나는 절기'], 사순절: ['lent', '돌아봄과 준비의 절기'], 부활절: ['easter', '부활을 기뻐하는 절기'] };
 // 왼쪽 메뉴 위 ‘오늘의 교회력’ 띠: 절기 이름과 전례 색(흰색 절기는 금색으로 표시)
 const LITU_HEX = { 보라: '#7d5bc0', 흰색: '#d4a72c', 초록: '#3f9d5f', 빨강: '#d4513f' };
 function paintSeason() {
@@ -136,7 +139,7 @@ function paintSeason() {
 }
 function render() {
   const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
-  $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
+  $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${IC[NAV_ICON[k] || k] || ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
   paintSeason();
@@ -205,6 +208,8 @@ function vHome() {
   const nowInfo = churchInfo(t); let advStart = null; for (let i = 0; i <= 40; i++) { const d = addDays(t, i); if (churchInfo(d).season === '대림절') { advStart = { d, n: i }; break; } }
   const seasonOn = nowInfo.season === '대림절' || (nowInfo.season === '성탄절' && t <= `${t.slice(0, 4)}-12-25`);
   const seasonCard = seasonOn || advStart ? `<section class="seasoncard noprint"><span class="sdot" aria-hidden="true"></span><div class="sp"><b>${seasonOn ? `지금은 ${esc(nowInfo.label)}이에요` : advStart.n === 0 ? '오늘부터 대림절이에요' : `대림절이 ${advStart.n}일 뒤(${md(advStart.d)}) 시작해요`}</b><span>주일 공과·예배·성탄 행사 준비를 한곳에서 볼 수 있어요.</span></div><button data-go="#season">대림절·성탄절 보기</button></section>` : '';
+  const sa = SEASON_ART[nowInfo.season]; // 절기 띠: 교회력 절기 이름과 일러스트(교회마다 경계가 다를 수 있어 ‘참고’)
+  const seasonBand = sa ? `<section class="seasonband noprint" data-season="${sa[0]}"><span class="season-art" aria-hidden="true">${ILLUS[sa[0]]}</span><div><b>${esc(nowInfo.label)}</b><div class="small">${esc(sa[1])}</div><div class="small mute">교회력 참고 · 감리회 성서일과 기준 자동 계산</div></div></section>` : '';
   const actions = `<button class="pri" data-act="newEvent">+ 행사</button><button data-act="newService">+ 예배</button><button data-act="newSchedule">+ 일정</button><button data-act="newTx">+ 지출 등록</button><button data-go="#services">출석 기록</button><button data-act="notice" data-kind="week">이번 주 안내 문구</button>`;
   const nowK = kstNow(); const allTodos = store.todos(); const todayTodos = allTodos.filter(x => x.date === t); const pastTodos = allTodos.filter(x => x.date < t && !x.done); const openN = todayTodos.filter(x => !x.done).length; const np = notifyPermission();
   const todoRow = (x, past) => `<div class="todo ${x.done ? 'done' : ''}"><input type="checkbox" data-todo="${x.id}" ${x.done ? 'checked' : ''} aria-label="완료"><span class="tt sp">${esc(x.title)}</span>${x.time ? `<span class="tag ${!x.done && !past && x.time <= nowK.time ? 'warn' : ''}">⏰ ${esc(x.time)}</span>` : ''}${past ? `<span class="tag">${md(x.date)}</span><button class="sm" data-act="moveTodo" data-id="${x.id}">오늘로</button>` : ''}<button class="sm ghost noprint" data-act="editTodo" data-id="${x.id}" aria-label="수정">수정</button><button class="sm ghost noprint" data-act="delTodo" data-id="${x.id}" aria-label="삭제">✕</button></div>`;
@@ -217,7 +222,7 @@ function vHome() {
   const brief = store.briefing(did(), t); const kindIco = { event: '🎉', service: '⛪', care: '💛' };
   const briefHtml = `<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>이번 주 목회 브리핑</h3><span class="tag">${brief.length}</span><span class="sub">지금 챙길 일을 급한 순서로 보여 줘요</span></div><div class="cardb">${brief.slice(0, 5).map(c => `<a class="sched" href="#${c.go}" style="text-decoration:none;color:inherit"><div class="datebox"><b>${kindIco[c.kind]}</b></div><div class="what"><b>${esc(c.title)}</b><span>${esc(c.reason)}${c.detail ? ' · ' + esc(c.detail) : ''}</span></div>${c.pri === 1 ? '<span class="tag bad">급함</span>' : c.pri === 2 ? '<span class="tag warn">오늘</span>' : ''}</a>`).join('') || emptyState('지금 급하게 챙길 일이 없어요', '기한이 지난 업무, 오늘 마감 업무, 2주 안에 다가오는 행사, 순서가 비어 있는 이번 주 예배가 여기에 나타나요.', '')}${brief.length > 5 ? `<p class="mute small" style="margin:8px 12px">외 ${brief.length - 5}건 · <a href="#events">행사에서 모두 보기</a></p>` : ''}</div></section>`;
   const mast = `<h1 class="title"><span class="vh">홈 · </span>${Number(t.slice(5, 7))}월 ${Number(t.slice(8))}일 ${dow(t)}요일</h1><p class="sub"><span class="lcdot" style="background:${LITU_HEX[nowInfo.color] || '#3f9d5f'}"></span>${esc(churchLabel(t))} · ${esc(scope)}</p><p class="today-line">${openN ? `오늘 할 일 <b>${openN}건</b>` : '오늘 할 일 없음'} · 이번 주 일정 <b>${H.week.length}건</b>${overN ? ` · <b class="late">기한 지난 업무 ${overN}건</b>` : ''}</p>`;
-  page('🏠', '홈', '', `${seasonCard}${backupNote}<div class="homegrid">${todoHtml}${briefHtml}</div>
+  page('🏠', '홈', '', `${seasonBand}${seasonCard}${backupNote}<div class="homegrid">${todoHtml}${briefHtml}</div>
   <div class="strip" role="group" aria-label="이번 주 요약">
     <div><div class="k">이번 주 일정</div><div class="v">${H.week.length}건</div><div class="s">오늘 ${todayN}건 · ${md(H.from)} ~ ${md(H.to)}</div></div>
     <div class="${overN ? 'warn' : ''}"><div class="k">준비할 일</div><div class="v">${H.tasks.length}건</div><div class="s">${overN ? `<span class="tag bad">기한 지남 ${overN}건</span>` : '기한 지난 업무 없음'}</div></div>
