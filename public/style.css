@@ -544,3 +544,6 @@ button.pri { border-radius:var(--radius-sm); padding:5px 16px; } button.ghost { 
 @media (max-width:700px) { .seasonband .season-art { width:92px; } .seasonband { gap:12px; } }
 .empty { background:transparent; border:1px dashed var(--field); border-radius:3px; }
 @media print { .seasonband { display:none; } }
+/* ===== MB12.15 글꼴 선택 ===== */
+.fontprev { border:1px solid var(--line); background:#fff; padding:12px 16px; margin:8px 0; }
+.fontrow { padding:6px 0; border-bottom:1px solid var(--line); } .fontrow .fname { width:12em; flex-shrink:0; } .fontrow .fsample { font-size:1.15rem; min-width:0; }

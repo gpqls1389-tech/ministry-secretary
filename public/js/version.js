@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB12.14';
+export const VERSION = 'MB12.15';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '12.14.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '12.15.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB12.15', date: '2026-11-22', items: ['설정에서 본문 글꼴·제목 글꼴을 따로 고를 수 있어요: 고딕·명조·제목·장식·손글씨 28종을 새로 내장(모두 SIL OFL 1.1이라 비영리·영리 모두 사용 가능), 기본은 지금처럼 프리텐다드', '고른 글꼴만 불러오고(글자 조각 단위), 외부 서버로 연결하지 않아요. ‘모든 글꼴 미리보기’에서 한눈에 비교하고 본문·제목으로 바로 적용', '글꼴 라이선스 전문 링크를 설정 화면에 표시', '설치 프로그램 12.15.0(화면은 사이트가 제공해서 다시 설치하지 않아도 됨)'] },
   { v: 'MB12.14', date: '2026-11-22', items: ['‘작업대’ 디자인으로 전체 화면을 새로 입힘: 아이보리 바탕, 명조 제목, 작은 모서리, 선으로만 구분하는 카드·표, 황토색 강조', '부서 색을 바꿈: 아동부 청록 · 청년부 남색 · 전체 포레스트 초록', '왼쪽 메뉴의 이모지를 직접 그린 선 아이콘으로 교체, 앱 아이콘(성경책과 사역 수첩)·로고·절기 배너·빈 화면 그림을 한 가지 그림체로 새로 그림', '홈 위에 교회력 절기 띠(대림·성탄·주현·사순·부활) 추가', '설치 프로그램 12.14.0(화면은 사이트가 제공해서 다시 설치하지 않아도 됨, 아이콘만 새 설치 파일부터 바뀜)'] },
   { v: 'MB12.13', date: '2026-11-21', items: ['예배 화면 맨 위 버튼 정리: 자주 쓰는 것(출석 체크로·순서 짜기·교사 브리핑·가정 메시지)만 앞에 두고 수정·복제·안내 문구·인쇄·삭제는 ‘더 보기’로 이동', '‘출석 체크로’ 버튼으로 출석 목록까지 바로 이동', '터치 화면에서 작은 버튼의 누르는 영역을 키움'] },
   { v: 'MB12.12', date: '2026-11-21', items: ['예배 출석 화면에 ‘이름으로 찾기’ 추가(이름·출생 연도, 공백·대소문자 무시)', '‘전원 출석’은 지금 보이는 사람에게만 적용되고 버튼에 인원 수가 표시됨(체크는 누를 때마다 바로 저장되는 방식 그대로)'] },

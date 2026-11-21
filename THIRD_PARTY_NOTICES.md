@@ -24,3 +24,9 @@
 - 출처: https://github.com/airmang/python-hwpx 의 `src/hwpx/data/Skeleton.hwpx` 를 풀어서 사용. Copyright 2025-2026 airmang, **Apache License 2.0** — 전문: `public/vendor/hwpx/LICENSE.txt`, 고지: `public/vendor/hwpx/NOTICE.txt`
 - **바꾼 점**: `header.xml`에 표 테두리(borderFill 3·4), 굵은 글자·제목·작은 글자 모양(charPr 7~9), 가운데·오른쪽·왼쪽 정렬 문단 모양(paraPr 20~22)을 더했습니다. 나머지 파일은 그대로입니다.
 - 쓰임: `행정 → 서식`에서 한글(HWPX) 파일을 **브라우저 안에서** 만듭니다(서버로 보내지 않음). 본문(section0.xml)과 ZIP은 `public/js/hwpx.js`가 직접 만듭니다.
+
+## Noto·Nanum 등 내장 한글 글꼴 28종 (MB12.15)
+- 위치: `public/fonts/kr/<글꼴>/` (한글·영문 조각만 골라 수정 없이 사용), 각 폴더에 `LICENSE.txt`
+- 배포본: Fontsource(npm, https://fontsource.org) — 원본은 Google Fonts. 라이선스: SIL Open Font License, Version 1.1 (영리·비영리 사용·내장·재배포 허용, 글꼴 단독 판매·이름 바꿔 배포 금지, 저작권 고지·라이선스 전문 함께 배포)
+- 글꼴: 노토 산스 KR, 나눔고딕, IBM 플렉스 산스 KR, 고딕 A1, 고운돋움, 해바라기, 노토 세리프 KR, 나눔명조, 고운바탕, 함렛, 송명, 블랙한산스, 도현, 주아, 연성, 스타일리시, 싱글데이, 동글, 귀여운 폰트, 키랑해랑, 나눔손글씨 펜·붓, 하이멜로디, 동해독도, 개구, 푸어스토리, 감자꽃, 흑백사진
+- 화면에서는 `설정 → 글꼴`에서 라이선스 전문 링크를 함께 표시합니다.

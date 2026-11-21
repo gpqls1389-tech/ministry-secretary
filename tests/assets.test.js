@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { IC, ILLUS, APP_ICON, PALETTE } from '../public/js/icons.js';
 
 const read = p => fs.readFileSync(new URL('../' + p, import.meta.url));
-const text = p => read(p).toString('utf8');
+const text = p => read(p).toString('utf8').replace(/\r\n/g, '\n'); // 윈도우 줄바꿈(CRLF)으로 내려받아도 같게 비교
 
 test('MB12.14 시각 자산: 아이콘 14종·그림 8종은 팔레트 안의 색만 쓰고 대체 글이 있다', () => {
   const allowed = new Set(Object.values(PALETTE).map(c => c.toLowerCase()).concat(['#7a4f10'])); const colors = s => [...s.matchAll(/#[0-9a-fA-F]{6}\b/g)].map(m => m[0].toLowerCase());
