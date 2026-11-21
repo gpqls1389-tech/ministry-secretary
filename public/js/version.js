@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB12.12';
+export const VERSION = 'MB12.13';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '12.12.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '12.13.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB12.13', date: '2026-11-21', items: ['예배 화면 맨 위 버튼 정리: 자주 쓰는 것(출석 체크로·순서 짜기·교사 브리핑·가정 메시지)만 앞에 두고 수정·복제·안내 문구·인쇄·삭제는 ‘더 보기’로 이동', '‘출석 체크로’ 버튼으로 출석 목록까지 바로 이동', '터치 화면에서 작은 버튼의 누르는 영역을 키움'] },
   { v: 'MB12.12', date: '2026-11-21', items: ['예배 출석 화면에 ‘이름으로 찾기’ 추가(이름·출생 연도, 공백·대소문자 무시)', '‘전원 출석’은 지금 보이는 사람에게만 적용되고 버튼에 인원 수가 표시됨(체크는 누를 때마다 바로 저장되는 방식 그대로)'] },
   { v: 'MB12.11', date: '2026-11-19', items: ['커뮤니티 ‘대화방’: 부서·주제별 단체 대화방(기본 6개), 몇 초마다 새 글 확인, 읽지 않은 글 수·최근 대화 인원, 글 지우기·신고, 관리자의 방 만들기·닫기·글 숨기기', '서버 요청을 아끼려고 조용하면 확인 간격을 늘리고 10분 동안 아무것도 안 하면 멈춤(누르면 다시 시작)', '화면의 hidden 요소가 일부 스타일에 밀려 계속 보이던 문제 고침', '설치 프로그램 12.11.0(화면은 사이트가 제공해서 다시 설치하지 않아도 됨)'] },
   { v: 'MB12.10', date: '2026-11-19', items: ['커뮤니티 교류: 내 소개(표시 이름·교회·맡은 사역·한마디, 공개는 선택)와 사람 찾기, 글쓴이 이름을 눌러 소개 보기', '1:1 쪽지: 보내기·받기·읽음 표시·지우기, 새 쪽지 알림 배지, 차단, 쪽지 받기 끄기, 신고(신고한 쪽지만 관리자에게 보임)', '게시판 보완: 글 검색, 내가 쓴 글·내가 댓글 단 글, 내 글의 새 댓글 알림, 글·댓글·쪽지 속 웹 주소 링크, 관리자 계정 표시', '설치 프로그램 12.10.0(화면은 사이트가 제공해서 다시 설치하지 않아도 됨)'] },
