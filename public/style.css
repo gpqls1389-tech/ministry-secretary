@@ -503,3 +503,44 @@ a.cpost.unreadpost { border-color:var(--primary,#15803d); background:#f3faf5; }
 .more .menu { position:absolute; left:0; max-width:calc(100vw - 32px); top:calc(100% + 6px); z-index:20; min-width:200px; display:flex; flex-direction:column; gap:4px; padding:8px; background:#fff; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:0 8px 24px rgba(0,0,0,.14); } .more .menu button { justify-content:flex-start; text-align:left; width:100%; }
 @media (pointer:coarse) { button.sm { min-height:40px; padding:4px 14px; } }
 @media print { .more { display:none; } }
+/* ===== MB12.14 작업대 디자인 =====
+   ‘따뜻하고 정제된 디지털 사역 수첩’: 아이보리 바탕 · 포레스트 초록 · 황토 강조 · 제목은 명조, 본문은 고딕.
+   원칙: 모서리 2~4px, 그림자 없음(대화상자만), 구분은 선, 숫자는 같은 폭, 상태는 색 + 글자. 맨 아래에 두어 위 규칙보다 우선합니다. */
+:root {
+  --serif:'Noto Serif KR','Nanum Myeongjo','Batang','바탕',serif;
+  --bg:#fbfaf5; --line:#ddd8c6; --field:#bcb69f; --soft:#f3f0e4; --ink:#243830; --ink-2:#2f4a3f; --mute:#566860; --faint:#7d887f;
+  --all:#285540; --all-dk:#1d3f2f; --all-bg:#e8efe6; --all-line:#b5cdb9; --all-grad:#f4f8f3;
+  --kid:#1d7565; --kid-dk:#14574a; --kid-bg:#e2f1ee; --kid-line:#9fcfc5; --kid-grad:#f1f8f6; --on-kid:#fff;
+  --yth:#405385; --yth-dk:#2f3f66; --yth-bg:#e8ecf6; --yth-line:#b3bedb; --yth-grad:#f4f6fb;
+  --orange:#a63a2b; --orange-bg:#f8e6e2; --green:#2a7347; --green-bg:#e4f0e8; --brown:#8a5a0c; --brown-bg:#fbf3e0; --ochre:#926116;
+  --side:#1f2c26; --side-2:#2b3d34; --side-ac:#d9b45a;
+  --radius-xs:2px; --radius-sm:3px; --radius-ctl:3px; --radius-md:3px; --radius-lg:4px; --radius-xl:4px;
+  --shadow2:0 10px 36px rgba(0,0,0,.28);
+}
+body[data-theme="kid"] { --side-ac:#d9b45a; } body[data-theme="youth"] { --side-ac:#d9b45a; } body, body[data-theme="all"] { --side-ac:#d9b45a; }
+#side .dept-box button[data-dept="all"].on { background:var(--all); } #side .dept-box button[data-dept="1"].on { background:var(--kid); color:#fff; } #side .dept-box button[data-dept="2"].on { background:var(--yth); color:#fff; }
+.title, h2, h3, .cardh h3, .empty-t, .sc .v, .stat .v, .datebox b { font-family:var(--serif); }
+.title { font-weight:700; letter-spacing:-.02em; } h2 { font-weight:700; letter-spacing:-.015em; }
+.brand { font-family:var(--serif); font-weight:700; }
+#nav a { gap:12px; } #nav .ico { display:inline-flex; width:20px; justify-content:center; } #nav .ico .ic { width:19px; height:19px; vertical-align:0; } #nav a:not(.on) .ico { opacity:.85; }
+.ic { flex-shrink:0; }
+/* 묶음·표·버튼·배지는 납작하게 */
+.card, .box, .tablewrap, .props, .cal, .callout, .att-row, .statrow .sc, .ganttbox, .sc, dialog { box-shadow:none; }
+.sc.key { background:var(--primary-grad); } .att-row.on { background:var(--primary-grad); }
+table.t th { background:transparent; color:var(--mute); border-bottom:1px solid var(--ink); } table.t tfoot td { background:transparent; border-top:1px solid var(--ink); }
+table.t tbody tr:hover td { background:var(--primary-grad); }
+.att thead th, .att thead th:first-child, .att tfoot td:first-child { background:transparent; }
+button.pri { border-radius:var(--radius-sm); padding:5px 16px; } button.ghost { color:var(--mute); }
+.tag { border-radius:2px; background:transparent; border:1px solid currentColor; padding:0 8px; font-weight:600; }
+.tag.kid { background:transparent; color:var(--kid-dk); } .tag.yth { background:transparent; color:var(--yth-dk); } .tag.ok, .tag.in { background:transparent; } .tag.bad { background:transparent; } .tag.warn { background:transparent; } .tag.blue { background:transparent; color:var(--primary-dk); } .tag.out { background:transparent; color:var(--mute); }
+.tabs a.on { border-bottom-color:var(--ochre); color:var(--ink); } .tabs { border-bottom-color:var(--ink); }
+.datebox { border-radius:3px; } .callout, .props { border-radius:3px; }
+.cal { border-radius:0; } .cal .today b { border-radius:2px; }
+#demo-bar::before { border-radius:2px; }
+.bar, .bar > i { border-radius:0; } .bar { height:6px; }
+.update-bar { border-radius:3px; }
+/* 홈 절기 띠: 교회력 절기에 맞는 일러스트와 한 줄 안내 */
+.seasonband { display:flex; align-items:center; gap:20px; border-top:1px solid var(--ink); border-bottom:1px solid var(--line); padding:8px 0; margin:0 0 18px; } .seasonband .season-art { width:140px; flex-shrink:0; } .seasonband .season-art .art { display:block; width:100%; height:auto; } .seasonband b { font:700 1.1rem var(--serif); }
+@media (max-width:700px) { .seasonband .season-art { width:92px; } .seasonband { gap:12px; } }
+.empty { background:transparent; border:1px dashed var(--field); border-radius:3px; }
+@media print { .seasonband { display:none; } }

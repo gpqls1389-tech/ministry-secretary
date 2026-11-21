@@ -1,15 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 360 240">
-  <defs><filter id="soft" x="-30%" y="-150%" width="160%" height="400%"><feGaussianBlur stdDeviation="4"/></filter></defs>
-  <g opacity=".65" filter="url(#soft)">
-  <ellipse cx="172" cy="181" rx="62" ry="6" fill="#e3e1dc"/>
-  </g>
-  <path d="M152 177V63" fill="none" stroke="#15803d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M153 67c24-15 47 16 72 5a4 4 0 0 1 4 6l-13 15 12 14a4 4 0 0 1-3 6c-26 9-48-20-72-5Z" fill="#15803d"/>
-  <circle cx="121" cy="89" r="5" fill="#f4c95d"/>
-  <circle cx="108" cy="120" r="7" fill="#e5f5ea"/>
-  <circle cx="129" cy="140" r="4" fill="#f4c95d"/>
-  <circle cx="248" cy="91" r="6" fill="#e5f5ea"/>
-  <circle cx="247" cy="132" r="5" fill="#f4c95d"/>
-  <circle cx="225" cy="151" r="7" fill="#e5f5ea"/>
-  <circle cx="197" cy="51" r="4" fill="#f4c95d"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" width="200" height="120" role="img" aria-label="빈 수첩 그림" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20 22h72a8 8 0 0 1 8 8v78a8 8 0 0 0-8-8H20z" fill="#fbfaf5" stroke="#285540" stroke-width="2"/><path d="M180 22h-72a8 8 0 0 0-8 8v78a8 8 0 0 1 8-8h72z" fill="#fbfaf5" stroke="#285540" stroke-width="2"/><path d="M32 42h56M32 56h56M32 70h40M112 42h56M112 56h56" stroke="#bcb69f" stroke-width="2"/><path d="M150 96l22-28 8 6-22 28-10 4z" fill="#926116" stroke="#926116" stroke-width="2"/></svg>
