@@ -497,3 +497,9 @@ a.cpost.unreadpost { border-color:var(--primary,#15803d); background:#f3faf5; }
 .chatform { display:flex; gap:8px; margin-top:8px; align-items:flex-end; } .chatform textarea { flex:1; min-width:0; resize:vertical; }
 .roomrow { margin-bottom:8px; } .roomrow .cpost { margin-bottom:4px; } .roomrow .adminrow { margin:0 0 8px; border-top:0; padding-top:0; }
 [hidden] { display:none !important; } /* hidden 속성이 .callout 같은 display 규칙에 밀려 보이던 문제 */
+
+/* MB12.13 예배 화면: 자주 쓰는 버튼만 앞에 두고 나머지는 ‘더 보기’로, 터치 화면에서는 작은 버튼도 누르기 쉽게 */
+.more { position:relative; } .more > summary { list-style:none; cursor:pointer; padding:7px 14px; border:1px solid var(--line); border-radius:var(--radius-ctl); background:#fff; font-weight:600; min-height:40px; display:inline-flex; align-items:center; } .more > summary::-webkit-details-marker { display:none; }
+.more .menu { position:absolute; left:0; max-width:calc(100vw - 32px); top:calc(100% + 6px); z-index:20; min-width:200px; display:flex; flex-direction:column; gap:4px; padding:8px; background:#fff; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:0 8px 24px rgba(0,0,0,.14); } .more .menu button { justify-content:flex-start; text-align:left; width:100%; }
+@media (pointer:coarse) { button.sm { min-height:40px; padding:4px 14px; } }
+@media print { .more { display:none; } }
