@@ -2,7 +2,8 @@
 // 이 파일은 화면 없이 쓰는 정리·점검·글 만들기만 담는다. 성경 본문은 앱이 만들어 넣지 않는다(설교자가 개역개정을 확인해 직접 입력).
 export const SERMON_MAX = 300;
 export const BLOCK_MAX = 30;
-export const LIMITS = { title: 80, scripture: 60, season: 20, study: 3000, core: 400, block: 40, memo: 4000, guide: 120, sources: 1500 };
+export const REF_MAX = 20;
+export const LIMITS = { passage: 3000, refTitle: 60, refSeries: 30, refPages: 30, refNote: 600, title: 80, scripture: 60, season: 20, study: 3000, core: 400, block: 40, memo: 4000, guide: 120, sources: 1500 };
 export const AUDIENCES = { all: '세대통합', kid: '유치·유년', elem: '초등', teen: '중고등', youth: '청년', adult: '장년' };
 export const SEASONS = ['', '대림절', '성탄절', '송구영신', '주현절', '사순절', '고난주간', '부활절', '성령강림절', '추수감사절', '어린이주일'];
 
@@ -41,6 +42,8 @@ export function cleanSermon(raw, fail = m => { throw new Error(m); }) {
     minutes: Math.max(0, Math.min(120, Math.round(Number(r.minutes) || 0))), season: SEASONS.includes(r.season) ? r.season : '',
     study: { context: String(st.context ?? '').slice(0, LIMITS.study), words: String(st.words ?? '').slice(0, LIMITS.study), background: String(st.background ?? '').slice(0, LIMITS.study), sources: String(st.sources ?? '').slice(0, LIMITS.sources) },
     core: { idea: String(co.idea ?? '').slice(0, LIMITS.core), apply: String(co.apply ?? '').slice(0, LIMITS.core), question: String(co.question ?? '').slice(0, LIMITS.core) },
+    passage: String(r.passage ?? '').slice(0, LIMITS.passage),
+    refs: (Array.isArray(r.refs) ? r.refs : []).slice(0, REF_MAX).map(x => ({ title: clip(x && x.title, LIMITS.refTitle), series: clip(x && x.series, LIMITS.refSeries), pages: clip(x && x.pages, LIMITS.refPages), note: String((x && x.note) ?? '').slice(0, LIMITS.refNote) })).filter(x => x.title),
     blocks: cleanBlocks(r.blocks), checks: Object.fromEntries(MANUAL_KEYS.filter(k => ck[k] === true).map(k => [k, true])),
   };
 }
@@ -53,6 +56,8 @@ export function blockTimes(blocks) { let acc = 0; return blocks.map(b => { const
 export function autoChecks(sm) {
   const tot = totalMin(sm.blocks); const filled = sm.blocks.filter(b => String(b.memo || '').trim()).length; const out = [];
   out.push({ key: 'scripture', ok: !!sm.scripture, label: '본문(장·절)을 적었다', detail: sm.scripture || '본문 탭에서 입력하세요.' });
+  out.push({ key: 'passage', ok: !!String(sm.passage || '').trim(), label: '본문 글귀를 직접 붙여 넣어 두었다', detail: String(sm.passage || '').trim() ? '' : '② 연구 탭에서 개역개정을 확인해 붙여 넣으면 주제 확인에 쓰여요.' });
+  out.push({ key: 'refs', ok: (sm.refs || []).length > 0, label: '참고 주석을 한 권 이상 확인하고 기록했다', detail: (sm.refs || []).length ? `${sm.refs.length}권 기록` : '② 연구 탭의 ‘참고 주석 서가’에서 기록하세요.' });
   out.push({ key: 'idea', ok: !!String(sm.core.idea).trim(), label: '전하려는 한 문장이 있다', detail: sm.core.idea ? '' : '핵심 탭에서 한 문장으로 적어 보세요.' });
   out.push({ key: 'apply', ok: !!String(sm.core.apply).trim(), label: '적용이 한 가지로 정리돼 있다', detail: sm.core.apply ? '' : '핵심 탭의 ‘적용 한 가지’를 적어 보세요.' });
   out.push({ key: 'blocks', ok: sm.blocks.length >= 3, label: '구조 블록이 3개 이상이다', detail: `현재 ${sm.blocks.length}개` });
@@ -60,7 +65,7 @@ export function autoChecks(sm) {
   if (sm.minutes) { const lo = sm.minutes * 0.8, hi = sm.minutes * 1.2; out.push({ key: 'time', ok: tot >= lo && tot <= hi, label: `시간이 목표(${sm.minutes}분) 안에 든다`, detail: `블록 합계 ${tot}분` }); }
   else out.push({ key: 'time', ok: null, label: '목표 시간을 정하지 않았다', detail: '본문 탭에서 목표 시간(분)을 정하면 점검해 드려요.' });
   const mentionsStory = sm.blocks.some(b => /예화|통계|인용|사례/.test(`${b.title} ${b.memo}`));
-  out.push({ key: 'sources', ok: mentionsStory ? !!String(sm.study.sources).trim() : null, label: '예화·인용이 있으면 출처 칸이 채워져 있다', detail: mentionsStory ? (String(sm.study.sources).trim() ? '' : '연구 탭의 ‘참고 자료·출처’에 적어 두세요.') : '예화·인용 표시가 없어요.' });
+  out.push({ key: 'sources', ok: mentionsStory ? !!(String(sm.study.sources).trim() || (sm.refs || []).length) : null, label: '예화·인용이 있으면 출처 칸이 채워져 있다', detail: mentionsStory ? (String(sm.study.sources).trim() || (sm.refs || []).length ? '' : '연구 탭의 ‘참고 자료·출처’에 적어 두세요.') : '예화·인용 표시가 없어요.' });
   return out;
 }
 
@@ -72,7 +77,7 @@ export function sermonText(sm, audienceLabel = AUDIENCES[sm.audience]) {
   if (String(sm.core.apply).trim()) L.push(`[적용 한 가지] ${sm.core.apply.trim()}`);
   if (String(sm.core.question).trim()) L.push(`[청중의 질문] ${sm.core.question.trim()}`);
   sm.blocks.forEach((b, i) => { L.push('', `${i + 1}. ${b.title}${b.min ? ` (${b.min}분 · ${at[i]}분째)` : ''}`); if (String(b.memo).trim()) L.push(b.memo.trim()); });
-  if (String(sm.study.sources).trim()) L.push('', '[참고 자료·출처]', sm.study.sources.trim());
+  if (String(sm.study.sources).trim() || (sm.refs || []).length) { L.push('', '[참고 자료·출처]'); if (String(sm.study.sources).trim()) L.push(sm.study.sources.trim()); for (const r of sm.refs || []) L.push(`- ${r.title}${r.series ? ` (${r.series})` : ''}${r.pages ? ` ${r.pages}쪽` : ''}${r.note ? ` — ${r.note.replace(/\n/g, ' ')}` : ''}`); }
   return L.join('\n');
 }
 

@@ -33,6 +33,7 @@ import { buildHwpx, HWPX_BASE_FILES } from './hwpx.js';
 import { orderTimes, orderTotal, parseOrderText } from './order.js';
 import * as WS from './worship.js';
 import * as SMN from './sermon.js';
+import * as SC from './scripture.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
@@ -160,7 +161,7 @@ function paintSeason() {
 }
 function render() {
   flushWorship(); flushSermon();
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'sermon' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'sermon' || view === 'shelf' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
   $('#nav').innerHTML = NAV.filter(n => !(GUEST && n[0] === 'community')).map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${IC[NAV_ICON[k] || k] || ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
@@ -168,7 +169,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !GUEST && !demo && !window.__memOnly; bar.innerHTML = GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, sermon: vSermon, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, sermon: vSermon, shelf: vShelf, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
   a11yPass();
@@ -957,6 +958,25 @@ function paintBlocks() {
   paintTimes();
 }
 
+// ----- 주석 서가(MB12.19): 책 이름만 보관 -----
+function vShelf() {
+  const shelf = store.shelf(); const groups = new Map(); for (const x of shelf) { const k = x.series || '(시리즈 없음)'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+  const tags = x => (x.books.length ? x.books.slice(0, 4).map(n => `<span class="tag">${esc(SC.bookName(n))}</span>`).join(' ') + (x.books.length > 4 ? ` <span class="mute small">외 ${x.books.length - 4}</span>` : '') : '<span class="mute small">책 이름을 찾지 못함(일반 자료)</span>');
+  const group = ([g, xs]) => `<section class="box" style="margin-bottom:12px"><div class="cardh"><h3>${esc(g)}</h3><span class="sub">${xs.length}권</span></div><ul class="shelflist" style="padding:0 12px 8px">${xs.map(x => `<li class="shelfrow"><span class="sp"><b>${esc(x.title)}</b> ${tags(x)}</span><button class="sm ghost" data-act="shelfDel" data-id="${x.id}" aria-label="지우기">✕</button></li>`).join('')}</ul></section>`;
+  page('📚', '내 주석 서가', '가진 주석·사전의 이름과 시리즈만 보관해요. 책 내용은 읽지도, 저장하지도 않아요.',
+    `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="shelfPick">폴더에서 파일 이름 가져오기</button><button data-act="shelfPaste">이름 붙여 넣기</button><button data-act="shelfAdd">직접 추가</button><button data-go="#sermon">◀ 설교 작업대</button><span class="sp"></span>${shelf.length ? '<button class="sm dng" data-act="shelfClear">서가 비우기</button>' : ''}</div>
+    <input type="file" id="shelf-dir" webkitdirectory multiple hidden>
+    <div class="callout" style="margin-bottom:12px"><span>🔒</span><div class="sp">‘폴더에서 가져오기’는 브라우저가 파일 <b>이름과 폴더 이름만</b> 넘겨 줘요. 파일 내용은 열지 않아요. 이름은 이 계정의 데이터에 저장돼요(게스트는 저장되지 않아요). 책 제목에서 성경 책 이름을 찾아 본문과 짝지어 줘요.</div></div>
+    ${shelf.length ? [...groups].map(group).join('') : '<section class="box"><p>서가가 비어 있어요. 위의 버튼으로 가진 주석의 파일 이름을 가져오세요.</p></section>'}`);
+  $('#shelf-dir').onchange = async e => { const files = [...e.target.files]; e.target.value = ''; if (!files.length) return; await shelfConfirm(SC.parseShelfPaths(files.map(f => f.webkitRelativePath || f.name)), files.length); };
+}
+async function shelfConfirm(items, total) {
+  if (!items.length) { toast('가져올 책 파일(pdf·epub·docx·hwp·txt)이 없어요.', true); return; }
+  const withBook = items.filter(x => x.books.length).length;
+  if (!(await ask(`책 파일 ${items.length}개를 찾았어요(전체 ${total}개 중). 성경 책 이름을 찾은 것 ${withBook}개, 못 찾은 일반 자료 ${items.length - withBook}개.\n파일 이름과 폴더 이름만 서가에 담고, 내용은 읽지 않아요. 담을까요?`, '서가에 담기'))) return;
+  try { const r = store.addShelf(items); toast(`${r.added}권을 담았어요${r.skipped ? ` (이미 있는 ${r.skipped}권은 건너뜀)` : ''}.`); render(); } catch (e) { toast(e.message, true); }
+}
+
 // ----- 설교 작업대(MB12.18) -----
 const SM = { sm: null, timer: null, tab: 'text' };
 const SM_TABS = [['text', '① 본문'], ['study', '② 연구'], ['core', '③ 핵심'], ['struct', '④ 구조'], ['check', '⑤ 점검'], ['doc', '원고']];
@@ -981,7 +1001,7 @@ function vSermonList() {
       <p class="small mute">${esc(o.scripture || '본문 미정')} · ${SMN.AUDIENCES[o.audience]}${o.season ? ' · ' + esc(o.season) : ''}${o.minutes ? ` · 목표 ${o.minutes}분` : ''}<br>점검 ${done}/${ac.length} · 직접 확인 ${SMN.manualDone(o)}/${SMN.MANUAL_CHECKS.length} · 수정 ${esc(o.updated || '')}${sv ? ` · 🔗 ${md(sv.date)} ${esc(sv.title)}` : ''}</p>
       <div class="row"><button class="sm pri" data-act="sermonOpen" data-id="${o.id}">열기</button><button class="sm" data-act="sermonDupList" data-id="${o.id}">복제</button><span class="sp"></span><button class="sm dng" data-act="sermonDelList" data-id="${o.id}">삭제</button></div></section>`; };
   page('✍️', '설교 작업대', `${UI.dept === 'all' ? '모든 부서' : deptTag(did())} 본문 → 연구 → 핵심 → 구조 → 점검 순서로 설교를 준비해요. 대신 써 주지 않고, 생각을 붙잡아 줘요.`,
-    `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="sermonNew">+ 새 설교 노트</button><button data-go="#services">◀ 예배</button><button data-go="#worship">🧩 예배 순서지</button></div>
+    `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="sermonNew">+ 새 설교 노트</button><button data-go="#services">◀ 예배</button><button data-go="#worship">🧩 예배 순서지</button><button data-go="#shelf">📚 내 주석 서가</button></div>
     ${list.length ? `<div class="wcards">${list.map(card).join('')}</div>` : '<section class="box"><p>아직 설교 노트가 없어요. ‘+ 새 설교 노트’에서 정식 설교·이야기식·짧은 말씀·대림성탄 틀을 골라 시작할 수 있어요. 예배 화면의 ‘설교 준비’를 눌러도 그 예배에 연결된 노트가 만들어져요.</p></section>'}`);
 }
 function drawSermon() {
@@ -994,9 +1014,9 @@ function drawSermon() {
       <label class="f">대상${sel('s-aud', Object.entries(SMN.AUDIENCES), sm.audience)}</label><label class="f">목표 시간(분)<input data-s="minutes" type="number" min="0" max="120" inputmode="numeric" value="${sm.minutes || ''}"></label>
       <label class="f">절기${sel('s-season', SMN.SEASONS.map(s => [s, s || '해당 없음']), sm.season)}</label><label class="f">부서${sel('s-dept', deptOpts(), sm.dept_id)}</label>
       <label class="f wfull">연결할 예배${sel('s-svc', [['', '연결 안 함'], ...svs.map(x => [x.id, `${md(x.date)} ${x.title}`])], sm.service_id ?? '')}<span class="hint">연결하면 그 예배의 본문·설교 제목이 비어 있을 때 채워 줘요.</span></label></div>
-      <p class="small">절기 참고: ${esc(churchLabel(today()))} (오늘 기준)</p>`,
-    study: ta('study.context', '문맥 — 앞뒤 본문은 무엇을 말하나요?', '앞 단락과 뒷 단락, 책 전체에서의 자리') + ta('study.words', '핵심 단어·표현', '반복되는 낱말, 번역이 갈리는 곳(원어는 확인한 것만)') + ta('study.background', '배경 — 역사·문화·기록된 상황', '본문에 있는 내용과 전승·추정은 나눠 적어 두세요') + ta('study.sources', '참고 자료·출처', '책·주석·논문의 제목, 저자, 쪽수. 예화·통계의 출처도 여기에', 5, 1500),
-    core: ta('core.idea', '전하려는 한 문장', '이 설교가 한 문장이라면?', 2, 400) + ta('core.apply', '적용 한 가지', '이번 주에 할 수 있는 한 가지 응답', 2, 400) + ta('core.question', '듣는 이의 질문', '이 본문 앞에서 듣는 이가 품을 만한 질문', 2, 400) + '<p class="mute small">한 문장이 구조의 모든 블록을 끌고 가는지 ④ 구조에서 확인해 보세요.</p>',
+      <p class="small" id="sref"></p><p class="small">절기 참고: ${esc(churchLabel(today()))} (오늘 기준)</p>`,
+    study: ta('passage', '본문 글귀 (개역개정을 확인해 직접 붙여 넣기)', '여기에 붙여 넣으면 ③ 핵심의 주제 확인에서 본문에 나오는 낱말과 견줘 봐요. 앱은 본문을 대신 채우지 않아요.', 6) + ta('study.context', '문맥 — 앞뒤 본문은 무엇을 말하나요?', '앞 단락과 뒷 단락, 책 전체에서의 자리') + ta('study.words', '핵심 단어·표현', '반복되는 낱말, 번역이 갈리는 곳(원어는 확인한 것만)') + ta('study.background', '배경 — 역사·문화·기록된 상황', '본문에 있는 내용과 전승·추정은 나눠 적어 두세요') + ta('study.sources', '참고 자료·출처', '책·주석·논문의 제목, 저자, 쪽수. 예화·통계의 출처도 여기에', 5, 1500) + '<div id="sshelf"></div>',
+    core: ta('core.idea', '전하려는 한 문장', '이 설교가 한 문장이라면?', 2, 400) + ta('core.apply', '적용 한 가지', '이번 주에 할 수 있는 한 가지 응답', 2, 400) + ta('core.question', '듣는 이의 질문', '이 본문 앞에서 듣는 이가 품을 만한 질문', 2, 400) + '<div id="stheme"></div>',
     struct: `<div class="row noprint" style="margin-bottom:8px"><label class="small">틀 ${sel('s-struct', Object.entries(SMN.STRUCTURES).map(([k, v]) => [k, v.name]), 'three')}</label><button class="sm" data-sm="applyStruct">틀로 바꾸기</button><span class="sp"></span><b id="ssum"></b></div><div id="slist" class="wlist" role="list"></div><div class="row noprint" style="margin-top:10px"><button class="pri" data-sm="addBlock">+ 블록 추가</button></div>`,
     check: '<div id="scheck"></div>', doc: '<div id="sdoc"></div>',
   };
@@ -1004,12 +1024,20 @@ function drawSermon() {
     `<nav class="stabs noprint" role="tablist">${SM_TABS.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" class="${SM.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
     <div id="spanels">${SM_TABS.map(([k]) => `<section class="box spanel${SM.tab === k ? ' on' : ''}" data-panel="${k}">${panels[k]}</section>`).join('')}</div>`,
     `<button data-go="#sermon">◀ 목록</button><button data-act="sermonCopy">글로 복사</button><button data-act="print">인쇄</button><button data-act="sermonDup">복제</button><button class="dng" data-act="sermonDel">삭제</button>`);
-  paintSBlocks(); paintSCheck(); paintSDoc();
+  paintSBlocks(); paintSCheck(); paintSDoc(); paintSRef(); paintSShelf(); paintSTheme();
   const root = $('#spanels'); const setPath = (path, v) => { const ks = path.split('.'); let o = sm; while (ks.length > 1) o = o[ks.shift()]; o[ks[0]] = v; };
-  root.addEventListener('input', e => { const el = e.target; if (el.dataset.s) { setPath(el.dataset.s, el.dataset.s === 'minutes' ? Math.max(0, Math.min(120, Math.round(Number(el.value) || 0))) : el.value); queueSermon(); } });
+  root.addEventListener('input', e => { const el = e.target; if (el.dataset.s) { setPath(el.dataset.s, el.dataset.s === 'minutes' ? Math.max(0, Math.min(120, Math.round(Number(el.value) || 0))) : el.value); if (el.dataset.s === 'scripture') { paintSRef(); paintSShelf(); } paintSTheme(); queueSermon(); } });
   root.addEventListener('change', e => { const m = { 's-aud': 'audience', 's-season': 'season' }[e.target.id]; if (m) { sm[m] = e.target.value; queueSermon(); } else if (e.target.id === 's-dept') { sm.dept_id = Number(e.target.value); sm.service_id = null; queueSermon(); drawSermon(); } else if (e.target.id === 's-svc') { sm.service_id = e.target.value ? Number(e.target.value) : null; queueSermon(); } });
   $('.stabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (!b) return; SM.tab = b.dataset.tab; $$('.stabs button').forEach(x => x.classList.toggle('on', x === b)); $$('.spanel').forEach(x => x.classList.toggle('on', x.dataset.panel === SM.tab)); if (SM.tab === 'check') paintSCheck(); if (SM.tab === 'doc') paintSDoc(); });
   $('#scheck').addEventListener('change', e => { const k = e.target.dataset.ck; if (!k) return; if (e.target.checked) sm.checks[k] = true; else delete sm.checks[k]; paintSCheck(); queueSermon(); });
+  $('#sshelf').addEventListener('click', e => {
+    const b = e.target.closest('[data-shelf-add],[data-ref-del]'); if (!b) return;
+    if (b.dataset.shelfAdd !== undefined) { const x = store.shelf().find(v => v.id === Number(b.dataset.shelfAdd)); if (!x || sm.refs.some(r => r.title === x.title && r.series === x.series)) return; if (sm.refs.length >= SMN.REF_MAX) { toast('참고 주석은 ' + SMN.REF_MAX + '권까지 기록해요.', true); return; } sm.refs.push({ title: x.title, series: x.series, pages: '', note: '' }); }
+    else sm.refs.splice(Number(b.dataset.refDel), 1);
+    paintSShelf(); paintSCheck(); queueSermon();
+  });
+  $('#sshelf').addEventListener('input', e => { const el = e.target.closest('[data-rf]'); if (!el) return; const [i, k] = el.dataset.rf.split('.'); if (sm.refs[Number(i)]) { sm.refs[Number(i)][k] = el.value; queueSermon(); } });
+  $('#stheme').addEventListener('click', async e => { const b = e.target.closest('[data-sm=recStruct]'); if (!b) return; if (sm.blocks.some(x => x.memo.trim()) && !(await ask('지금 적은 블록 내용이 사라지고 추천 틀로 바뀌어요. 바꿀까요?', '바꾸기'))) return; sm.blocks = SMN.starterBlocks(b.dataset.key); paintSBlocks(); paintSTheme(); queueSermon(); toast('④ 구조에 적용했어요.'); });
   const list = $('#slist');
   SMN_enableDrag(list, (from, to) => { sm.blocks = WS.moveBlock(sm.blocks, from, to); paintSBlocks(); queueSermon(); });
   list.addEventListener('input', e => { const el = e.target.closest('[data-f]'); const b = el && sm.blocks[Number(el.closest('.wblk').dataset.i)]; if (!b) return; b[el.dataset.f] = el.dataset.f === 'min' ? Math.max(0, Math.min(120, Math.round(Number(el.value) || 0))) : el.value; if (el.dataset.f === 'min') paintSSum(); queueSermon(); });
@@ -1024,6 +1052,34 @@ function drawSermon() {
     if (b.dataset.sm === 'addBlock') { if (sm.blocks.length >= SMN.BLOCK_MAX) { toast(`블록은 ${SMN.BLOCK_MAX}개까지예요.`, true); return; } sm.blocks.push(SMN.newBlock('', 0)); paintSBlocks(); queueSermon(); const t = $$('#slist [data-f=title]').pop(); if (t) t.focus(); }
     else if (b.dataset.sm === 'applyStruct') { if (sm.blocks.some(x => x.memo.trim()) && !(await ask('지금 적은 블록 내용이 사라지고 선택한 틀로 바뀌어요. 바꿀까요?', '바꾸기'))) return; sm.blocks = SMN.starterBlocks($('#s-struct').value); paintSBlocks(); queueSermon(); }
   });
+}
+function paintSRef() {
+  const el = $('#sref'); if (!el) return; const r = SC.parseRef(SM.sm.scripture);
+  el.innerHTML = !SM.sm.scripture ? '' : r ? `✓ <b>${esc(SC.refText(r))}</b>로 읽었어요 · 갈래: ${esc(SC.GENRES[SC.genreOf(r.book)] || '')}` : '<span style="color:var(--orange)">▲ 본문 표기를 읽지 못했어요. ‘누가복음 2:1-7’처럼 책 이름 장:절로 적어 주세요.</span>';
+}
+function paintSShelf() {
+  const el = $('#sshelf'); if (!el) return; const sm = SM.sm; const r = SC.parseRef(sm.scripture); const shelf = store.shelf();
+  const { hit, general } = r ? SC.shelfFor(shelf, r.book) : { hit: [], general: [] }; const used = x => sm.refs.some(v => v.title === x.title && v.series === x.series);
+  const row = x => `<li class="shelfrow"><span class="sp"><b>${esc(x.title)}</b><br><span class="mute small">${esc(x.series)}</span></span><button type="button" class="sm" data-shelf-add="${x.id}"${used(x) ? ' disabled' : ''}>${used(x) ? '기록함' : '기록에 담기'}</button></li>`;
+  const found = !r ? '<p class="mute small">① 본문에 장·절을 적으면 그 책을 다룬 주석이 여기에 나와요.</p>'
+    : `<p class="mute small">${esc(SC.bookName(r.book))}을(를) 다룬 주석 ${hit.length}권${general.length ? ` · 일반 자료 ${general.length}건` : ''}. 책 내용은 앱이 읽지 않아요. 책을 직접 보고 쪽수와 이해한 내용을 아래에 적어 두세요.</p>
+      ${hit.length ? `<ul class="shelflist">${hit.map(row).join('')}</ul>` : '<p class="mute small">이 책을 다룬 항목이 서가에 없어요.</p>'}
+      ${general.length ? `<details><summary class="small">일반 자료(사전·지도 등) ${general.length}건</summary><ul class="shelflist">${general.slice(0, 60).map(row).join('')}</ul></details>` : ''}`;
+  const refs = sm.refs.length ? sm.refs.map((x, i) => `<div class="refrow"><div class="row"><b class="sp">${esc(x.title)}</b><span class="mute small">${esc(x.series)}</span><button type="button" class="sm ghost" data-ref-del="${i}" aria-label="기록 지우기">✕</button></div><div class="row"><label class="small">쪽수<input data-rf="${i}.pages" value="${esc(x.pages)}" maxlength="30" style="width:110px" placeholder="예: 112-118"></label></div><textarea data-rf="${i}.note" rows="2" maxlength="600" placeholder="내가 이해한 내용을 내 말로 적어 두세요 (책 문장을 그대로 옮기지 마세요)">${esc(x.note)}</textarea></div>`).join('')
+    : '<p class="mute small">서가에서 ‘기록에 담기’를 누르거나 ‘서가 관리’에서 책을 추가하세요. 기록은 원고의 출처에 자동으로 들어가요.</p>';
+  el.innerHTML = `<h3>📚 참고 주석 서가 <a href="#shelf" class="small" style="font-weight:400">서가 관리</a></h3>${shelf.length ? found : '<p class="mute small">아직 서가가 비어 있어요. ‘서가 관리’에서 가진 주석의 파일 이름을 가져오면(파일 내용은 읽지 않아요) 본문의 책에 맞는 주석을 보여 드려요.</p>'}<h3>내가 확인한 주석 기록 <span class="mute small">${sm.refs.length}권</span></h3>${refs}`;
+}
+function paintSTheme() {
+  const el = $('#stheme'); if (!el) return; const sm = SM.sm; const r = SC.parseRef(sm.scripture);
+  const t = SC.themeCheck({ idea: sm.core.idea, passage: sm.passage, study: `${sm.study.context}\n${sm.study.words}\n${sm.study.background}`, blocks: sm.blocks });
+  const rec = SC.recommendStructure({ book: r ? r.book : 0, audience: sm.audience, season: sm.season, minutes: sm.minutes }); const chip = (w, c) => `<span class="tag ${c}">${esc(w)}</span>`;
+  const kw = !t.keywords.length ? '' : `<p class="small" style="margin:6px 0">한 문장의 낱말 중 <b>본문·연구 메모에 나오는 것</b>: ${t.inText.map(w => chip(w, 'ok')).join(' ') || '없음'}</p><p class="small" style="margin:6px 0">나오지 않는 것: ${t.notInText.map(w => chip(w, 'bad')).join(' ') || '없음'}${t.hasPassage ? '' : ' <span class="mute">(본문 글귀가 없어 연구 메모만 견줬어요)</span>'}</p>
+    ${t.notInText.length ? '<p class="mute small">본문에 없는 낱말이 많다면 설교자의 해석이나 적용이 본문을 앞서가고 있지 않은지 살펴보세요. 번역·표현 차이일 수도 있어요.</p>' : ''}
+    ${t.loose.length ? `<p class="small" style="color:var(--orange)">한 문장과 이어지는 낱말이 보이지 않는 블록: <b>${t.loose.map(esc).join(', ')}</b></p>` : ''}`;
+  el.innerHTML = `<h3>🔎 본문·주제 확인 <span class="mute small">참고용</span></h3>
+    <ol class="small" style="padding-left:18px;margin:0 0 10px"><li>${r ? `본문 <b>${esc(SC.refText(r))}</b> — 개역개정을 직접 확인했나요? (⑤ 점검의 직접 확인)` : '① 본문에 장·절을 적어 주세요.'}</li><li>${sm.passage.trim() ? '본문 글귀를 붙여 넣었어요.' : '② 연구 탭에 본문 글귀를 붙여 넣으면 주제와 견줘 볼 수 있어요.'}</li><li>${sm.core.idea.trim() ? '한 문장을 적었어요.' : '위의 ‘전하려는 한 문장’을 적어 주세요.'}</li></ol>${kw}
+    <div class="callout" style="margin-top:10px"><span>🧭</span><div class="sp"><b>구조 틀 추천: ${esc(SMN.STRUCTURES[rec.key].name)}</b><br><span class="small">${esc(rec.reason)}</span></div><button type="button" class="sm" data-sm="recStruct" data-key="${rec.key}">④ 구조에 적용</button></div>
+    <p class="mute small">낱말 겹침만 보는 단순한 확인이에요. 본문의 뜻과 신학적 판단은 설교자와 공동체의 몫이에요.</p>`;
 }
 function SMN_enableDrag(list, cb) { WS.enableDrag(list, cb); }
 function sMove(i, to, keepFocus) {
@@ -1305,6 +1361,11 @@ const ACT = {
     const id = store.orderForService(sid, blocks); location.hash = '#worship/' + id;
   },
   sermonForService: d => { const sid = Number(d.id); const s = store.service(sid); if (!s) return; const have = store.sermonOfService(sid); const lbl = churchLabel(s.date); const key = /성탄|대림/.test(lbl) ? 'advent' : ({ kid: 'short', teen: 'short' }[dk(s.dept_id)] || 'three'); location.hash = '#sermon/' + (have ? have.id : store.sermonForService(sid, SMN.starterBlocks(key))); },
+  shelfPick: () => $('#shelf-dir').click(),
+  shelfPaste: () => form({ title: '파일 이름 붙여 넣기', submit: '확인', intro: '<p class="mute small">줄마다 하나씩, 폴더 이름과 함께 적으면 시리즈로 묶여요. 예: WBC 주석/누가복음 1-9장.pdf</p>', fields: [{ k: 'names', label: '파일 이름(여러 줄)', type: 'textarea' }], onSubmit: async o => { const lines = o.names.split('\n').map(x => x.trim()).filter(Boolean); await shelfConfirm(SC.parseShelfPaths(lines.map(x => (/\.[A-Za-z0-9]{2,5}$/.test(x) ? x : x + '.pdf'))), lines.length); } }),
+  shelfAdd: () => form({ title: '서가에 직접 추가', fields: [{ k: 'title', label: '책 제목', req: true, ph: '예: 누가복음 (WBC)' }, { k: 'series', label: '시리즈', ph: '예: WBC 주석' }, { k: 'book', label: '다루는 성경 책', type: 'select', options: [['', '해당 없음(일반 자료)'], ...SC.BOOKS.map(b => [b[0], b[1]])] }], onSubmit: o => { store.addShelf([{ title: o.title, series: o.series, books: o.book ? [Number(o.book)] : SC.detectBooks(o.title) }]); } }),
+  shelfDel: d => { store.deleteShelf(Number(d.id)); render(); },
+  shelfClear: async () => { if (await ask('서가의 모든 항목을 지울까요? 설교 노트에 기록한 참고 주석은 그대로 남아요.', '비우기')) { store.clearShelf(); render(); } },
   sermonOpen: d => { location.hash = '#sermon/' + Number(d.id); },
   sermonNew: () => {
     const svs = store.services(workDept()).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
