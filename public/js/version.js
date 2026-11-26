@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB12.23';
+export const VERSION = 'MB12.24';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '12.23.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '12.24.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB12.24', date: '2026-11-26', items: ['인터넷이 없어도 앱 화면이 열려요(서비스 워커): 화면 파일을 이 기기에 저장해 두고, 인터넷이 되면 항상 최신으로 자동 갱신해요. 처음 한 번은 인터넷으로 열어야 해요', '설정 → ‘오프라인 사용’을 켠 기기에서는 내 데이터의 복사본을 이 기기에 두어, 인터넷 없이 열고 고칠 수 있어요. 고친 내용은 이 기기에 보관되고 연결되면 자동으로 서버에 저장돼요. 로그아웃하면 복사본을 지워요', '인터넷이 끊기면 ‘저장 안 됨’ 대신 ‘오프라인 · 연결되면 저장’으로 표시하고 화면 위에 안내 띠를 보여 줘요. 오프라인 사용을 켠 기기는 30분 자동 로그아웃을 하지 않아요', '고침(MB12.23의 오류): 저장하지 못했던 변경을 다시 열 때 되살려 주는 기능이 서버에 올리지 않고 임시 보관만 지우던 문제를 바로잡았어요'] },
   { v: 'MB12.23', date: '2026-11-26', items: ['서버 저장 횟수를 크게 줄임: 고칠 때마다 올리던 방식에서, 입력이 5초 멈추면 한 번에 저장(계속 고쳐도 첫 변경 후 30초 안에 저장)으로 바꿨어요. 20번 연속으로 고친 시험에서 서버 저장이 20번 → 1번으로 줄었어요', '서버와 같은 내용이면 올리지 않고, 저장하는 동안 또 바뀌면 바로 이어서 올리지 않고 간격을 두고 올려요', '탭을 옮기거나 앱을 내리거나 인터넷이 다시 연결되면 기다리지 않고 바로 저장해요. 서버에 올리기 전 변경은 이 기기에 임시 보관돼서 창을 닫아도 다시 열면 되살아나요'] },
   { v: 'MB12.22', date: '2026-11-26', items: ['왼쪽 메뉴를 스크롤 없이 한 화면에 맞춤: 화면 높이에 따라 메뉴 줄 높이와 여백이 자동으로 줄어들고, 가상 데이터·게스트 안내 띠가 있어도 아래가 잘리지 않아요', '일정 추가의 ‘구분’에서 ‘＋ 내 단어로 추가…’를 고르면 내 단어로 구분을 만들어 저장하고 다음에도 목록에서 고를 수 있어요(최대 30개, 20자). 내 구분은 칩의 ✕로 지울 수 있고, 이미 만든 일정은 그대로 남아요'] },
   { v: 'MB12.21', date: '2026-11-26', items: ['왼쪽 메뉴에 ‘설교’ 추가(행정 바로 아래): 설교 작업대와 내 주석 서가를 메뉴에서 바로 열어요', '회계 거래 내역에서 수입은 빨강, 지출은 파랑으로 구분(색뿐 아니라 ‘수입/지출’ 글자와 +/− 부호도 함께 표시)해요. 요약 숫자·월별 표·결산 표도 같은 색이에요', '거래 내역 위에 ‘전체 · 수입만 · 지출만’ 거르기 버튼과 건수 표시, 거른 결과의 합계와 엑셀(CSV) 내보내기에도 적용돼요'] },

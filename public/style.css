@@ -668,3 +668,6 @@ tr.tx-in > td:first-child { box-shadow:inset 4px 0 0 var(--tx-in); } tr.tx-out >
 /* 안내 띠(가상 데이터·게스트)가 있어도 왼쪽 메뉴가 화면 아래로 잘리지 않게: 띠는 위에 붙이고 메뉴는 띠 아래부터 남은 높이를 쓴다 */
 #demo-bar { position:sticky; top:0; z-index:30; }
 @media (min-width:861px) { #side { top:var(--barh,0px); height:calc(100vh - var(--barh,0px)); } }
+
+/* MB12.24 오프라인 안내 띠: 앞 표시를 ‘오프라인’으로 */
+#demo-bar[data-kind=offline]::before { content:'오프라인'; background:var(--orange-bg); color:var(--orange); }

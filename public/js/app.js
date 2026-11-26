@@ -33,6 +33,7 @@ import { buildHwpx, HWPX_BASE_FILES } from './hwpx.js';
 import { orderTimes, orderTotal, parseOrderText } from './order.js';
 import * as WS from './worship.js';
 import * as SMN from './sermon.js';
+import { offlineEnabled, setOfflineEnabled, readCopy, lastUser } from './offline.js';
 import * as SC from './scripture.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
@@ -99,10 +100,15 @@ function form({ title, fields, values = {}, onSubmit, submit = '저장', intro =
 function ask(msg, label = '확인') { return new Promise(r => { const d = modal(`<div class="dlg"><p style="white-space:pre-wrap">${esc(msg)}</p><div class="dlg-foot"><button data-n>취소</button><button class="pri" data-y>${esc(label)}</button></div></div>`); $('[data-n]', d).onclick = () => { r(false); d.close(); }; $('[data-y]', d).onclick = () => { r(true); d.close(); }; d.addEventListener('cancel', () => r(false)); }); }
 const deptOpts = () => store.depts().map(d => [d.id, d.name]);
 
+// ----- 오프라인 사용(MB12.24) -----
+const offlineOn = () => { try { return offlineEnabled(window.localStorage); } catch { return false; } };
+window.addEventListener('offline', () => { if (A.mode === 'account') { paintAcct(); paintBar(); } });
+window.addEventListener('online', () => { if (A.mode === 'account') { toast('인터넷에 다시 연결됐어요. 저장하는 중…'); if (A.flushNow) A.flushNow(); paintBar(); } });
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) { const regSw = () => navigator.serviceWorker.register('sw.js').catch(() => { /* 서비스 워커를 못 써도 앱은 그대로 동작 */ }); if (document.readyState === 'complete') regSw(); else window.addEventListener('load', regSw); }
 // ----- 계정·저장 상태 표시 -----
 const GUEST = A.mode === 'guest';
 const AUTH_BUSY = () => A.mode === 'account' && A.status === 'saving';
-const SAVE_TXT = { saved: ['● 저장됨', 'ok'], saving: ['◌ 저장 중…', ''], failed: ['▲ 저장 안 됨', 'bad'] };
+const SAVE_TXT = { saved: ['● 저장됨', 'ok'], saving: ['◌ 저장 중…', ''], failed: ['▲ 저장 안 됨', 'bad'], offline: ['◌ 오프라인 · 연결되면 저장', ''] };
 function paintAcct() {
   const el = $('#acct'); if (!el) return;
   if (GUEST) { el.innerHTML = '<div class="acct-box"><div class="acct-u">👤 게스트</div><div class="row" style="margin-top:6px"><span class="tag bad">저장 안 됨</span></div><button class="sm" style="margin-top:6px" data-act="guestLogin">로그인하기</button></div>'; return; }
@@ -110,7 +116,7 @@ function paintAcct() {
   const [t, c] = SAVE_TXT[A.status] || SAVE_TXT.saved;
   el.innerHTML = `<div class="acct-box"><div class="acct-u" title="${esc(A.user.email)}">👤 ${esc(A.user.name || A.user.email)}</div><div class="row" style="margin-top:6px"><span class="tag ${c}" id="save-chip" title="${esc(A.message)}">${t}</span><span class="sp"></span><button class="sm" data-act="logout">로그아웃</button></div></div>`;
 }
-A.onStatus = (s, m) => { paintAcct(); if (s === 'failed' && m) toast(m, true); };
+A.onStatus = (s, m) => { paintAcct(); if (s === 'offline' || s === 'saved' || s === 'failed') paintBar(); if (s === 'failed' && m) toast(m, true); };
 A.onConflict = serverVersion => {
   const d = modal(`<div class="dlg"><h3>다른 기기에서 먼저 저장했어요</h3><p>같은 계정으로 다른 기기(또는 다른 창)에서 데이터를 바꿨습니다. 어느 쪽을 쓸지 고르세요.</p><p class="mute small">‘서버 데이터 불러오기’는 이 화면에서 한 변경을 버립니다. ‘내 변경으로 덮어쓰기’는 다른 기기에서 한 변경을 덮어씁니다.</p><div class="dlg-foot"><button data-a>서버 데이터 불러오기</button><button class="pri" data-b>내 변경으로 덮어쓰기</button></div></div>`);
   d.addEventListener('cancel', e => e.preventDefault());
@@ -122,7 +128,7 @@ A.onConflict = serverVersion => {
 if (A.mode === 'account') {
   let last = Date.now(); const touch = () => { last = Date.now(); };
   ['click', 'keydown', 'pointerdown', 'touchstart', 'scroll'].forEach(ev => window.addEventListener(ev, touch, { passive: true }));
-  setInterval(async () => { if (Date.now() - last < 30 * 60e3 || A.status !== 'saved') return; await accountApi.logout().catch(() => {}); location.reload(); }, 30e3);
+  setInterval(async () => { if (Date.now() - last < 30 * 60e3 || A.status !== 'saved' || offlineOn() || navigator.onLine === false) return; await accountApi.logout().catch(() => {}); location.reload(); }, 30e3);
 }
 
 // ----- 도움 장치: 화면별 사용법, 빈 화면 안내, 도움말 창, 파일 내려받기 -----
@@ -159,6 +165,11 @@ function paintSeason() {
   el.innerHTML = `<span class="sdot" aria-hidden="true"></span><span class="stxt"><b>${esc(i.label)}</b><small>${esc(i.special ? i.special + ' · ' : '')}전례 색 ${esc(i.color)}</small></span>`;
   el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
 }
+function paintBar() {
+  const bar = $('#demo-bar'); if (!bar) return; const demo = store.get().demo; const off = A.mode === 'account' && (navigator.onLine === false || A.status === 'offline');
+  bar.dataset.kind = off ? 'offline' : ''; bar.hidden = !GUEST && !demo && !window.__memOnly && !off; const setBar = () => document.documentElement.style.setProperty('--barh', bar.hidden ? '0px' : `${bar.offsetHeight}px`); setTimeout(setBar, 0);
+  bar.innerHTML = off ? '오프라인이에요 — 고친 내용은 이 기기에 보관되고, 인터넷에 연결되면 자동으로 저장돼요.' : GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
+}
 function render() {
   flushWorship(); flushSermon();
   const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'sermon' || view === 'shelf' ? 'sermon' : view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'att' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
@@ -167,8 +178,7 @@ function render() {
   paintAcct();
   paintSeason();
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
-  const bar = $('#demo-bar'); const demo = store.get().demo;
-  bar.hidden = !GUEST && !demo && !window.__memOnly; const setBar = () => document.documentElement.style.setProperty('--barh', bar.hidden ? '0px' : `${bar.offsetHeight}px`); setTimeout(setBar, 0); bar.innerHTML = GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
+  paintBar();
   const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, att: vAtt, sermon: vSermon, shelf: vShelf, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; $('#main').classList.toggle('attmode', view === 'att'); V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
@@ -836,11 +846,16 @@ function vResources() {
 }
 
 // ----- 설정 -----
+function offlineCard() {
+  const on = offlineOn(); let at = ''; try { const c = on ? readCopy(window.localStorage, A.user.email) : null; at = c ? new Date(c.at).toLocaleString('ko-KR') : ''; } catch { /* 무시 */ }
+  return `<h2>오프라인 사용</h2><div class="box pad"><label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" data-offline ${on ? 'checked' : ''}><span class="sp"><b>이 기기에서 인터넷 없이도 쓰기</b><br><span class="mute small">켜면 내 데이터의 복사본을 <b>이 기기에</b> 두어, 인터넷이 없어도 앱을 열고 고칠 수 있어요. 연결되면 자동으로 서버에 저장돼요. 개인정보가 기기에 남으니 <b>내 컴퓨터·내 폰에서만</b> 켜세요. 로그아웃하면 복사본은 지워지고, 켜 둔 기기에서는 30분 자동 로그아웃을 하지 않아요.</span></span></label>${on ? `<p class="small" style="margin:8px 0 0">${at ? `마지막 복사: ${esc(at)}` : '복사본을 만드는 중이에요.'} · 처음 설치와 처음 로그인에는 인터넷이 필요해요.</p>` : ''}</div>`;
+}
 function vSettings() {
   const S = store.get(); const acct = A.mode === 'account'; const ds = store.daysSinceExport();
   const where = acct ? `<b>${esc(A.user.email)}</b> 계정의 서버 저장소에 저장됩니다. 같은 사이트를 써도 계정마다 데이터가 따로이고, 다른 기기에서 같은 계정으로 로그인하면 같은 데이터를 볼 수 있어요.` : `<b>이 브라우저(이 기기)</b>에만 저장되며 서버로 전송되지 않습니다. 다른 기기와 자동으로 공유되지 않으므로 아래 ‘내보내기’로 백업하세요.${A.reason === 'not-configured' ? ' (로그인 서버가 아직 연결되지 않았어요. README의 ‘로그인 켜기’를 따라 하면 사용자별 로그인이 켜져요.)' : ''}`;
   page('⚙️', '설정', '데이터 관리와 배포 정보', `
   ${acct ? `<h2 style="margin-top:0">내 계정</h2><div class="card"><div class="row"><div class="sp"><b>${esc(A.user.name || A.user.email)}</b><br><span class="mute small">${esc(A.user.email)}</span></div><button data-act="logout">로그아웃</button><button data-act="changePw">비밀번호 변경</button><button data-act="history">이전 저장본으로 되돌리기</button><button data-act="logoutAll">모든 기기에서 로그아웃</button><button class="dng" data-act="deleteAcct">계정 삭제</button></div><p class="mute small" style="margin:10px 0 0">가입 상태: ${A.signup ? '<span class="tag warn">열려 있음</span> (초대 코드를 아는 사람은 가입할 수 있어요. 필요한 사람이 모두 가입했다면 관리자가 Cloudflare에서 INVITE_CODE를 삭제하고 다시 배포하면 닫혀요)' : '<span class="tag ok">닫힘</span>'}<br>저장 상태: ${(SAVE_TXT[A.status] || SAVE_TXT.saved)[0]} · 계정을 삭제하면 서버의 내 데이터가 모두 지워져요(되돌릴 수 없음). 삭제 전에 ‘내보내기’로 백업하세요.</p></div>` : ''}
+  ${acct ? offlineCard() : ''}
   ${acct ? `<h2>간편 로그인·로그인 정보 저장</h2><div class="box pad" id="pinbox"><p class="mute small">확인 중…</p></div>` : ''}
   <h2 ${acct ? '' : 'style="margin-top:0"'}>인수인계</h2><div class="callout"><span>🤝</span><div class="sp">부서를 다른 교사에게 넘길 때 쓰는 <b>인수인계 도우미</b>예요. 순서(4주 전~한 달 뒤), 인수인계서 양식과 칸마다 적을 내용·예시가 있고, 목회 비서 기록(인원·공과·일정·회계·비품)으로 초안을 채울 수 있어요.</div><button class="pri" data-go="#handover">인수인계 열기</button></div>
   ${fontSection()}
@@ -1637,10 +1652,10 @@ const ACT = {
   // --- 계정 ---
   logout: async () => { if (AUTH_BUSY()) return toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true);
     if (A.status === 'failed' && !(await ask('아직 서버에 저장하지 못한 변경이 있어요. 이 기기에 임시로 남겨 두고 로그아웃할까요? 다음에 같은 계정으로 로그인하면 되살려요.', '로그아웃'))) return;
-    await accountApi.logout().catch(() => {}); location.reload(); },
-  logoutAll: async () => { if (AUTH_BUSY()) return toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true); if (!(await ask('이 기기를 포함해 모든 기기에서 로그아웃합니다. 기기를 잃어버렸거나 남이 내 계정을 썼을 수 있을 때 사용하세요. 저장된 데이터는 지워지지 않아요.', '모두 로그아웃'))) return; await accountApi.logoutAll().catch(e => { throw e; }); location.reload(); },
+    A.clearOffline(); await accountApi.logout().catch(() => {}); location.reload(); },
+  logoutAll: async () => { if (AUTH_BUSY()) return toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true); if (!(await ask('이 기기를 포함해 모든 기기에서 로그아웃합니다. 기기를 잃어버렸거나 남이 내 계정을 썼을 수 있을 때 사용하세요. 저장된 데이터는 지워지지 않아요.', '모두 로그아웃'))) return; A.clearOffline(); await accountApi.logoutAll().catch(e => { throw e; }); location.reload(); },
   changePw: () => form({ title: '비밀번호 변경', intro: '<p class="mute small">변경하면 다른 기기는 모두 로그아웃돼요.</p>', fields: [{ k: 'cur', label: '현재 비밀번호', type: 'password', req: true }, { k: 'nxt', label: '새 비밀번호 (10자 이상)', type: 'password', req: true }], onSubmit: async o => { try { await accountApi.changePassword(o.cur, o.nxt); toast('비밀번호를 바꿨어요.'); } catch (e) { throw e; } } }),
-  deleteAcct: async () => { if (!(await ask('계정과 서버에 저장된 내 데이터가 모두 삭제돼요. 되돌릴 수 없어요. 먼저 ‘내보내기’로 백업하셨나요?', '계속'))) return; form({ title: '계정 삭제 확인', intro: '<p class="mute small">비밀번호를 입력하면 계정이 삭제돼요.</p>', fields: [{ k: 'pw', label: '비밀번호', type: 'password', req: true }], submit: '계정 삭제', onSubmit: async o => { await accountApi.deleteAccount(o.pw); location.reload(); } }); },
+  deleteAcct: async () => { if (!(await ask('계정과 서버에 저장된 내 데이터가 모두 삭제돼요. 되돌릴 수 없어요. 먼저 ‘내보내기’로 백업하셨나요?', '계속'))) return; form({ title: '계정 삭제 확인', intro: '<p class="mute small">비밀번호를 입력하면 계정이 삭제돼요.</p>', fields: [{ k: 'pw', label: '비밀번호', type: 'password', req: true }], submit: '계정 삭제', onSubmit: async o => { await (A.clearOffline(), accountApi.deleteAccount(o.pw)); location.reload(); } }); },
 };
 document.addEventListener('click', e => {
   const t = e.target; let el;
@@ -1664,7 +1679,10 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => { const t = e.target; if (t.matches && t.matches('[data-attq]')) { AT.q = t.value; paintAttSearch(); } });
 document.addEventListener('change', e => {
   const t = e.target;
-  if (t.matches('[data-year]')) { UI.year = Number(t.value); render(); }
+  if (t.matches('[data-offline]')) {
+    const ls = window.localStorage; if (t.checked) { setOfflineEnabled(ls, true); A.mirrorNow && A.mirrorNow(); toast('이 기기에서 오프라인 사용을 켰어요. 복사본을 만들었어요.'); } else { setOfflineEnabled(ls, false); toast('오프라인 사용을 껐어요. 이 기기의 복사본을 지웠어요.'); } render();
+  }
+  else if (t.matches('[data-year]')) { UI.year = Number(t.value); render(); }
   else if (t.matches('[data-task]')) { guard(() => store.setTaskStatus(Number(t.dataset.task), t.checked ? 'done' : 'todo')); render(); }
   else if (t.matches('[data-guidesel]')) { if (GUIDES[t.value]) { UI.evGuide = { id: Number(t.dataset.guidesel), key: t.value }; render(); } }
   else if (t.matches('[data-evstatus]')) { const ev = store.ev(Number(t.dataset.evstatus)); guard(() => store.saveEvent({ ...ev, status: t.value }), '저장했습니다.'); render(); }

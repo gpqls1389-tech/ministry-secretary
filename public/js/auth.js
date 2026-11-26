@@ -1,6 +1,7 @@
 // 로그인과 사용자별 서버 저장. /api가 없거나(정적 미리보기) 서버 설정 전이면 로컬 모드(이 브라우저에만 저장)로 동작한다.
 import { KEY, emptyState, validateState } from './store.js';
 import { nextDelay } from './savedelay.js';
+import { offlineEnabled, saveCopy, readCopy, lastUser, clearOfflineData } from './offline.js';
 import { writePending, readPending, clearPending, pendingAction } from './pending.js';
 import { loadImages, imgSrc } from './images.js';
 
@@ -93,8 +94,9 @@ const pendingClear = () => { const ls = lsRaw(); if (ls && AUTH.user) clearPendi
 AUTH.discardPending = () => pendingClear();
 
 // ---- 서버 저장 어댑터: store는 동기 저장소를 기대하므로 메모리에 두고 변경 시 서버로 보낸다 ----
-function makeAdapter(initial) {
-  let cache = initial, dirty = false, inflight = false, timer = null, retry = 0, blocked = false, savedStr = initial, firstDirtyAt = 0;
+function makeAdapter(initial, serverStr = initial, startDirty = false) {
+  let cache = initial, dirty = false, inflight = false, timer = null, retry = 0, blocked = false, savedStr = serverStr, firstDirtyAt = 0;
+  const mirror = (state, version) => { const ls = lsRaw(); if (ls && AUTH.user && offlineEnabled(ls)) saveCopy(ls, AUTH.user, state, version); }; // 오프라인 사용을 켠 사람만: 서버에 올라간 마지막 상태를 이 기기에 복사
   const set = (s, m = '') => { AUTH.status = s; AUTH.message = m; AUTH.onStatus(s, m); };
   async function flush() {
     if (inflight || blocked) { timer = null; return; } inflight = true; clearTimeout(timer); timer = null;
@@ -104,12 +106,13 @@ function makeAdapter(initial) {
         try {
           const wantSnap = AUTH.snapNext === true; // 비우기·가져오기·덮어쓰기처럼 되돌릴 수 있어야 하는 저장은 서버가 이전 상태를 꼭 보관하게 한다
           const r = await req('PUT', '/api/state', wantSnap ? { baseVersion: AUTH.version, state: snap, snap: true } : { baseVersion: AUTH.version, state: snap });
-          AUTH.version = r.version; retry = 0; savedStr = snap; if (wantSnap) AUTH.snapNext = false; if (!dirty) { set('saved'); pendingClear(); } else pendingWrite(cache); } // 그 사이 더 바뀌었으면 새 서버 버전을 기준으로 임시 보관을 갱신
+          AUTH.version = r.version; retry = 0; savedStr = snap; mirror(snap, r.version); if (wantSnap) AUTH.snapNext = false; if (!dirty) { set('saved'); pendingClear(); } else pendingWrite(cache); } // 그 사이 더 바뀌었으면 새 서버 버전을 기준으로 임시 보관을 갱신
         catch (e) {
           dirty = true;
           if (e.status === 409) { blocked = true; set('failed', '다른 기기에서 먼저 저장했어요.'); AUTH.onConflict(e.data.version); return; }
           if (e.status === 401) { blocked = true; set('failed', '로그인이 만료됐어요. 새로고침해서 다시 로그인하세요. (저장되지 않은 변경이 있습니다)'); return; }
           if (e.status === 413 || e.status === 422) { blocked = true; set('failed', e.message); return; }
+          if (e.offline) { set('offline', '인터넷에 연결되면 자동으로 저장해요. 그동안의 변경은 이 기기에 보관돼요.'); timer = setTimeout(flush, 15000); return; } // 연결이 끊긴 것은 ‘실패’가 아니라 ‘기다리는 중’
           retry++; set('failed', e.message + ' 자동으로 다시 시도합니다.'); timer = setTimeout(flush, Math.min(30000, 2000 * 2 ** retry)); return;
         }
       }
@@ -119,6 +122,8 @@ function makeAdapter(initial) {
   const nowFlush = () => { if (dirty && !inflight && !blocked) flush(); };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') nowFlush(); });
   window.addEventListener('pagehide', nowFlush); window.addEventListener('online', nowFlush); AUTH.flushNow = nowFlush;
+  AUTH.mirrorNow = () => mirror(savedStr || cache, AUTH.version); // 오프라인 사용을 방금 켰을 때 바로 복사
+  if (startDirty) { dirty = true; firstDirtyAt = Date.now(); timer = setTimeout(flush, 1500); }
   AUTH.forceSave = async serverVersion => { AUTH.snapNext = true; AUTH.version = serverVersion; blocked = false; dirty = true; set('saving'); await flush(); };
   window.addEventListener('beforeunload', e => { if (dirty || inflight || AUTH.status === 'failed') { e.preventDefault(); e.returnValue = ''; } });
   return {
@@ -202,9 +207,22 @@ function showLogin(signupOpen, { preview = false, quick = null } = {}) {
   });
 }
 export const openLoginPreview = () => showLogin(true, { preview: true });
+// 인터넷이 없을 때: 오프라인 사용을 켠 기기에 복사본이 있으면 계정 모드로 연다(서버에 올리지 못한 변경이 있으면 그것을 우선).
+function offlineStart() {
+  const ls = lsRaw(); if (!ls || !offlineEnabled(ls)) return null; const u = lastUser(ls); if (!u) return null; const copy = readCopy(ls, u.email); if (!copy) return null;
+  let ok = false; try { validateState(JSON.parse(copy.state)); ok = true; } catch { /* 손상된 복사본은 쓰지 않는다 */ } if (!ok) return null;
+  const pend = readPending(ls, u.email); let usePend = false; if (pend) { try { validateState(JSON.parse(pend.state)); usePend = true; } catch { /* 손상된 임시 보관은 버린다 */ } }
+  AUTH.mode = 'account'; AUTH.user = u; AUTH.offlineStart = true; AUTH.version = usePend ? pend.base : copy.version; AUTH.status = 'offline'; AUTH.message = '인터넷이 없어 이 기기의 복사본으로 열었어요. 연결되면 자동으로 저장해요.';
+  AUTH.storage = makeAdapter(usePend ? pend.state : copy.state, copy.state, usePend); // 임시 보관이 있으면 서버에 올릴 변경으로 이어 간다
+  return AUTH;
+}
+AUTH.clearOffline = () => { const ls = lsRaw(); if (ls) clearOfflineData(ls); }; // 로그아웃·계정 삭제 때 이 기기의 복사본을 지운다
 export async function initAuth() {
   await loadImages();
-  let me; try { me = await req('GET', '/api/me'); } catch (e) { AUTH.reason = e.missing ? 'api-missing' : 'offline'; AUTH.storage = localStorageSafe(); return AUTH; }
+  let me;   try { me = await req('GET', '/api/me'); } catch (e) {
+    if (e.offline) { const off = offlineStart(); if (off) return off; } // 인터넷이 없고 오프라인 사용을 켜 둔 기기: 이 기기의 복사본으로 연다
+    AUTH.reason = e.missing ? 'api-missing' : 'offline'; AUTH.storage = localStorageSafe(); return AUTH;
+  }
   if (!me.configured) { AUTH.reason = 'not-configured'; AUTH.storage = localStorageSafe(); return AUTH; }
   if (!me.user) {
     const r = await showLogin(me.signup, { quick: me.quick });
@@ -225,7 +243,8 @@ export async function initAuth() {
     else if (act === 'conflict') AUTH.pendingConflict = pend;
     else clearPending(ls, me.user.email);
   }
-  AUTH.storage = makeAdapter(initial);
+  AUTH.storage = makeAdapter(initial, st.state); // 서버가 가진 내용과 같으면 올리지 않고, 되살린 변경처럼 다르면 올린다
   if (restore) AUTH.storage.setItem(KEY, initial); // 변경으로 취급해 서버에 다시 올린다
+  else if (st.state) { const ls0 = lsRaw(); if (ls0 && offlineEnabled(ls0)) saveCopy(ls0, me.user, st.state, st.version); }
   return AUTH;
 }
