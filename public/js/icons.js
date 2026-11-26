@@ -18,6 +18,7 @@
     ministry: ic('<path d="M12 21v-9"/><path d="M12 12c0-4 3-6 7-6 0 4-3 6-7 6z"/><path d="M12 15c0-3-2.2-5-6-5 0 3 2.2 5 6 5z"/>'),
     admin: ic('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
     community: ic('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>'),
+    sermon: ic('<path d="M4 20l1-4L16.5 4.5l3 3L8 19z"/><path d="M14 7l3 3"/><path d="M4 20h6"/>'),
     resources: ic('<path d="M5 4h4v16H5zM9 4h4v16H9z"/><path d="M14.5 5.5l3.8-1 3 14.5-3.8 1z"/>'),
     settings: ic('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'),
   };
