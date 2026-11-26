@@ -601,3 +601,17 @@ tr.partrow td { background:var(--soft); }
 .guestbox button { width:100%; }
 .guestbox p { color:var(--mute); margin:8px 0 0; }
 #demo-bar button { margin-left:8px; }
+
+/* ===== MB12.18 설교 작업대 ===== */
+.stabs { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 10px; border-bottom:2px solid var(--ink); }
+.stabs button { border:0; background:transparent; padding:9px 14px; font-weight:600; color:var(--mute); cursor:pointer; border-radius:var(--radius-sm) var(--radius-sm) 0 0; }
+.stabs button.on { background:var(--ink); color:#fff; }
+.spanel { display:none; } .spanel.on { display:block; }
+.chk { list-style:none; margin:0 0 12px; padding:0; }
+.chk li { display:flex; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); }
+.chk .mk { flex:none; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-weight:700; font-size:13px; }
+.chk .ok .mk { background:var(--green-bg); color:var(--green); } .chk .no .mk { background:var(--orange-bg); color:var(--orange); } .chk .na .mk { background:var(--soft); color:var(--mute); }
+.ckrow { display:flex; gap:8px; align-items:flex-start; padding:6px 0; font-size:14px; }
+.sdoc { white-space:pre-wrap; font-family:var(--serif); font-size:1rem; line-height:1.8; margin:0; }
+#slist .wbody textarea { background:#fffdf0; }
+@media print { .stabs { display:none; } .spanel:not(.on) { display:none; } .sdoc { font-size:11pt; } }
