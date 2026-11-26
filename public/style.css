@@ -642,3 +642,11 @@ tr.partrow td { background:var(--soft); }
 .attbar .attsum { margin:0; font-size:1rem; display:flex; align-items:center; gap:6px; }
 @media (max-width:700px) { .att-board.fit { grid-template-columns:1fr !important; } }
 #main.attmode .pagehead h1 { font-size:1.25rem; }
+
+/* ===== MB12.21 회계: 수입 빨강 · 지출 파랑 ===== */
+:root { --tx-in:#b3261e; --tx-in-bg:#fdebe9; --tx-out:#1a56b0; --tx-out-bg:#e6eefb; }
+.amt-in { color:var(--tx-in); font-weight:700; } .amt-out { color:var(--tx-out); font-weight:700; }
+.tag.in { background:var(--tx-in-bg); color:var(--tx-in); border:1px solid var(--tx-in); } .tag.out { background:var(--tx-out-bg); color:var(--tx-out); border:1px solid var(--tx-out); }
+tr.tx-in > td:first-child { box-shadow:inset 4px 0 0 var(--tx-in); } tr.tx-out > td:first-child { box-shadow:inset 4px 0 0 var(--tx-out); }
+.txseg .sm.in.on { background:var(--tx-in); border-color:var(--tx-in); color:#fff; } .txseg .sm.out.on { background:var(--tx-out); border-color:var(--tx-out); color:#fff; }
+.txseg .sm.in:not(.on) { color:var(--tx-in); } .txseg .sm.out:not(.on) { color:var(--tx-out); }

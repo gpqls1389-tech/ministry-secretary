@@ -6,9 +6,9 @@ import { IC, ILLUS, APP_ICON, PALETTE } from '../public/js/icons.js';
 const read = p => fs.readFileSync(new URL('../' + p, import.meta.url));
 const text = p => read(p).toString('utf8').replace(/\r\n/g, '\n'); // 윈도우 줄바꿈(CRLF)으로 내려받아도 같게 비교
 
-test('MB12.14 시각 자산: 아이콘 14종·그림 8종은 팔레트 안의 색만 쓰고 대체 글이 있다', () => {
+test('MB12.14 시각 자산: 아이콘 15종·그림 8종은 팔레트 안의 색만 쓰고 대체 글이 있다', () => {
   const allowed = new Set(Object.values(PALETTE).map(c => c.toLowerCase()).concat(['#7a4f10'])); const colors = s => [...s.matchAll(/#[0-9a-fA-F]{6}\b/g)].map(m => m[0].toLowerCase());
-  assert.equal(Object.keys(IC).length, 14); for (const [k, svg] of Object.entries(IC)) { assert.match(svg, /aria-hidden="true"/, k); assert.ok(!/#[0-9a-f]{6}/i.test(svg), `${k}: 글자색을 따라간다`); }
+  assert.equal(Object.keys(IC).length, 15); for (const [k, svg] of Object.entries(IC)) { assert.match(svg, /aria-hidden="true"/, k); assert.ok(!/#[0-9a-f]{6}/i.test(svg), `${k}: 글자색을 따라간다`); }
   assert.deepEqual(Object.keys(ILLUS).sort(), ['advent', 'christmas', 'easter', 'epiphany', 'lent', 'notebook', 'people', 'thanksgiving']);
   for (const [k, svg] of Object.entries(ILLUS)) { assert.match(svg, /role="img"/, k); assert.match(svg, /aria-label="[^"]{4,}"/, k); for (const c of colors(svg)) assert.ok(allowed.has(c), `${k} ${c}`); assert.ok(!/Gradient|filter=|<image/.test(svg), `${k}: 그라데이션·그림자·이미지 없음`); }
   for (const c of colors(APP_ICON)) assert.ok(allowed.has(c), `앱 아이콘 ${c}`);
