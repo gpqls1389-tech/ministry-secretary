@@ -98,10 +98,12 @@ function ask(msg, label = '확인') { return new Promise(r => { const d = modal(
 const deptOpts = () => store.depts().map(d => [d.id, d.name]);
 
 // ----- 계정·저장 상태 표시 -----
+const GUEST = A.mode === 'guest';
 const AUTH_BUSY = () => A.mode === 'account' && A.status === 'saving';
 const SAVE_TXT = { saved: ['● 저장됨', 'ok'], saving: ['◌ 저장 중…', ''], failed: ['▲ 저장 안 됨', 'bad'] };
 function paintAcct() {
   const el = $('#acct'); if (!el) return;
+  if (GUEST) { el.innerHTML = '<div class="acct-box"><div class="acct-u">👤 게스트</div><div class="row" style="margin-top:6px"><span class="tag bad">저장 안 됨</span></div><button class="sm" style="margin-top:6px" data-act="guestLogin">로그인하기</button></div>'; return; }
   if (A.mode !== 'account') { el.innerHTML = `<div class="acct-l mute small">이 브라우저에만 저장됨${A.reason === 'not-configured' ? '<br>로그인 서버 설정 전' : ''}</div>`; return; }
   const [t, c] = SAVE_TXT[A.status] || SAVE_TXT.saved;
   el.innerHTML = `<div class="acct-box"><div class="acct-u" title="${esc(A.user.email)}">👤 ${esc(A.user.name || A.user.email)}</div><div class="row" style="margin-top:6px"><span class="tag ${c}" id="save-chip" title="${esc(A.message)}">${t}</span><span class="sp"></span><button class="sm" data-act="logout">로그아웃</button></div></div>`;
@@ -158,13 +160,13 @@ function paintSeason() {
 function render() {
   flushWorship();
   const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
-  $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${IC[NAV_ICON[k] || k] || ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
+  $('#nav').innerHTML = NAV.filter(n => !(GUEST && n[0] === 'community')).map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${IC[NAV_ICON[k] || k] || ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
   paintSeason();
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
-  bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
+  bar.hidden = !GUEST && !demo && !window.__memOnly; bar.innerHTML = GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
   const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
@@ -631,6 +633,7 @@ function txForm(v = {}) {
   form({ title: v.id ? '거래 수정' : '지출·수입 등록', values: { kind: 'expense', date: today(), dept_id: wd, event_id: '', ...v, event_id: v.event_id || '' }, fields: [{ k: 'kind', label: '구분', type: 'select', options: [['expense', '지출'], ['income', '수입']] }, { k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'amount', label: '금액 (원, 정수)', type: 'number', req: true, ph: '예: 45000', hint: '쉼표 없이 숫자만. 0은 입력할 수 없어요.' }, { k: 'category', label: '항목', list: cats, hint: '예산 항목과 같은 이름으로 쓰면 예산 대비 집행에 잡혀요.' }, { k: 'event_id', label: '연결 행사 (선택)', type: 'select', options: [['', '(행사와 무관한 부서 지출)'], ...evs.map(e => [e.id, `${e.start_date} ${e.title}`])], hint: '연결하면 행사 결산에도 보이고, 부서 합계에는 한 번만 더해져요.' }, { k: 'memo', label: '적요', ph: '예: 간식 구입' }, ...(v.receipt ? [{ k: 'receipt_act', label: '현재 영수증 사진', type: 'select', options: [['keep', '그대로 두기'], ['remove', '삭제하기']] }] : []), { k: 'receipt_file', label: v.receipt ? '영수증 사진 바꾸기 (선택)' : '영수증 사진 (선택)', type: 'file', accept: 'image/*', capture: true, hint: `휴대폰에서는 바로 촬영할 수 있어요. 카드번호·주민등록번호·실명 같은 개인정보는 가리고 찍어 주세요. 사진은 올리기 전에 작게 줄이고 위치 정보 등은 지워요. ${RCP.account ? '사진은 내 계정의 서버에만 저장돼요.' : '로그인 전에는 이 브라우저에만 저장돼요.'} 사진은 백업 파일(JSON)에 들어가지 않으니, 종이 영수증도 보관하세요.` }],
     onSubmit: async o => {
       const rec = { ...o, dept_id: Number(o.dept_id), amount: o.amount === '' ? NaN : Number(o.amount), receipt: v.receipt && o.receipt_act !== 'remove' ? v.receipt : null }; delete rec.receipt_file; delete rec.receipt_act; let fresh = null;
+      if (o.receipt_file && GUEST) throw new Error('게스트 모드에서는 영수증 사진을 올릴 수 없어요. 로그인하면 쓸 수 있어요.');
       if (o.receipt_file) { fresh = await RCP.put(await compressImage(o.receipt_file)); rec.receipt = fresh; }
       try { if (v.id) store.updateTransaction(v.id, rec); else store.addTransaction(rec); } catch (e) { if (fresh) await RCP.remove(fresh); throw e; }
       if (v.receipt && rec.receipt !== v.receipt) RCP.remove(v.receipt); toast('저장했습니다.');
@@ -788,7 +791,7 @@ function vSettings() {
   <h2 ${acct ? '' : 'style="margin-top:0"'}>인수인계</h2><div class="callout"><span>🤝</span><div class="sp">부서를 다른 교사에게 넘길 때 쓰는 <b>인수인계 도우미</b>예요. 순서(4주 전~한 달 뒤), 인수인계서 양식과 칸마다 적을 내용·예시가 있고, 목회 비서 기록(인원·공과·일정·회계·비품)으로 초안을 채울 수 있어요.</div><button class="pri" data-go="#handover">인수인계 열기</button></div>
   ${fontSection()}
   <h2>데이터</h2><div class="callout ${S.demo ? 'warn' : ''}"><span>${S.demo ? '🧪' : '📒'}</span><div>현재 <b>${S.demo ? '가상 데이터' : '실제 데이터'}</b>를 사용 중입니다. 데이터는 ${where}${ds === null ? '' : ` (마지막 내보내기: ${ds === 0 ? '오늘' : ds + '일 전'})`}</div></div>
-  <div class="row" style="margin:12px 0"><button data-act="resetDemo">가상 데이터로 초기화</button><button class="pri" data-act="startEmpty">실제 데이터로 시작 (비움)</button></div>
+  <div class="row" style="margin:12px 0"><button data-act="resetDemo">가상 데이터로 초기화</button>${GUEST ? '' : '<button class="pri" data-act="startEmpty">실제 데이터로 시작 (비움)</button>'}</div>
   <h2>백업·복원 (JSON 파일)</h2><div class="row"><button data-act="export">내보내기(.json 다운로드)</button><button data-act="import">파일에서 가져오기</button><input type="file" id="file" accept="application/json,.json" hidden></div>
   <p class="mute small">내보낸 파일에는 이름 등 개인정보가 들어 있을 수 있으니 안전한 곳에만 보관하세요. 가져오면 현재 데이터가 파일 내용으로 바뀝니다(바꾸기 전에 확인합니다).</p>
   <h2>화면 미리보기</h2><div class="row"><button data-act="loginPreview">로그인 화면 미리보기</button><span class="mute small">서버 없이 모양만 보여 줘요(실제 로그인 아님).</span></div>
@@ -1367,6 +1370,7 @@ const ACT = {
   delSeason: async d => { if (await ask('이 절기 계획을 삭제할까요?', '삭제')) { store.deleteSeason(Number(d.id)); render(); } },
   editBudget: () => form({ title: '예산 항목', intro: `<p class="mute small">${UI.year}년 · ${esc(store.dept(workDept()).name)} · 같은 항목명이면 금액이 수정됩니다.</p>`, fields: [{ k: 'category', label: '항목', req: true }, { k: 'amount', label: '예산액 (원)', type: 'number', req: true }], onSubmit: o => store.saveBudget(workDept(), UI.year, o.category.trim(), Number(o.amount)) }),
   resetDemo: async () => { if (await ask('가상 데이터로 되돌립니다. 지금 입력한 내용은 사라집니다.', '초기화')) { A.snapNext = true; store.resetDemo(); render(); toast('가상 데이터로 초기화했습니다.'); } },
+  guestLogin: () => location.reload(),
   startEmpty: async () => { if (await ask('비어 있는 실제 데이터로 시작합니다. 현재(가상) 데이터는 사라집니다. 먼저 ‘내보내기’로 백업할 수 있습니다.', '비우고 시작')) { A.snapNext = true; store.startEmpty(); location.hash = '#home'; render(); toast('실제 데이터로 시작합니다.'); } },
   export: () => { download(`목회비서_백업_${today()}.json`, store.exportJson(), 'application/json'); guard(() => store.markExported(), '백업 파일을 내려받았어요. 안전한 곳에 보관하세요.'); render(); },
   import: () => $('#file').click(),
