@@ -189,7 +189,7 @@ function a11yPass(root = document) {
   root.querySelectorAll('a:not([href])').forEach(a => { if (!a.hasAttribute('tabindex')) a.tabIndex = 0; if (!a.getAttribute('role')) a.setAttribute('role', 'button'); });
   root.querySelectorAll('[data-open]:not(button):not(a)').forEach(el => { if (!el.hasAttribute('tabindex')) el.tabIndex = 0; if (el.tagName !== 'TR' && !el.getAttribute('role')) el.setAttribute('role', 'button'); });
 }
-document.addEventListener('keydown', e => { if ((e.key !== 'Enter' && e.key !== ' ') || e.isComposing) return; const el = e.target; if (el instanceof Element && el.matches('a:not([href])[tabindex], [data-open][tabindex]:not(button):not(a)')) { e.preventDefault(); el.click(); } });
+document.addEventListener('keydown', e => { if ((e.key !== 'Enter' && e.key !== ' ') || e.isComposing) return; const el = e.target; if (el instanceof Element && el.matches('a:not([href])[tabindex], [data-open][tabindex]:not(button):not(a), [data-day][tabindex]')) { e.preventDefault(); el.click(); } });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 watchUpdates(VERSION, showUpdateBar);
 // ----- 할 일 시간 알림(팝업) -----
@@ -272,13 +272,24 @@ function vHome() {
 }
 
 // ----- 일정·계획 -----
+// 달력에서 날짜를 누르면 그날의 일정(일정·예배·행사)을 팝업으로 보여 주고, 그 날짜로 바로 추가할 수 있다(MB12.25).
+function openDay(ds) {
+  const items = store.calendar(did(), ds, ds, { services: true, lessons: false }).filter(i => i.date <= ds && i.end >= ds); const ci = churchInfo(ds);
+  const href = i => `#${i.type === 'lesson' ? 'service' : i.type}/${i.id}`; const kindTxt = i => (i.type === 'event' ? '행사' : i.type === 'service' ? '예배' : i.kind || '일정');
+  const row = i => `<a class="dayitem dk-${dk(i.dept_id)}" href="${href(i)}"><span class="di">${typeIco(i)}</span><span class="sp"><b>${esc(i.title)}</b><span class="mute small">${[i.time ? esc(i.time) : '', esc(kindTxt(i)), esc((store.dept(i.dept_id) || {}).name || ''), i.end > i.date ? `${md(i.date)}~${md(i.end)}` : '', i.lesson ? `공과 ${esc(i.lesson)}` : ''].filter(Boolean).join(' · ')}</span></span><span class="go">›</span></a>`;
+  const d = modal(`<div class="dlg daypop"><h3>${md(ds)} <span class="mute small">${esc(churchLabel(ds))}${ci.special ? ' · ' + esc(ci.special) : ''}</span></h3>
+    <div class="dayitems">${items.length ? items.map(row).join('') : '<p class="mute">이 날짜에 등록된 일정이 없어요.</p>'}</div>
+    <div class="dlg-foot"><button data-x>닫기</button><button data-add="event">+ 행사</button><button data-add="service">+ 예배</button><button class="pri" data-add="schedule">+ 일정 추가</button></div></div>`);
+  $('[data-x]', d).onclick = () => d.close(); d.querySelectorAll('a.dayitem').forEach(a => { a.onclick = () => d.close(); }); // 항목을 누르면 팝업을 닫고 그 화면으로
+  d.querySelectorAll('[data-add]').forEach(b => { b.onclick = () => { d.close(); const k = b.dataset.add; if (k === 'schedule') scheduleForm({ date: ds }); else if (k === 'service') serviceForm({ date: ds }); else eventForm({ start_date: ds, end_date: ds }); }; });
+}
 function vPlan() {
   const tabs = `<div class="tabs"><a data-ptab="cal" class="${UI.planTab === 'cal' ? 'on' : ''}">월 달력</a><a data-ptab="list" class="${UI.planTab === 'list' ? 'on' : ''}">일정 목록</a><a data-ptab="year" class="${UI.planTab === 'year' ? 'on' : ''}">연간·절기 계획</a></div>`;
   if (UI.planTab === 'cal') {
     const [y, m] = UI.month.split('-').map(Number); const dim = new Date(Date.UTC(y, m, 0)).getUTCDate(); const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
     const items = store.calendar(did(), `${UI.month}-01`, `${UI.month}-${pad(dim)}`, { services: UI.calSvc, lessons: UI.calLes }); const cells = [];
     for (let i = 0; i < lead; i++) cells.push('<div class="out"></div>');
-    for (let d = 1; d <= dim; d++) { const ds = `${UI.month}-${pad(d)}`; cells.push(`<div class="${[ds === today() ? 'today' : '', dow(ds) === '일' ? 'sun' : ''].filter(Boolean).join(' ')}"><b>${d}</b>${dow(ds) === '일' ? `<small class="cs" title="교회력(자동 계산)"><i style="background:${churchInfo(ds).colorHex}"></i>${esc(churchInfo(ds).special || churchInfo(ds).label)}</small>` : ''}${items.filter(i => i.date <= ds && i.end >= ds).map(i => { const open = i.type === 'lesson' ? 'service' : i.type; const tip = i.type === 'lesson' ? `${i.title}${i.cname ? ' · ' + i.cname : ''}` : i.lesson ? `${i.title} · 공과 ${i.lesson}` : i.title; return `<a class="dk-${dk(i.dept_id)}${i.type === 'lesson' ? ' les' : ''}${i.hold ? ' hold' : ''}" data-open="${open}/${i.id}" title="${esc(tip)}">${typeIco(i)} ${esc(i.title)}${i.lesson ? `<span class="les-sub">📚 ${esc(i.lesson)}</span>` : ''}</a>`; }).join('')}</div>`); }
+    for (let d = 1; d <= dim; d++) { const ds = `${UI.month}-${pad(d)}`; cells.push(`<div class="${['dayc', ds === today() ? 'today' : '', dow(ds) === '일' ? 'sun' : ''].filter(Boolean).join(' ')}" data-day="${ds}" tabindex="0" role="button" aria-label="${m}월 ${d}일 일정 보기"><b>${d}</b>${dow(ds) === '일' ? `<small class="cs" title="교회력(자동 계산)"><i style="background:${churchInfo(ds).colorHex}"></i>${esc(churchInfo(ds).special || churchInfo(ds).label)}</small>` : ''}${items.filter(i => i.date <= ds && i.end >= ds).map(i => { const open = i.type === 'lesson' ? 'service' : i.type; const tip = i.type === 'lesson' ? `${i.title}${i.cname ? ' · ' + i.cname : ''}` : i.lesson ? `${i.title} · 공과 ${i.lesson}` : i.title; return `<a class="dk-${dk(i.dept_id)}${i.type === 'lesson' ? ' les' : ''}${i.hold ? ' hold' : ''}" data-open="${open}/${i.id}" title="${esc(tip)}">${typeIco(i)} ${esc(i.title)}${i.lesson ? `<span class="les-sub">📚 ${esc(i.lesson)}</span>` : ''}</a>`; }).join('')}</div>`); }
     const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7), next = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
     page('🗓️', '일정·계획', '교사 기도회·회의와 행사를 모아 보는 달력이에요. 주일예배는 ‘예배’ 메뉴에서 관리해요.', `${tabs}<div class="monthbar"><div class="mnav"><button data-month="${prev}" aria-label="이전 달">◀</button><h2 class="mtitle">${y}년 ${m}월</h2><button data-month="${next}" aria-label="다음 달">▶</button><button class="sm" data-month="${today().slice(0, 7)}">오늘</button></div><span class="sp"></span><label class="small noprint"><input type="checkbox" data-calles${UI.calLes ? ' checked' : ''}> 공과 보기</label><label class="small noprint"><input type="checkbox" data-calsvc${UI.calSvc ? ' checked' : ''}> 예배도 함께 보기</label><button class="sm noprint" data-act="pdfImport">PDF에서 가져오기</button><button class="pri noprint" data-act="newSchedule">+ 일정</button></div><div class="cal">${['월', '화', '수', '목', '금', '토', '일'].map(w => `<div class="h${w === '일' ? ' sun' : ''}">${w}</div>`).join('')}${cells.join('')}</div><p class="callegend small mute noprint"><span class="lg dk-kid"></span>아동부 <span class="lg dk-teen"></span>중고등부 <span class="lg dk-youth"></span>청년부 <span class="lcdot"></span>주일 칸의 점은 그날의 전례 색(자동 계산) · 📚 배치한 공과(누르면 그 주 예배)</p>`);
   } else {
@@ -1661,6 +1672,7 @@ document.addEventListener('click', e => {
   const t = e.target; let el;
   if ((el = t.closest('[data-act]')) && ACT[el.dataset.act]) { e.preventDefault(); Promise.resolve(ACT[el.dataset.act](el.dataset)).catch(err => toast(err.message, true)); return; }
   if ((el = t.closest('[data-open]'))) { const [ty, id] = el.dataset.open.split('/'); location.hash = `#${ty}/${id}`; return; }
+  if ((el = t.closest('[data-day]'))) { openDay(el.dataset.day); return; }
   if ((el = t.closest('[data-go]'))) { location.hash = el.dataset.go; render(); return; }
   if ((el = t.closest('[data-dept]'))) { UI.dept = el.dataset.dept; try { localStorage.setItem('ms:dept', UI.dept); } catch { /* 무시 */ } render(); return; }
   if ((el = t.closest('[data-ptab]'))) { UI.planTab = el.dataset.ptab; render(); return; }
