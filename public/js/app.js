@@ -168,7 +168,7 @@ function render() {
   paintSeason();
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
-  bar.hidden = !GUEST && !demo && !window.__memOnly; bar.innerHTML = GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
+  bar.hidden = !GUEST && !demo && !window.__memOnly; const setBar = () => document.documentElement.style.setProperty('--barh', bar.hidden ? '0px' : `${bar.offsetHeight}px`); setTimeout(setBar, 0); bar.innerHTML = GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
   const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, att: vAtt, sermon: vSermon, shelf: vShelf, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; $('#main').classList.toggle('attmode', view === 'att'); V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
@@ -466,7 +466,7 @@ function fitAtt() {
   }
   b.style.gridTemplateColumns = `repeat(${best.n}, minmax(0, 1fr))`; b.style.setProperty('--rowh', `${Math.max(28, Math.min(52, best.h))}px`);
 }
-window.addEventListener('resize', () => { if ($('.att-board.fit')) fitAtt(); });
+window.addEventListener('resize', () => { if ($('.att-board.fit')) fitAtt(); const bar = $('#demo-bar'); if (bar) document.documentElement.style.setProperty('--barh', bar.hidden ? '0px' : `${bar.offsetHeight}px`); });
 
 function vAtt(id) {
   const s = store.service(id); if (!s) { page('✅', '출석', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
@@ -626,9 +626,16 @@ function vCurriculum(id) {
 // ----- 일정(교사 기도회·회의 등. 예배·행사와 별도) -----
 function scheduleForm(v = {}) {
   form({ title: v.id ? '일정 수정' : '일정 추가', values: { dept_id: workDept(), date: today(), type: '교사 기도회', repeat: 'none', ...v }, intro: '<p class="mute small">교사 기도회·회의처럼 예배·행사가 아닌 모임을 적어요. 주일예배는 ‘예배’ 메뉴에서 관리합니다.</p>',
-    fields: [{ k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'type', label: '구분', type: 'select', options: SCHEDULE_TYPES.map(x => [x, x]) }, { k: 'title', label: '일정 이름', req: true, ph: '예: 교사 기도회' }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'time', label: '시간', type: 'time' }, { k: 'place', label: '장소' }, ...(!v.id ? REPEAT_FIELDS : []), { k: 'note', label: '메모', type: 'textarea' }],
-    onOpen: d => { churchHint(d); const ty = d.querySelector('[name=type]'), ti = d.querySelector('[name=title]'); if (!v.id && ty && ti) { ti.value = ti.value || ty.value; ti.dataset.auto = '1'; ty.onchange = () => { if (ti.dataset.auto === '1') ti.value = ty.value; }; ti.oninput = () => { ti.dataset.auto = '0'; }; } },
-    onSubmit: o => { store.saveSchedule({ ...v, ...o, dept_id: Number(o.dept_id) }); seriesToast(); } });
+    fields: [{ k: 'dept_id', label: '부서', type: 'select', options: deptOpts() }, { k: 'type', label: '구분', type: 'select', options: [...store.scheduleTypes().map(x => [x, x]), ...(v.type && !store.scheduleTypes().includes(v.type) ? [[v.type, v.type]] : []), ['__new__', '＋ 내 단어로 추가…']] }, { k: 'newtype', label: '새 구분 이름 (20자까지)' }, { k: 'title', label: '일정 이름', req: true, ph: '예: 교사 기도회' }, { k: 'date', label: '날짜', type: 'date', req: true }, { k: 'time', label: '시간', type: 'time' }, { k: 'place', label: '장소' }, ...(!v.id ? REPEAT_FIELDS : []), { k: 'note', label: '메모', type: 'textarea' }],
+    onOpen: d => {
+      churchHint(d); const ty = d.querySelector('[name=type]'), ti = d.querySelector('[name=title]'), nt = d.querySelector('[name=newtype]'); const ntl = nt.closest('label'); ntl.hidden = true; nt.maxLength = 20;
+      const chips = document.createElement('div'); chips.className = 'tychips'; ty.closest('label').after(chips); // 내가 만든 구분: 눌러서 지우기
+      const paintChips = () => { const c = store.customScheduleTypes(); chips.innerHTML = c.length ? '<span class="mute small">내 구분:</span> ' + c.map(x => `<button type="button" class="chip" data-rm="${esc(x)}" title="이 구분을 목록에서 지워요(이미 쓴 일정은 그대로)">${esc(x)} ✕</button>`).join(' ') : ''; };
+      paintChips(); chips.onclick = async e => { const b = e.target.closest('[data-rm]'); if (!b) return; if (!(await ask(`내 구분 ‘${b.dataset.rm}’을 목록에서 지울까요? 이미 이 구분으로 만든 일정은 그대로 남아요.`, '지우기'))) return; store.removeScheduleType(b.dataset.rm); const opt = [...ty.options].find(o => o.value === b.dataset.rm); if (opt && ty.value !== b.dataset.rm) opt.remove(); else if (opt) { opt.remove(); ty.value = '기타'; } paintChips(); };
+      if (!v.id && ty && ti) { ti.value = ti.value || ty.value; ti.dataset.auto = '1'; ti.oninput = () => { ti.dataset.auto = '0'; }; }
+      ty.onchange = () => { const isNew = ty.value === '__new__'; ntl.hidden = !isNew; if (isNew) nt.focus(); else if (!v.id && ti.dataset.auto === '1') ti.value = ty.value; };
+    },
+    onSubmit: o => { const type = o.type === '__new__' ? store.addScheduleType(o.newtype) : o.type; store.saveSchedule({ ...v, ...o, type, dept_id: Number(o.dept_id) }); seriesToast(); } });
 }
 function vSchedule(id) {
   const s = store.schedule(id); if (!s) { page('🗓️', '일정', '', '<div class="callout bad">일정을 찾을 수 없습니다.</div>'); return; }

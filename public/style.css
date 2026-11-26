@@ -650,3 +650,21 @@ tr.partrow td { background:var(--soft); }
 tr.tx-in > td:first-child { box-shadow:inset 4px 0 0 var(--tx-in); } tr.tx-out > td:first-child { box-shadow:inset 4px 0 0 var(--tx-out); }
 .txseg .sm.in.on { background:var(--tx-in); border-color:var(--tx-in); color:#fff; } .txseg .sm.out.on { background:var(--tx-out); border-color:var(--tx-out); color:#fff; }
 .txseg .sm.in:not(.on) { color:var(--tx-in); } .txseg .sm.out:not(.on) { color:var(--tx-out); }
+
+/* ===== MB12.22 왼쪽 메뉴: 스크롤 없이 한 화면 ===== */
+#side { overflow-x:hidden; overflow-y:auto; scrollbar-width:none; padding-top:clamp(8px,2vh,20px); padding-bottom:clamp(8px,1.6vh,16px); }
+#side::-webkit-scrollbar { display:none; }
+#side .brand { padding-bottom:clamp(4px,1.2vh,16px); }
+#side #season { margin-bottom:clamp(6px,1.3vh,14px); padding-block:clamp(5px,1vh,10px); }
+#side .dept-box { margin-bottom:clamp(6px,1.3vh,16px); }
+#side #nav { flex:1 1 auto; min-height:0; gap:0; }
+#side #nav a { flex:1 1 0; min-height:26px; max-height:46px; padding-block:0; }
+#side #nav a[data-go="#settings"] { margin-top:clamp(2px,.7vh,10px); }
+#side .side-foot { padding-top:clamp(6px,1.2vh,16px); }
+@media (max-height:800px) { #season small { display:none; } #side .acct-box { padding:6px 8px; } }
+@media (max-height:680px) { #side .dept-box button { padding-block:4px; } #side #help-btn { padding-block:4px; } }
+.tychips { margin:-6px 0 10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+
+/* 안내 띠(가상 데이터·게스트)가 있어도 왼쪽 메뉴가 화면 아래로 잘리지 않게: 띠는 위에 붙이고 메뉴는 띠 아래부터 남은 높이를 쓴다 */
+#demo-bar { position:sticky; top:0; z-index:30; }
+@media (min-width:861px) { #side { top:var(--barh,0px); height:calc(100vh - var(--barh,0px)); } }
