@@ -8,6 +8,7 @@ import { cleanInfo, mainPhone } from './people.js';
 import { formByKey, blankValues, PRIVACY_ROWS } from './admin.js';
 import { cleanOrder, orderText } from './order.js';
 import { cleanSermon, SERMON_MAX } from './sermon.js';
+import { SHELF_MAX } from './scripture.js';
 import { cleanSheet, SHEET_MAX, toServiceItems, fromServiceItems, cleanBlocks } from './worship.js';
 
 export const KEY = 'ministry-secretary:v1';
@@ -70,6 +71,7 @@ export function validateState(j) {
   for (const o of (j.orders || [])) if (!o || !isId(o.id) || typeof o.title !== 'string' || !Array.isArray(o.blocks) || o.blocks.length > 200 || !dids.has(o.dept_id) || (o.service_id != null && !sids.has(o.service_id))) bad('예배 순서지');
   if (j.sermons !== undefined && (!Array.isArray(j.sermons) || j.sermons.length > SERMON_MAX)) bad('설교 노트');
   for (const o of (j.sermons || [])) if (!o || !isId(o.id) || typeof o.title !== 'string' || !Array.isArray(o.blocks) || o.blocks.length > 100 || !dids.has(o.dept_id) || (o.service_id != null && !sids.has(o.service_id))) bad('설교 노트');
+  if (j.shelf !== undefined && (!Array.isArray(j.shelf) || j.shelf.length > SHELF_MAX || j.shelf.some(x => !x || !isId(x.id) || typeof x.title !== 'string' || typeof x.series !== 'string' || !Array.isArray(x.books)))) bad('주석 서가');
   if (j.deptCfg !== undefined && (typeof j.deptCfg !== 'object' || Array.isArray(j.deptCfg) || j.deptCfg === null)) bad('부서 설정');
   if (j.curricula !== undefined && (!Array.isArray(j.curricula) || j.curricula.length > MAX_CURRICULA)) bad('교재');
   for (const c of (j.curricula || [])) if (!isId(c.id) || typeof c.name !== 'string' || !Number.isInteger(c.years) || c.years < 1 || c.years > 3 || !Array.isArray(c.lessons) || c.lessons.length > MAX_LESSONS || !(c.dept_id === 0 || dids.has(c.dept_id)) || c.lessons.some(l => !Number.isInteger(l.year) || !Number.isInteger(l.no) || LESSON_KEYS.some(k => typeof l[k] !== 'string' || l[k].length > FIELD_MAX[k]))) bad('교재');
@@ -91,7 +93,7 @@ export function normalizeState(j) {
     j.depts.splice(at >= 0 ? at + 1 : j.depts.length, 0, { id, name: '중고등부', kind: 'teen' });
   }
   j.teenAdded = true; // 사용자가 중고등부를 지운 뒤에 다시 생기지 않게
-  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth', 'docs', 'orders', 'sermons']) j[k] = j[k] || [];
+  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth', 'docs', 'orders', 'sermons', 'shelf']) j[k] = j[k] || [];
   j.deptCfg = j.deptCfg || {};
   return j;
 }
@@ -121,7 +123,7 @@ export function createStore(storage, today = kstToday) {
   }
   load();
   // 불러오기 실패 복구: 검사에 걸리는 선택 항목(목록)만 비우고 열 수 있는지 시험한다. 이 함수는 저장하지 않는다.
-  const SALVAGE = { docs: '행정 문서', orders: '예배 순서지', sermons: '설교 노트', curricula: '교재', growth: '주간 체크', schedules: '일정', visits: '심방 기록', assets: '비품', links: '내 사이트', todos: '할 일', supplies: '준비물', deptCfg: '부서 설정' };
+  const SALVAGE = { docs: '행정 문서', orders: '예배 순서지', sermons: '설교 노트', shelf: '주석 서가', curricula: '교재', growth: '주간 체크', schedules: '일정', visits: '심방 기록', assets: '비품', links: '내 사이트', todos: '할 일', supplies: '준비물', deptCfg: '부서 설정' };
   function salvageRaw(raw) {
     let j; try { j = JSON.parse(raw); } catch { return null; }
     if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
@@ -579,6 +581,20 @@ export function createStore(storage, today = kstToday) {
     duplicateSermon(id) { const o = api.sermon(id); if (!o) throw new ValidationError('설교 노트를 찾을 수 없습니다.'); return api.saveSermon({ ...o, id: undefined, service_id: null, title: `${o.title} (복사)`.slice(0, 80), checks: {}, blocks: o.blocks.map(b => ({ ...b, id: undefined })) }); },
     sermonOfService: sid => (S.sermons || []).find(o => o.service_id === sid) || null,
     sermonForService(sid, blocks) { const have = api.sermonOfService(sid); if (have) return have.id; const s = api.service(sid); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); return api.saveSermon({ title: (s.sermon_title || `${s.date.slice(5).replace('-', '/')} ${s.title} 설교`).slice(0, 80), scripture: s.scripture, dept_id: s.dept_id, service_id: sid, audience: 'all', blocks: blocks || [] }); },
+
+    // ----- 주석 서가(MB12.19): 가진 책의 이름·시리즈·다루는 성경 책만 보관한다(책 내용은 저장하지 않는다) -----
+    shelf: () => (S.shelf || []).slice(),
+    addShelf(items) {
+      S.shelf = S.shelf || []; const have = new Set(S.shelf.map(x => `${x.series}|${x.title}`)); let added = 0, skipped = 0;
+      for (const x of items || []) {
+        const title = String((x && x.title) || '').trim().slice(0, 60); if (!title) continue; const series = String((x && x.series) || '').trim().slice(0, 30); const key = `${series}|${title}`;
+        if (have.has(key)) { skipped++; continue; } if (S.shelf.length >= SHELF_MAX) throw new ValidationError(`서가는 ${SHELF_MAX}권까지 담을 수 있어요. 안 쓰는 항목을 지워 주세요.`);
+        S.shelf.push({ id: nid(), title, series, books: (Array.isArray(x.books) ? x.books : []).filter(n => Number.isInteger(n) && n >= 1 && n <= 66).slice(0, 66) }); have.add(key); added++;
+      }
+      save(); return { added, skipped, total: S.shelf.length };
+    },
+    deleteShelf(id) { S.shelf = (S.shelf || []).filter(x => x.id !== id); save(); },
+    clearShelf() { S.shelf = []; save(); },
 
     // ----- 행정 문서: 서식으로 쓴 문서를 저장(부서별) -----
     docs(deptId) { return (S.docs || []).filter(d => !deptId || d.dept_id === deptId).sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || b.id - a.id); },
