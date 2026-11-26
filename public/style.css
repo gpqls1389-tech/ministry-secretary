@@ -679,3 +679,17 @@ tr.tx-in > td:first-child { box-shadow:inset 4px 0 0 var(--tx-in); } tr.tx-out >
 .dayitem { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-left:4px solid var(--primary); border-radius:var(--radius-md); background:var(--card); color:inherit; text-decoration:none; }
 .dayitem:hover { background:var(--soft); } .dayitem .di { font-size:1.15rem; } .dayitem .sp { min-width:0; display:flex; flex-direction:column; } .dayitem .go { color:var(--faint); font-size:1.2rem; }
 .dayitem.dk-kid { border-left-color:var(--kid); } .dayitem.dk-teen { border-left-color:var(--teen); } .dayitem.dk-youth { border-left-color:var(--yth); }
+
+/* ===== MB12.26 부서 종류 확장: 유치부(황토) · 유년부(초록) · 장년부(보라) ===== */
+:root { --tdl:#a8590f; --tdl-dk:#7c3f08; --tdl-bg:#fbeedd; --tdl-line:#e6c29a; --tdl-grad:#fdf6ec; --elm:#2c7a3f; --elm-dk:#1d5a2c; --elm-bg:#e4f1e6; --elm-line:#a9d1b2; --elm-grad:#f2f9f3; --adl:#6b4b8a; --adl-dk:#4f3568; --adl-bg:#efe8f6; --adl-line:#c7b4dc; --adl-grad:#f7f3fb; }
+body[data-theme="toddler"] { --primary:var(--tdl); --primary-dk:var(--tdl-dk); --primary-bg:var(--tdl-bg); --primary-line:var(--tdl-line); --primary-grad:var(--tdl-grad); --side-ac:#e0a35c; }
+body[data-theme="elem"] { --primary:var(--elm); --primary-dk:var(--elm-dk); --primary-bg:var(--elm-bg); --primary-line:var(--elm-line); --primary-grad:var(--elm-grad); --side-ac:#8fcf9d; }
+body[data-theme="adult"] { --primary:var(--adl); --primary-dk:var(--adl-dk); --primary-bg:var(--adl-bg); --primary-line:var(--adl-line); --primary-grad:var(--adl-grad); --side-ac:#c3a8e0; }
+.tag.toddler { background:var(--tdl-bg); color:var(--tdl-dk); } .tag.elem { background:var(--elm-bg); color:var(--elm-dk); } .tag.adult { background:var(--adl-bg); color:var(--adl-dk); }
+.tag.toddler::before, .tag.elem::before, .tag.adult::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.7; }
+#side .dept-box button.dk-toddler::before { background:var(--tdl); } #side .dept-box button.dk-elem::before { background:var(--elm); } #side .dept-box button.dk-adult::before { background:var(--adl); }
+#side .dept-box button.dk-toddler.on { background:var(--tdl); color:#fff; } #side .dept-box button.dk-elem.on { background:var(--elm); color:#fff; } #side .dept-box button.dk-adult.on { background:var(--adl); color:#fff; }
+.avatar.dk-toddler { background:var(--tdl-bg); color:var(--tdl-dk); } .avatar.dk-elem { background:var(--elm-bg); color:var(--elm-dk); } .avatar.dk-adult { background:var(--adl-bg); color:var(--adl-dk); }
+.cal a.dk-toddler { border-left-color:var(--tdl); background:var(--tdl-bg); } .cal a.dk-elem { border-left-color:var(--elm); background:var(--elm-bg); } .cal a.dk-adult { border-left-color:var(--adl); background:var(--adl-bg); }
+.callegend .lg.dk-toddler { background:var(--tdl); } .callegend .lg.dk-elem { background:var(--elm); } .callegend .lg.dk-adult { background:var(--adl); }
+.dayitem.dk-toddler { border-left-color:var(--tdl); } .dayitem.dk-elem { border-left-color:var(--elm); } .dayitem.dk-adult { border-left-color:var(--adl); }

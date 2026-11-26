@@ -16,7 +16,7 @@ export const FAMILY_MISSIONS = {
 
 // data: store.weeklyData(), opts: { mode: 'before'|'after', season: '대림절 제1주' 등, name: 받는 사람 이름(선택) }
 export function familyMessage(data, { mode = 'before', season = '', name = '' } = {}) {
-  const { service: s, dept, kind, next, events } = data; const l = s.lesson; const youth = kind === 'youth';
+  const { service: s, dept, kind, next, events } = data; const l = s.lesson; const youth = kind === 'youth' || kind === 'adult';
   const to = name ? (youth ? `${name}님, ` : `${name} 보호자님, `) : '';
   const L = [`[${dept.name} ${youth ? '말씀 나눔' : '가정 안내'}] ${md(s.date)}${season ? ' ' + season : ''}`, ''];
   L.push(`${to}${mode === 'after' ? '오늘 함께 나눈 말씀이에요.' : '이번 주일에 함께 배울 말씀이에요.'}`);
