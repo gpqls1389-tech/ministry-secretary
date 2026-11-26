@@ -30,7 +30,8 @@ import { INFO_FIELDS, telHref, smsHref, mainPhone, maskPhone, birthdayIn } from 
 import { familyMessage, briefingText } from './weekly.js';
 import { ADMIN_CATS, ADMIN_FORMS, formByKey, formBlocks, blocksText, blankValues } from './admin.js';
 import { buildHwpx, HWPX_BASE_FILES } from './hwpx.js';
-import { ORDER_PRESETS, presetItems, orderTimes, orderTotal, parseOrderText } from './order.js';
+import { orderTimes, orderTotal, parseOrderText } from './order.js';
+import * as WS from './worship.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
@@ -155,7 +156,8 @@ function paintSeason() {
   el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
 }
 function render() {
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
+  flushWorship();
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
   $('#nav').innerHTML = NAV.map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${IC[NAV_ICON[k] || k] || ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
@@ -163,7 +165,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !demo && !window.__memOnly; bar.innerHTML = window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
   a11yPass();
@@ -422,7 +424,7 @@ function vServices() {
   const nextSv = store.services(did()).filter(s => s.date >= today()).sort((a, b) => a.date.localeCompare(b.date) || String(a.time).localeCompare(String(b.time)))[0];
   const nextSvHtml = nextSv ? (() => { const ci = churchInfo(nextSv.date); const n = Math.round((Date.parse(nextSv.date + 'T00:00:00Z') - Date.parse(today() + 'T00:00:00Z')) / 864e5); const miss = [!nextSv.scripture ? '성경 본문' : '', !nextSv.sermon_title ? '설교 제목' : '', !String(nextSv.order_text || '').trim() ? '순서' : ''].filter(Boolean);
     return `<a class="nextsv noprint" href="#service/${nextSv.id}" style="--lc:${LITU_HEX[ci.color] || '#3f9d5f'}"><span class="dd">${n === 0 ? '오늘' : 'D-' + n}</span><span class="sp"><b>${esc(nextSv.title)}</b><span>${esc(md(nextSv.date))} ${esc(nextSv.time || '')} · ${esc(churchLabel(nextSv.date))}${nextSv.sermon_title ? ' · ' + esc(nextSv.sermon_title) : ''}</span>${miss.length ? `<span class="miss">비어 있는 항목: ${miss.join(', ')}</span>` : ''}</span><span class="go">예배 열기</span></a>`; })() : '';
-  page('⛪', '예배', `${yearSel()}`, `${nextSvHtml}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button><button data-act="briefNext">🧑‍🏫 이번 주 교사 브리핑</button><button data-act="familyNext">📣 가정 메시지</button><button data-go="#curricula">📚 교재·공과 연간 배치</button><button class="ghost" data-act="pdfServices">PDF에서 가져오기</button></div>${attPts.length >= 2 ? '<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>출석 추이</h3><span class="sub">출석을 기록한 정기예배 최근 ' + attPts.length + '회' + (UI.dept === 'all' ? ' · 같은 날 예배는 합계' : '') + '</span></div><div class="cardb"><div id="attchart"></div><details class="noprint" style="margin-top:8px"><summary class="small">표로 보기</summary><table class="t"><thead><tr><th>날짜</th><th class="num">출석(명)</th></tr></thead><tbody>' + attPts.map(p => '<tr><td>' + md(p.date) + '</td><td class="num">' + p.value + '</td></tr>').join('') + '</tbody></table></details></div></section>' : ''}<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>교회력</th><th>부서</th><th>설교 제목</th><th class="hide-sm">공과</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="hide-sm small">${s.lesson ? esc(lessonLabel(s.lesson)) : s.lesson_hold ? '<span class="tag warn">공과 쉼</span>' : ''}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="7">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 예배 순서가 채워지고, ‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
+  page('⛪', '예배', `${yearSel()}`, `${nextSvHtml}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button><button data-go="#worship">🧩 예배 순서지</button><button data-act="briefNext">🧑‍🏫 이번 주 교사 브리핑</button><button data-act="familyNext">📣 가정 메시지</button><button data-go="#curricula">📚 교재·공과 연간 배치</button><button class="ghost" data-act="pdfServices">PDF에서 가져오기</button></div>${attPts.length >= 2 ? '<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>출석 추이</h3><span class="sub">출석을 기록한 정기예배 최근 ' + attPts.length + '회' + (UI.dept === 'all' ? ' · 같은 날 예배는 합계' : '') + '</span></div><div class="cardb"><div id="attchart"></div><details class="noprint" style="margin-top:8px"><summary class="small">표로 보기</summary><table class="t"><thead><tr><th>날짜</th><th class="num">출석(명)</th></tr></thead><tbody>' + attPts.map(p => '<tr><td>' + md(p.date) + '</td><td class="num">' + p.value + '</td></tr>').join('') + '</tbody></table></details></div></section>' : ''}<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>교회력</th><th>부서</th><th>설교 제목</th><th class="hide-sm">공과</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="hide-sm small">${s.lesson ? esc(lessonLabel(s.lesson)) : s.lesson_hold ? '<span class="tag warn">공과 쉼</span>' : ''}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="7">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 예배 순서가 채워지고, ‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
   if (attPts.length >= 2) lineChart(document.getElementById('attchart'), attPts, { label: '출석', color: getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#2f7d4f' });
 }
 const AT = { cls: '', q: '', id: null };
@@ -846,29 +848,109 @@ function personInfoForm(id) {
 function orderBlock(s) {
   const it = s.order_items; if (!it || !it.length) return '';
   const at = orderTimes(it, s.time); const tot = orderTotal(it);
-  return `<section class="box" style="margin-top:14px"><div class="cardh"><h3>🧩 예배 순서</h3><span class="sub">총 ${tot}분${s.time ? ` · ${esc(s.time)} 시작` : ''}</span><span class="sp"></span><button class="sm noprint" data-act="orderEdit" data-id="${s.id}">고치기</button></div><div class="tablewrap" style="border:0"><table class="t"><thead><tr><th style="width:36px">#</th><th>순서</th><th>담당</th><th class="num">시간</th><th>시각</th><th>준비물</th><th>메모</th></tr></thead><tbody>${it.map((x, i) => `<tr><td>${i + 1}</td><td><b>${esc(x.title)}</b></td><td>${esc(x.who)}</td><td class="num">${x.min ? x.min + '분' : ''}</td><td>${at[i] || ''}</td><td>${esc(x.prep)}</td><td class="small" style="white-space:pre-wrap">${esc(x.memo)}</td></tr>`).join('')}</tbody></table></div></section>`;
+  return `<section class="box" style="margin-top:14px"><div class="cardh"><h3>🧩 예배 순서</h3><span class="sub">총 ${tot}분${s.time ? ` · ${esc(s.time)} 시작` : ''}</span><span class="sp"></span><button class="sm noprint" data-act="orderEdit" data-id="${s.id}">고치기</button></div><div class="tablewrap" style="border:0"><table class="t"><thead><tr><th style="width:36px">#</th><th>순서</th><th>담당</th><th class="num">시간</th><th>시각</th><th>준비물</th><th>메모</th></tr></thead><tbody>${(() => { let n = 0; return it.map((x, i) => x.part ? `<tr class="partrow"><td colspan="7"><b>■ ${esc(x.title)}</b></td></tr>` : `<tr><td>${++n}</td><td><b>${esc(x.title)}</b></td><td>${esc(x.who)}</td><td class="num">${x.min ? x.min + '분' : ''}</td><td>${at[i] || ''}</td><td>${esc(x.prep)}</td><td class="small" style="white-space:pre-wrap">${esc(x.memo)}</td></tr>`).join(''); })()}</tbody></table></div></section>`;
 }
-function orderEditor(id) {
-  const s = store.service(id); if (!s) return; let items = (s.order_items && s.order_items.length ? s.order_items : parseOrderText(s.order_text)).map(x => ({ ...x }));
-  const kind = dk(s.dept_id); const def = /대림|성탄/.test(churchLabel(s.date)) ? 'advent' : kind;
-  const d = modal(`<div class="dlg wide"><h3>🧩 예배 순서 짜기 <span class="mute small">${md(s.date)} ${esc(s.title)}</span></h3>
-    <div class="row" style="margin-bottom:8px"><label class="small">예시 순서 <select id="opreset">${Object.entries(ORDER_PRESETS).map(([k, v]) => `<option value="${k}"${k === def ? ' selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label><button class="sm" data-preset>예시로 바꾸기</button><span class="sp"></span><span class="small" id="otot"></span></div>
-    <div class="tablewrap"><table class="t orderedit"><thead><tr><th>#</th><th>순서</th><th>담당</th><th>분</th><th>시각</th><th>준비물</th><th>메모(대본·멘트)</th><th></th></tr></thead><tbody id="orows"></tbody></table></div>
-    <div class="row" style="margin-top:8px"><button class="sm" data-add>+ 순서 추가</button><span class="mute small">시각은 예배 시작(${esc(s.time || '미정')})부터 계산해요. 저장하면 글 순서도 함께 바뀌어요.</span></div>
-    <div class="err"></div><div class="dlg-foot"><button data-x>취소</button><button class="pri" data-save>저장</button></div></div>`);
-  const body = $('#orows', d);
-  const read = () => { items = [...body.querySelectorAll('tr')].map(tr => ({ title: tr.querySelector('[data-f=title]').value, who: tr.querySelector('[data-f=who]').value, min: Number(tr.querySelector('[data-f=min]').value) || 0, prep: tr.querySelector('[data-f=prep]').value, memo: tr.querySelector('[data-f=memo]').value })); };
-  const draw = () => { const at = orderTimes(items, s.time);
-    body.innerHTML = items.map((x, i) => `<tr><td>${i + 1}</td><td><input data-f="title" value="${esc(x.title)}" maxlength="40" style="min-width:110px"></td><td><input data-f="who" value="${esc(x.who)}" maxlength="30" style="min-width:80px"></td><td><input data-f="min" type="number" min="0" max="240" value="${x.min || ''}" style="width:56px"></td><td class="small">${at[i] || ''}</td><td><input data-f="prep" value="${esc(x.prep)}" maxlength="80" style="min-width:90px"></td><td><textarea data-f="memo" rows="1" maxlength="200" style="min-width:140px">${esc(x.memo)}</textarea></td><td class="nowrap"><button class="sm ghost" data-up="${i}" aria-label="위로">↑</button><button class="sm ghost" data-down="${i}" aria-label="아래로">↓</button><button class="sm ghost" data-del="${i}" aria-label="빼기">✕</button></td></tr>`).join('');
-    const tot = orderTotal(items); $('#otot', d).textContent = `총 ${tot}분${s.time ? ` · ${orderTimes([...items, { min: 0 }], s.time).pop()} 끝` : ''}`; };
-  body.addEventListener('change', () => { read(); draw(); });
-  body.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; read(); const i = Number(b.dataset.up ?? b.dataset.down ?? b.dataset.del);
-    if (b.dataset.up !== undefined && i > 0) [items[i - 1], items[i]] = [items[i], items[i - 1]]; if (b.dataset.down !== undefined && i < items.length - 1) [items[i + 1], items[i]] = [items[i], items[i + 1]]; if (b.dataset.del !== undefined) items.splice(i, 1); draw(); });
-  $('[data-add]', d).onclick = () => { read(); items.push({ title: '', who: '', min: 0, prep: '', memo: '' }); draw(); };
-  $('[data-preset]', d).onclick = async () => { read(); if (items.some(x => x.who || x.prep || x.memo) && !(await ask('지금 적은 순서를 예시로 바꿀까요?', '바꾸기'))) return; items = presetItems($('#opreset', d).value); draw(); };
-  $('[data-x]', d).onclick = () => d.close();
-  $('[data-save]', d).onclick = () => { read(); try { const v = store.setServiceOrder(id, items); d.close(); toast(v.length ? `순서 ${v.length}개를 저장했어요.` : '순서를 비웠어요.'); render(); } catch (err) { $('.err', d).textContent = err.message; } };
-  draw();
+// ----- 예배 순서지(MB12.16): 블록을 끌어서 정리하는 화면 -----
+const W = { sheet: null, timer: null, open: new Set(), sel: -1 };
+function saveWorship() {
+  if (!W.sheet) return; const el = $('#wsave');
+  if (!String(W.sheet.title).trim()) { if (el) el.textContent = '제목을 적으면 저장돼요'; return; }
+  try { store.saveOrder(W.sheet); if (el) el.textContent = '✓ 저장됨'; } catch (e) { if (el) el.textContent = ''; toast(e.message, true); }
+}
+function flushWorship() { if (W.timer) { clearTimeout(W.timer); W.timer = null; saveWorship(); } }
+function queueSave() { const el = $('#wsave'); if (el) el.textContent = '저장 중…'; clearTimeout(W.timer); W.timer = setTimeout(() => { W.timer = null; saveWorship(); }, 500); }
+window.addEventListener('pagehide', flushWorship);
+
+function vWorship(id) {
+  if (!id) return vWorshipList();
+  const o = store.order(id); if (!o) { page('🧩', '순서지를 찾을 수 없어요', '', '<div class="row"><button data-go="#worship">◀ 목록</button></div>'); return; }
+  W.sheet = JSON.parse(JSON.stringify(o)); W.open = new Set(); W.sel = -1; drawWorship();
+}
+function vWorshipList() {
+  const f = UI.wtype || ''; const all = store.orders(did()); const list = f ? all.filter(o => o.type === f) : all;
+  const chips = [['', '전체'], ...Object.entries(WS.SHEET_TYPES)].map(([k, l]) => `<button class="chip${f === k ? ' on' : ''}" data-act="wfilter" data-t="${k}">${l} ${k ? all.filter(o => o.type === k).length : all.length}</button>`).join('');
+  const card = o => { const sv = o.service_id ? store.service(o.service_id) : null; const parts = o.blocks.filter(b => b.kind === 'part').length;
+    return `<section class="box wcard"><div class="cardh"><h3><a href="#worship/${o.id}">${esc(o.title)}</a></h3><span class="tag">${WS.SHEET_TYPES[o.type]}${o.season ? ' · ' + esc(o.season) : ''}</span> ${deptTag(o.dept_id)}</div>
+      <p class="small mute">순서 ${WS.countItems(o.blocks)}개${parts ? ` · 파트 ${parts}개` : ''} · 총 ${WS.totalMin(o.blocks)}분${o.time ? ` · ${esc(o.time)} 시작` : ''} · 수정 ${esc(o.updated || '')}${sv ? ` · 🔗 ${md(sv.date)} ${esc(sv.title)}` : ''}</p>
+      <div class="row"><button class="sm pri" data-act="orderOpen" data-id="${o.id}">열기</button><button class="sm" data-act="orderDupList" data-id="${o.id}">복제</button><span class="sp"></span><button class="sm dng" data-act="orderDelList" data-id="${o.id}">삭제</button></div></section>`; };
+  page('🧩', '예배 순서지', `${UI.dept === 'all' ? '모든 부서' : deptTag(did())} 블록으로 순서를 짜고, 일반·절기·특별 예배로 나눠 보관해요. 예배 화면의 ‘순서 짜기’를 눌러도 여기서 열려요.`,
+    `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="orderNew">+ 새 순서지</button><button data-go="#services">◀ 예배</button><span class="sp"></span>${chips}</div>
+    ${list.length ? `<div class="wcards">${list.map(card).join('')}</div>` : `<section class="box"><p>${all.length ? '이 구분에는 순서지가 없어요.' : '아직 만든 순서지가 없어요.'} ‘+ 새 순서지’에서 어린이·중고등부·청년 예배, 대림절·성탄절 같은 절기 예배 틀을 골라 시작할 수 있어요.</p></section>`}`);
+}
+function drawWorship() {
+  const sh = W.sheet; const sv = sh.service_id ? store.service(sh.service_id) : null;
+  const lib = WS.LIBRARY.map((g, gi) => `<details class="wlib"${gi < 3 ? ' open' : ''}><summary>${esc(g.name)}</summary><div class="wchips">${g.items.map(([t, m]) => `<button type="button" class="chip" data-lib="${esc(t)}" data-m="${m}">+ ${esc(t)}</button>`).join('')}</div></details>`).join('');
+  page('🧩', '예배 순서지', `${deptTag(sh.dept_id)} 손잡이(⠿)를 잡고 끌어서 순서를 바꿔요. 고치는 즉시 저장돼요.`,
+    `<div class="wgrid"><div class="wmainc">
+      <section class="box wmeta"><div class="wmetag">
+        <label class="f wfull">제목<input id="w-title" maxlength="60" value="${esc(sh.title)}"></label>
+        <label class="f">구분<select id="w-type">${Object.entries(WS.SHEET_TYPES).map(([k, l]) => `<option value="${k}"${sh.type === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f" id="w-season-f"${sh.type === 'season' ? '' : ' hidden'}>절기<select id="w-season"><option value="">고르세요</option>${WS.SEASONS.map(s => `<option${sh.season === s ? ' selected' : ''}>${s}</option>`).join('')}</select></label>
+        <label class="f">부서<select id="w-dept">${deptOpts().map(([i, n]) => `<option value="${i}"${i === sh.dept_id ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+        <label class="f">시작 시각<input id="w-time" type="time" value="${esc(sh.time)}"></label>
+        <label class="f wfull">전체 메모<textarea id="w-note" rows="2" maxlength="600" placeholder="예: 대림 첫째 주 · 보라색 초 · 설교자 확인">${esc(sh.note)}</textarea></label>
+      </div><div class="row small" style="margin-top:6px">${sv ? `<span class="tag">🔗 ${md(sv.date)} ${esc(sv.title)}에 연결됨 — 고치면 그 예배의 순서도 바뀌어요</span><button class="sm noprint" data-act="orderUnlink">연결 풀기</button>` : '<span class="mute">아직 어느 예배에도 붙이지 않았어요. 위의 ‘예배에 적용’으로 붙일 수 있어요.</span>'}</div></section>
+      <div class="wbar"><b id="wsum"></b><span class="sp"></span><span class="mute small" id="wsave"></span></div>
+      <div id="wlist" class="wlist" role="list"></div>
+      <div class="row noprint" style="margin-top:10px"><button class="pri" data-w="addItem">+ 순서 추가</button><button data-w="addPart">+ 파트 구분</button></div>
+    </div>
+    <aside class="wpal noprint"><h3>블록 보관함</h3><p class="mute small">누르면 선택한 블록 아래(없으면 맨 끝)에 들어가요. 찬양 제목·본문은 직접 적어 주세요.</p>${lib}<details class="wlib" open><summary>파트 구분</summary><div class="wchips">${WS.PART_NAMES.map(t => `<button type="button" class="chip" data-part="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div></details></aside></div>`,
+    `<button data-go="#worship">◀ 목록</button><button data-act="orderApply">예배에 적용</button><button data-act="orderCopy">글로 복사</button><button data-act="print">인쇄</button><button data-act="orderDup">복제</button><button class="dng" data-act="orderDel">삭제</button>`);
+  const list = $('#wlist'); paintBlocks();
+  WS.enableDrag(list, (from, to) => { sh.blocks = WS.moveBlock(sh.blocks, from, to); W.sel = to; paintBlocks(); queueSave(); });
+  const meta = { 'w-title': 'title', 'w-type': 'type', 'w-season': 'season', 'w-time': 'time', 'w-note': 'note' };
+  const onMeta = e => { const k = meta[e.target.id]; if (k) { sh[k] = e.target.value; if (k === 'type') { if (sh.type !== 'season') sh.season = ''; $('#w-season-f').hidden = sh.type !== 'season'; } if (k === 'time') paintTimes(); queueSave(); } else if (e.target.id === 'w-dept') { sh.dept_id = Number(e.target.value); queueSave(); } };
+  $('.wmeta').addEventListener('input', onMeta); $('.wmeta').addEventListener('change', onMeta);
+  list.addEventListener('input', e => { const el = e.target.closest('[data-f]'); const b = el && sh.blocks[Number(el.closest('.wblk').dataset.i)]; if (!b) return; b[el.dataset.f] = el.dataset.f === 'min' ? Math.max(0, Math.min(240, Math.round(Number(el.value) || 0))) : el.value; if (el.dataset.f === 'min') paintTimes(); queueSave(); });
+  list.addEventListener('focusin', e => { const bl = e.target.closest('.wblk'); if (!bl) return; W.sel = Number(bl.dataset.i); $$('.wblk.sel', list).forEach(x => x.classList.remove('sel')); bl.classList.add('sel'); });
+  list.addEventListener('keydown', e => {
+    const bl = e.target.closest('.wblk'); if (!bl) return; const i = Number(bl.dataset.i);
+    if (e.target.classList.contains('whandle') && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); wMove(i, i + (e.key === 'ArrowUp' ? -1 : 1), true); }
+    else if (e.key === 'Enter' && e.target.matches('[data-f=title]') && !e.isComposing) { e.preventDefault(); wInsert(WS.newBlock(sh.blocks[i].kind, ''), i + 1, true); }
+  });
+  list.addEventListener('click', async e => {
+    const b = e.target.closest('button[data-w]'); if (!b) return; const bl = b.closest('.wblk'); const i = Number(bl.dataset.i); const x = sh.blocks[i];
+    if (b.dataset.w === 'memo') { const id = x.id; if (W.open.has(id) || x.memo) { if (x.memo) { toast('적어 둔 메모가 있어 계속 열어 둬요. 메모를 지우면 접혀요.'); return; } W.open.delete(id); } else W.open.add(id); paintBlocks(); const ta = $(`.wblk[data-i="${i}"] textarea`, list); if (ta) ta.focus(); }
+    else if (b.dataset.w === 'up') wMove(i, i - 1); else if (b.dataset.w === 'down') wMove(i, i + 1);
+    else if (b.dataset.w === 'dup') wInsert({ ...x, id: WS.newBlock('item').id }, i + 1);
+    else if (b.dataset.w === 'del') { if ((x.who || x.prep || x.memo) && !(await ask(`‘${x.title || '이 블록'}’을 지울까요? 적어 둔 담당·준비물·메모도 함께 지워져요.`, '지우기'))) return; sh.blocks.splice(i, 1); W.sel = Math.min(W.sel, sh.blocks.length - 1); paintBlocks(); queueSave(); }
+  });
+  $('.wgrid').addEventListener('click', e => {
+    const l = e.target.closest('[data-lib]'), p = e.target.closest('[data-part]'), w = e.target.closest('.wmainc > .row [data-w]');
+    if (l) wInsert(WS.newBlock('item', l.dataset.lib, Number(l.dataset.m) || 0), null, false);
+    else if (p) wInsert(WS.newBlock('part', p.dataset.part), null, false);
+    else if (w && w.dataset.w === 'addItem') wInsert(WS.newBlock('item', '', 0), sh.blocks.length, true);
+    else if (w && w.dataset.w === 'addPart') wInsert(WS.newBlock('part', WS.PART_NAMES[sh.blocks.filter(b => b.kind === 'part').length] || ''), sh.blocks.length, true);
+  });
+}
+function wInsert(blk, at, focus) {
+  const sh = W.sheet; if (sh.blocks.length >= WS.BLOCK_MAX) { toast(`블록은 ${WS.BLOCK_MAX}개까지 넣을 수 있어요.`, true); return; }
+  const i = at ?? (W.sel >= 0 && W.sel < sh.blocks.length ? W.sel + 1 : sh.blocks.length); sh.blocks.splice(i, 0, blk); W.sel = i; paintBlocks(); queueSave();
+  const el = $(`.wblk[data-i="${i}"]`); if (el) { if (focus) { const t = $('[data-f=title]', el); if (t) t.focus(); } el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+}
+function wMove(i, to, keepFocus) {
+  const sh = W.sheet; if (to < 0 || to >= sh.blocks.length) return; sh.blocks = WS.moveBlock(sh.blocks, i, to); W.sel = to; paintBlocks(); queueSave();
+  const el = $(`.wblk[data-i="${to}"]`); if (el) { if (keepFocus) $('.whandle', el).focus(); else el.scrollIntoView({ block: 'nearest' }); }
+}
+function paintTimes() {
+  const sh = W.sheet; const at = WS.blockTimes(sh.blocks, sh.time); const tot = WS.totalMin(sh.blocks); const run = [];
+  sh.blocks.forEach((b, i) => { if (b.kind === 'part') run.push({ i, min: 0 }); else if (run.length) run[run.length - 1].min += b.min || 0; });
+  $$('#wlist .wat').forEach(el => { el.textContent = at[Number(el.dataset.i)] || ''; });
+  run.forEach(r => { const el = $(`#wlist [data-pt="${r.i}"]`); if (el) el.textContent = `${r.min}분`; });
+  $('#wsum').textContent = `순서 ${WS.countItems(sh.blocks)}개 · 총 ${tot}분${sh.time && sh.blocks.length ? ` · ${WS.blockTimes([...sh.blocks, { kind: 'item', min: 0 }], sh.time).pop()} 끝` : ''}`;
+}
+function paintBlocks() {
+  const sh = W.sheet; const at = WS.blockTimes(sh.blocks, sh.time); const no = WS.itemNumbers(sh.blocks); const list = $('#wlist');
+  list.innerHTML = sh.blocks.length ? sh.blocks.map((b, i) => {
+    const sel = W.sel === i ? ' sel' : ''; const handle = '<button class="whandle noprint" type="button" aria-label="끌어서 순서 바꾸기 (손잡이에서 ↑↓ 키로도 옮겨요)" title="끌어서 옮기기">⠿</button>';
+    const act = memo => `<div class="wact noprint">${memo ? `<button type="button" data-w="memo" class="${b.memo ? 'has' : ''}" aria-label="메모" aria-pressed="${W.open.has(b.id) || !!b.memo}" title="메모">📝</button>` : ''}<button type="button" data-w="up" aria-label="위로">↑</button><button type="button" data-w="down" aria-label="아래로">↓</button>${memo ? '<button type="button" data-w="dup" aria-label="복제" title="복제">⎘</button>' : ''}<button type="button" data-w="del" aria-label="지우기">✕</button></div>`;
+    if (b.kind === 'part') return `<div class="wblk part${sel}" data-i="${i}" role="listitem">${handle}<div class="wbody"><div class="wpartrow"><span class="wpl">파트</span><input class="wtitle" data-f="title" value="${esc(b.title)}" maxlength="${WS.LIMITS.title}" aria-label="파트 이름"><span class="wat" data-i="${i}"></span><span class="wpt" data-pt="${i}"></span></div></div>${act(false)}</div>`;
+    const open = W.open.has(b.id) || !!b.memo;
+    return `<div class="wblk item${sel}" data-i="${i}" role="listitem">${handle}<span class="wno">${no[i]}</span><div class="wbody"><input class="wtitle" data-f="title" value="${esc(b.title)}" maxlength="${WS.LIMITS.block}" placeholder="순서 이름" aria-label="순서 이름">
+      <div class="wfields"><label>담당<input data-f="who" value="${esc(b.who)}" maxlength="${WS.LIMITS.who}" placeholder="이름"></label><label>분<input data-f="min" type="number" min="0" max="240" inputmode="numeric" value="${b.min || ''}" placeholder="0"></label><span class="wat" data-i="${i}" title="시작 시각"></span><label class="wprep">준비물<input data-f="prep" value="${esc(b.prep)}" maxlength="${WS.LIMITS.prep}" placeholder="예: 대림초, 성냥"></label></div>
+      ${open ? `<textarea data-f="memo" rows="2" maxlength="${WS.LIMITS.memo}" placeholder="메모 — 대본·멘트·주의할 점·성경 본문(개역개정 확인)" aria-label="메모">${esc(b.memo)}</textarea>` : ''}</div>${act(true)}</div>`;
+  }).join('') : '<div class="wempty">블록이 없어요. 오른쪽 보관함에서 눌러 넣거나 ‘+ 순서 추가’를 눌러 시작하세요.</div>';
+  paintTimes();
 }
 
 // ----- 행정: 서식·연간 계획서·추천·비품 -----
@@ -1123,7 +1205,45 @@ const ACT = {
   lessonEdit: d => lessonEditor(Number(d.id)),
   history: () => openHistory(),
   personCard: d => personCard(Number(d.id)),
-  orderEdit: d => orderEditor(Number(d.id)),
+  orderEdit: d => {
+    const sid = Number(d.id); const s = store.service(sid); if (!s) return; let blocks = [];
+    if (!(s.order_items && s.order_items.length) && !store.orderOfService(sid)) {
+      const t = String(s.order_text || '').trim(); const lbl = churchLabel(s.date);
+      const key = /성탄/.test(lbl) ? 'christmas' : /대림/.test(lbl) ? 'advent' : /사순/.test(lbl) ? 'lent' : /부활/.test(lbl) ? 'easter' : dk(s.dept_id);
+      blocks = t ? WS.cleanBlocks((t.includes('\n') ? parseOrderText(t).map(x => x.title) : t.split(/\s*[·,]\s*/)).map(title => ({ kind: 'item', title }))) : WS.starterBlocks(key);
+    }
+    const id = store.orderForService(sid, blocks); location.hash = '#worship/' + id;
+  },
+  wfilter: d => { UI.wtype = d.t || ''; render(); },
+  orderOpen: d => { location.hash = '#worship/' + Number(d.id); },
+  orderNew: () => {
+    const starters = Object.entries(WS.STARTERS); const first = { kid: 'kid', teen: 'teen', youth: 'youth' }[dk(workDept())] || 'blank';
+    form({ title: '새 순서지', submit: '만들고 열기', fields: [
+      { k: 'starter', label: '시작 틀', type: 'select', options: starters.map(([k, v]) => [k, v.name]), def: first, hint: '틀을 고르면 파트와 순서가 미리 채워져요. 만든 뒤 마음대로 고칠 수 있어요.' },
+      { k: 'title', label: '제목', req: true }, { k: 'type', label: '구분', type: 'select', options: Object.entries(WS.SHEET_TYPES) },
+      { k: 'season', label: '절기(절기 예배일 때)', type: 'select', options: [['', '해당 없음'], ...WS.SEASONS.map(x => [x, x])] },
+      { k: 'dept_id', label: '부서', type: 'select', options: deptOpts(), def: workDept() }],
+      values: { dept_id: workDept(), starter: first, title: WS.STARTERS[first].name, type: WS.STARTERS[first].type, season: WS.STARTERS[first].season },
+      onOpen: d => { const sel = d.querySelector('[name=starter]'); let auto = true; d.querySelector('[name=title]').addEventListener('input', () => { auto = false; }); sel.onchange = () => { const t = WS.STARTERS[sel.value]; d.querySelector('[name=type]').value = t.type; d.querySelector('[name=season]').value = t.season; if (auto) d.querySelector('[name=title]').value = t.name; }; },
+      onSubmit: o => { const id = store.saveOrder({ title: o.title, type: o.type, season: o.type === 'season' ? o.season : '', dept_id: Number(o.dept_id), blocks: WS.starterBlocks(o.starter) }); location.hash = '#worship/' + id; } });
+  },
+  orderDupList: d => { const id = store.duplicateOrder(Number(d.id)); toast('복제했어요.'); location.hash = '#worship/' + id; },
+  orderDelList: async d => { const o = store.order(Number(d.id)); if (o && await ask(`‘${o.title}’ 순서지를 지울까요? 되돌릴 수 없어요.${o.service_id ? '\n연결된 예배의 순서는 그대로 남아요.' : ''}`, '삭제')) { store.deleteOrder(o.id); toast('삭제했어요.'); render(); } },
+  orderDup: () => { flushWorship(); const id = store.duplicateOrder(W.sheet.id); toast('복제했어요. 복제본을 열었어요.'); location.hash = '#worship/' + id; },
+  orderDel: async () => { const o = W.sheet; if (o && await ask(`‘${o.title}’ 순서지를 지울까요? 되돌릴 수 없어요.${o.service_id ? '\n연결된 예배의 순서는 그대로 남아요.' : ''}`, '삭제')) { clearTimeout(W.timer); W.timer = null; store.deleteOrder(o.id); W.sheet = null; toast('삭제했어요.'); location.hash = '#worship'; } },
+  orderUnlink: () => { flushWorship(); W.sheet.service_id = null; store.saveOrder(W.sheet); drawWorship(); toast('연결을 풀었어요. 예배의 순서는 그대로 남아요.'); },
+  orderCopy: async () => { const t = WS.sheetText(W.sheet); try { await navigator.clipboard.writeText(t); toast('순서를 글로 복사했어요.'); } catch { const d = modal('<div class="dlg"><h3>글로 복사</h3><textarea readonly rows="14" style="width:100%"></textarea><div class="dlg-foot"><button class="pri" data-x>닫기</button></div></div>'); $('textarea', d).value = t; $('[data-x]', d).onclick = () => d.close(); } },
+  orderApply: () => {
+    flushWorship(); const sh = W.sheet; if (!String(sh.title).trim()) { toast('제목을 먼저 적어 주세요.', true); return; }
+    const svs = store.services(sh.dept_id).slice().sort((a, b) => a.date.localeCompare(b.date)); const t = today(); const from = svs.findIndex(x => x.date >= t); const ordered = from < 0 ? svs.reverse() : [...svs.slice(from), ...svs.slice(0, from).reverse()];
+    if (!ordered.length) { toast('이 부서에 등록된 예배가 없어요. 예배 화면에서 먼저 예배를 추가하세요.', true); return; }
+    const d = modal(`<div class="dlg"><h3>예배에 적용</h3><p class="mute small">고른 예배의 순서가 이 순서지로 바뀌고, 이후 순서지를 고치면 그 예배에도 반영돼요(연결). 시작 시각은 ${esc(sh.time || '미정')}부터 계산해요.</p><label class="f">예배<select id="ap-sv">${ordered.map(x => `<option value="${x.id}"${x.id === sh.service_id ? ' selected' : ''}>${md(x.date)} ${esc(x.title)}${x.order_items && x.order_items.length ? ' (순서 있음)' : ''}</option>`).join('')}</select></label><div class="err"></div><div class="dlg-foot"><button data-x>취소</button><button class="pri" data-ok>적용</button></div></div>`);
+    $('[data-x]', d).onclick = () => d.close();
+    $('[data-ok]', d).onclick = async () => { const sid = Number($('#ap-sv', d).value); const sv = store.service(sid); const taken = store.orderOfService(sid);
+      if (taken && taken.id !== sh.id && !(await ask(`이 예배에는 이미 ‘${taken.title}’ 순서지가 연결돼 있어요. 이 순서지로 바꿀까요?`, '바꾸기'))) return;
+      if (!taken && sv.order_items && sv.order_items.length && !(await ask('이 예배에 이미 적어 둔 순서가 있어요. 이 순서지로 덮어쓸까요?', '덮어쓰기'))) return;
+      try { sh.service_id = sid; store.saveOrder(sh); d.close(); toast('예배에 적용했어요.'); drawWorship(); } catch (err) { sh.service_id = null; $('.err', d).textContent = err.message; } };
+  },
   newDoc: d => newDocFlow(d.key, d.ctx ? JSON.parse(d.ctx) : null),
   blankHwpx: async d => { const f = formByKey(d.key); await downloadHwpx(f.name, formBlocks(f, blankValues(f), { sub: (store.dept(workDept()) || {}).name || '' })); },
   delDoc: async d => { if (await ask('이 문서를 지울까요? 되돌릴 수 없어요.', '지우기')) { store.deleteDoc(Number(d.id)); location.hash = '#admin'; toast('지웠어요.'); } },
