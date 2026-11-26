@@ -34,6 +34,7 @@ import { orderTimes, orderTotal, parseOrderText } from './order.js';
 import * as WS from './worship.js';
 import * as SMN from './sermon.js';
 import { offlineEnabled, setOfflineEnabled, readCopy, lastUser } from './offline.js';
+import { desktopFile, STORAGE_KEY, MIGRATE_KEY } from './localfile.js';
 import * as SC from './scripture.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
@@ -112,6 +113,7 @@ const SAVE_TXT = { saved: ['● 저장됨', 'ok'], saving: ['◌ 저장 중…',
 function paintAcct() {
   const el = $('#acct'); if (!el) return;
   if (GUEST) { el.innerHTML = '<div class="acct-box"><div class="acct-u">👤 게스트</div><div class="row" style="margin-top:6px"><span class="tag bad">저장 안 됨</span></div><button class="sm" style="margin-top:6px" data-act="guestLogin">로그인하기</button></div>'; return; }
+  if (A.reason === 'file') { const [t, c] = SAVE_TXT[A.status] || SAVE_TXT.saved; el.innerHTML = `<div class="acct-box"><div class="acct-u" title="${esc(A.filePath || '')}">💾 이 컴퓨터에 저장</div><div class="row" style="margin-top:6px"><span class="tag ${c}" id="save-chip" title="${esc(A.message)}">${t}</span><button class="sm" data-go="#settings">저장 방식</button></div></div>`; return; }
   if (A.mode !== 'account') { el.innerHTML = `<div class="acct-l mute small">이 브라우저에만 저장됨${A.reason === 'not-configured' ? '<br>로그인 서버 설정 전' : ''}</div>`; return; }
   const [t, c] = SAVE_TXT[A.status] || SAVE_TXT.saved;
   el.innerHTML = `<div class="acct-box"><div class="acct-u" title="${esc(A.user.email)}">👤 ${esc(A.user.name || A.user.email)}</div><div class="row" style="margin-top:6px"><span class="tag ${c}" id="save-chip" title="${esc(A.message)}">${t}</span><span class="sp"></span><button class="sm" data-act="logout">로그아웃</button></div></div>`;
@@ -873,17 +875,32 @@ function deptCard() {
     <div class="tablewrap" style="border:0"><table class="t"><thead><tr><th>부서</th><th>종류</th><th class="num">인원</th><th class="num">기록</th><th></th></tr></thead><tbody>${depts.map(d => { const u = store.deptUsage(d.id); return `<tr><td>${deptTag(d.id)} ${d.custom ? '' : '<span class="tag">기본</span>'}</td><td>${esc(DEPT_KINDS[d.kind] || '')}</td><td class="num">${u.people}명</td><td class="num">${u.total - u.people}건</td><td class="nowrap"><button class="sm" data-act="deptRename" data-id="${d.id}">이름 고치기</button>${d.custom ? ` <button class="sm ghost dng" data-act="deptDel" data-id="${d.id}">지우기</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>
     <div class="row" style="margin-top:10px">${addable.map(([n, k]) => `<button class="sm pri" data-act="deptAdd" data-name="${n}" data-kind="${k}">+ ${n} 추가</button>`).join('')}<button class="sm" data-act="deptAddCustom">+ 다른 이름으로 추가</button><span class="mute small">부서는 ${DEPT_MAX}개까지</span></div></div>`;
 }
+// 저장 방식 카드(설치형 앱): 이 컴퓨터(파일) ↔ 서버 계정
+function storageCard() {
+  if (!desktopFile()) return '';
+  const file = A.reason === 'file';
+  return `<h2 ${A.mode === 'account' ? '' : 'style="margin-top:0"'}>저장 방식</h2><div class="box pad" id="stbox">${file ? '<p class="mute small">확인 중…</p>' : `<p class="small" style="margin:0 0 8px">지금은 <b>서버 계정</b>에 저장하고 있어요. 이 컴퓨터에만 저장하려면 아래 버튼으로 바꿀 수 있어요(서버의 데이터는 그대로 남아요).</p><div class="row"><button class="sm" data-act="storageToFile">이 컴퓨터에만 저장으로 바꾸기</button></div>`}</div>`;
+}
+async function paintStorage() {
+  const box = $('#stbox'); const ld = desktopFile(); if (!box || !ld || A.reason !== 'file') return; let i; try { i = await ld.info(); } catch { i = null; } if (!i || !i.ok) { box.innerHTML = '<p class="mute small">저장 상태를 읽지 못했어요.</p>'; return; }
+  const kb = n => (n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB');
+  box.innerHTML = `<p class="small" style="margin:0 0 6px"><b>이 컴퓨터(파일)에 저장 중</b> · 서버·로그인을 쓰지 않아요.</p><dl class="props small"><dt>저장 위치</dt><dd>${esc(i.path)}</dd><dt>크기·마지막 저장</dt><dd>${kb(i.bytes)} · ${i.savedAt ? esc(new Date(i.savedAt).toLocaleString('ko-KR')) : '-'}</dd><dt>자동 백업</dt><dd>하루에 한 번 이전 상태를 backup 폴더에 남겨요(30일치). 지금 ${i.backups}개</dd></dl>
+    <div class="row" style="margin-top:8px"><button class="sm" data-act="storageOpen">폴더 열기</button><button class="sm" data-act="storageBackup">지금 백업</button><button class="sm" data-act="storageRestore">백업에서 되돌리기</button><span class="sp"></span><button class="sm ghost" data-act="storageToAccount">서버 계정으로 옮기기</button></div>
+    <p class="mute small" style="margin:8px 0 0">이 폴더(내 문서\\목회비서)를 다른 곳에도 복사해 두세요. 컴퓨터가 고장 나면 데이터도 함께 사라져요. 영수증 사진은 앱 안에 따로 저장돼요.</p>`;
+}
 function offlineCard() {
   const on = offlineOn(); let at = ''; try { const c = on ? readCopy(window.localStorage, A.user.email) : null; at = c ? new Date(c.at).toLocaleString('ko-KR') : ''; } catch { /* 무시 */ }
   return `<h2>오프라인 사용</h2><div class="box pad"><label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" data-offline ${on ? 'checked' : ''}><span class="sp"><b>이 기기에서 인터넷 없이도 쓰기</b><br><span class="mute small">켜면 내 데이터의 복사본을 <b>이 기기에</b> 두어, 인터넷이 없어도 앱을 열고 고칠 수 있어요. 연결되면 자동으로 서버에 저장돼요. 개인정보가 기기에 남으니 <b>내 컴퓨터·내 폰에서만</b> 켜세요. 로그아웃하면 복사본은 지워지고, 켜 둔 기기에서는 30분 자동 로그아웃을 하지 않아요.</span></span></label>${on ? `<p class="small" style="margin:8px 0 0">${at ? `마지막 복사: ${esc(at)}` : '복사본을 만드는 중이에요.'} · 처음 설치와 처음 로그인에는 인터넷이 필요해요.</p>` : ''}</div>`;
 }
 function vSettings() {
+  setTimeout(paintStorage, 0);
   const S = store.get(); const acct = A.mode === 'account'; const ds = store.daysSinceExport();
   const where = acct ? `<b>${esc(A.user.email)}</b> 계정의 서버 저장소에 저장됩니다. 같은 사이트를 써도 계정마다 데이터가 따로이고, 다른 기기에서 같은 계정으로 로그인하면 같은 데이터를 볼 수 있어요.` : `<b>이 브라우저(이 기기)</b>에만 저장되며 서버로 전송되지 않습니다. 다른 기기와 자동으로 공유되지 않으므로 아래 ‘내보내기’로 백업하세요.${A.reason === 'not-configured' ? ' (로그인 서버가 아직 연결되지 않았어요. README의 ‘로그인 켜기’를 따라 하면 사용자별 로그인이 켜져요.)' : ''}`;
   page('⚙️', '설정', '데이터 관리와 배포 정보', `
   ${acct ? `<h2 style="margin-top:0">내 계정</h2><div class="card"><div class="row"><div class="sp"><b>${esc(A.user.name || A.user.email)}</b><br><span class="mute small">${esc(A.user.email)}</span></div><button data-act="logout">로그아웃</button><button data-act="changePw">비밀번호 변경</button><button data-act="history">이전 저장본으로 되돌리기</button><button data-act="logoutAll">모든 기기에서 로그아웃</button><button class="dng" data-act="deleteAcct">계정 삭제</button></div><p class="mute small" style="margin:10px 0 0">가입 상태: ${A.signup ? '<span class="tag warn">열려 있음</span> (초대 코드를 아는 사람은 가입할 수 있어요. 필요한 사람이 모두 가입했다면 관리자가 Cloudflare에서 INVITE_CODE를 삭제하고 다시 배포하면 닫혀요)' : '<span class="tag ok">닫힘</span>'}<br>저장 상태: ${(SAVE_TXT[A.status] || SAVE_TXT.saved)[0]} · 계정을 삭제하면 서버의 내 데이터가 모두 지워져요(되돌릴 수 없음). 삭제 전에 ‘내보내기’로 백업하세요.</p></div>` : ''}
   ${acct ? offlineCard() : ''}
   ${acct ? `<h2>간편 로그인·로그인 정보 저장</h2><div class="box pad" id="pinbox"><p class="mute small">확인 중…</p></div>` : ''}
+  ${storageCard()}
   ${deptCard()}
   <h2 ${acct ? '' : 'style="margin-top:0"'}>인수인계</h2><div class="callout"><span>🤝</span><div class="sp">부서를 다른 교사에게 넘길 때 쓰는 <b>인수인계 도우미</b>예요. 순서(4주 전~한 달 뒤), 인수인계서 양식과 칸마다 적을 내용·예시가 있고, 목회 비서 기록(인원·공과·일정·회계·비품)으로 초안을 채울 수 있어요.</div><button class="pri" data-go="#handover">인수인계 열기</button></div>
   ${fontSection()}
@@ -1456,6 +1473,23 @@ const ACT = {
     const id = store.orderForService(sid, blocks); location.hash = '#worship/' + id;
   },
   sermonForService: d => { const sid = Number(d.id); const s = store.service(sid); if (!s) return; const have = store.sermonOfService(sid); const lbl = churchLabel(s.date); const key = /성탄|대림/.test(lbl) ? 'advent' : sermonKeyOf(dk(s.dept_id)); location.hash = '#sermon/' + (have ? have.id : store.sermonForService(sid, SMN.starterBlocks(key))); },
+  storageOpen: async () => { const r = await desktopFile().open(); if (!r.ok) toast(r.error || '폴더를 열지 못했어요.', true); },
+  storageBackup: async () => { const r = await desktopFile().backup(); if (r.ok) { toast('지금 상태를 백업했어요.'); paintStorage(); } else toast(r.error || '백업하지 못했어요.', true); },
+  storageRestore: async () => {
+    const ld = desktopFile(); const L = await ld.list(); if (!L.ok || !L.items.length) { toast('되돌릴 백업이 아직 없어요. 하루가 지나거나 ‘지금 백업’을 누르면 생겨요.', true); return; }
+    const d = modal(`<div class="dlg"><h3>백업에서 되돌리기</h3><p class="mute small">고른 백업으로 지금 데이터를 바꿔요. 바꾸기 직전의 상태는 ‘지금 백업’으로 자동으로 남겨요.</p><label class="f">백업<select id="bk">${L.items.map(x => `<option value="${esc(x.name)}">${esc(x.name.replace(/^data-/, '').replace(/\.json$/, '').replace('-manual', ' (직접)'))} · ${Math.max(1, Math.round(x.bytes / 1024))}KB</option>`).join('')}</select></label><div class="err"></div><div class="dlg-foot"><button data-x>취소</button><button class="pri" data-ok>되돌리기</button></div></div>`);
+    $('[data-x]', d).onclick = () => d.close();
+    $('[data-ok]', d).onclick = async () => { const name = $('#bk', d).value; const b = await ld.readBackup(name); if (!b.ok) { $('.err', d).textContent = b.error; return; } if (A.fileAdapter) A.fileAdapter.flushSync(); await ld.backup(); const w = await ld.write(b.state); if (!w.ok) { $('.err', d).textContent = w.error; return; } if (A.fileAdapter) A.fileAdapter.close(); location.reload(); };
+  },
+  storageToAccount: async () => { if (!(await ask('서버 계정으로 옮길까요? 앱이 다시 시작되고 로그인 화면이 나와요. 로그인(또는 가입)한 계정이 새 계정이면 이 컴퓨터의 데이터가 그대로 올라가고, 이미 데이터가 있는 계정이면 옮기지 않아요. 컴퓨터의 파일은 그대로 남아요.', '옮기기'))) return; if (A.fileAdapter) A.fileAdapter.flushSync(); try { localStorage.setItem(STORAGE_KEY, 'account'); localStorage.setItem(MIGRATE_KEY, '1'); } catch { /* 저장소를 못 쓰면 옮기지 못해요 */ } location.reload(); },
+  storageToFile: async () => {
+    const ld = desktopFile(); if (!(await ask('이 컴퓨터에만 저장으로 바꿀까요? 지금 데이터를 내 문서\\목회비서 폴더에 저장하고, 앞으로는 서버·로그인 없이 써요. 서버에 있는 데이터는 그대로 남아요(계정 삭제는 따로 해야 해요).', '바꾸기'))) return;
+    const i = await ld.info(); if (i.ok && i.exists && !(await ask('이 컴퓨터에 이미 저장된 데이터가 있어요. 지금 데이터로 덮어쓸까요? (덮어쓰기 전 상태는 backup 폴더에 남아요)', '덮어쓰기'))) return;
+    if (AUTH_BUSY()) { toast('저장 중이에요. 잠시 후 다시 눌러 주세요.', true); return; } if (A.flushNow) A.flushNow();
+    if (i.ok && i.exists) await ld.backup(); // 덮어쓰기 직전 상태를 남긴다
+    const w = await ld.write(JSON.stringify(store.get())); if (!w.ok) { toast(w.error || '파일에 저장하지 못했어요.', true); return; }
+    try { localStorage.setItem(STORAGE_KEY, 'file'); } catch { /* 무시 */ } location.reload();
+  },
   deptAdd: d => { store.addDept(d.name, d.kind); toast(`${d.name}를 추가했어요. 부서 사역에서 ${DEPT_KINDS[d.kind]}에 맞는 도구를 볼 수 있어요.`); render(); },
   deptAddCustom: () => form({ title: '부서 추가', submit: '추가', intro: '<p class="mute small">종류에 따라 부서 사역 도구와 주간 체크 기본 항목, 연락 방식(보호자/본인)이 정해져요.</p>', fields: [{ k: 'name', label: '부서 이름 (12자까지)', req: true, ph: '예: 영아부' }, { k: 'kind', label: '부서 종류', type: 'select', options: Object.entries(DEPT_KINDS), def: 'toddler' }], values: { kind: 'toddler' }, onSubmit: o => { store.addDept(o.name, o.kind); } }),
   deptRename: d => { const x = store.dept(Number(d.id)); form({ title: '부서 이름 고치기', values: { name: x.name }, fields: [{ k: 'name', label: '부서 이름 (12자까지)', req: true }], onSubmit: o => { store.renameDept(x.id, o.name); } }); },

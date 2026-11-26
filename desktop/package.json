@@ -1,7 +1,7 @@
 {
   "name": "mokhoe-biseo-desktop",
   "productName": "목회 비서",
-  "version": "12.26.0",
+  "version": "12.27.0",
   "description": "목회 비서 데스크톱 프로그램(웹 사이트를 앱 창으로 여는 껍데기)",
   "main": "main.js",
   "private": true,
@@ -19,7 +19,7 @@
     "productName": "목회 비서",
     "copyright": "목회 비서",
     "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "offline.html", "package.json"],
+    "files": ["main.js", "preload.js", "localdata.js", "offline.html", "package.json"],
     "asar": true,
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
