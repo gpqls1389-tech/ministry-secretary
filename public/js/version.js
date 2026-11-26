@@ -2,13 +2,14 @@
 // 규칙: 사용자가 따로 말하기 전까지는 사이트를 고칠 때마다 번호를 하나씩 올립니다(MB11 → MB11.1 → MB11.2 …).
 //   1) 아래 CHANGELOG 맨 앞에 새 항목을 추가하고  2) VERSION 을 그 항목의 v 와 같게 바꿉니다(테스트가 둘이 같은지 확인합니다).
 // items 는 교사가 읽기 쉬운 짧은 문장으로 씁니다.
-export const VERSION = 'MB12.22';
+export const VERSION = 'MB12.23';
 
 // 데스크톱 프로그램(Windows 설치 파일). 사이트를 고칠 때마다 사이트 버전(MB11.N)과 같은 번호로 올립니다(MB11.5 ↔ 11.5.0).
 // desktop/package.json 의 version 과 같아야 하고, main 에 합쳐지면 GitHub Actions 가 설치 파일을 만들어 Release 로 올립니다(테스트가 세 값이 같은지 확인).
-export const DESKTOP = { version: '12.22.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
+export const DESKTOP = { version: '12.23.0', file: 'MokhoeBiseo-Setup.exe', download: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest/download/MokhoeBiseo-Setup.exe', page: 'https://github.com/gpqls1389-tech/ministry-secretary/releases/latest', sizeMB: 116 };
 
 export const CHANGELOG = [
+  { v: 'MB12.23', date: '2026-11-26', items: ['서버 저장 횟수를 크게 줄임: 고칠 때마다 올리던 방식에서, 입력이 5초 멈추면 한 번에 저장(계속 고쳐도 첫 변경 후 30초 안에 저장)으로 바꿨어요. 20번 연속으로 고친 시험에서 서버 저장이 20번 → 1번으로 줄었어요', '서버와 같은 내용이면 올리지 않고, 저장하는 동안 또 바뀌면 바로 이어서 올리지 않고 간격을 두고 올려요', '탭을 옮기거나 앱을 내리거나 인터넷이 다시 연결되면 기다리지 않고 바로 저장해요. 서버에 올리기 전 변경은 이 기기에 임시 보관돼서 창을 닫아도 다시 열면 되살아나요'] },
   { v: 'MB12.22', date: '2026-11-26', items: ['왼쪽 메뉴를 스크롤 없이 한 화면에 맞춤: 화면 높이에 따라 메뉴 줄 높이와 여백이 자동으로 줄어들고, 가상 데이터·게스트 안내 띠가 있어도 아래가 잘리지 않아요', '일정 추가의 ‘구분’에서 ‘＋ 내 단어로 추가…’를 고르면 내 단어로 구분을 만들어 저장하고 다음에도 목록에서 고를 수 있어요(최대 30개, 20자). 내 구분은 칩의 ✕로 지울 수 있고, 이미 만든 일정은 그대로 남아요'] },
   { v: 'MB12.21', date: '2026-11-26', items: ['왼쪽 메뉴에 ‘설교’ 추가(행정 바로 아래): 설교 작업대와 내 주석 서가를 메뉴에서 바로 열어요', '회계 거래 내역에서 수입은 빨강, 지출은 파랑으로 구분(색뿐 아니라 ‘수입/지출’ 글자와 +/− 부호도 함께 표시)해요. 요약 숫자·월별 표·결산 표도 같은 색이에요', '거래 내역 위에 ‘전체 · 수입만 · 지출만’ 거르기 버튼과 건수 표시, 거른 결과의 합계와 엑셀(CSV) 내보내기에도 적용돼요'] },
   { v: 'MB12.20', date: '2026-11-26', items: ['출석 명단을 선생님(반)별로 묶어 보여 줘요: 묶음마다 담임 선생님 이름·반·아이 수·출석 n/전체가 보이고, 선생님 → 봉사자 → 아이 순서로 나와요(같은 반에 등록된 교사가 그 반의 선생님이에요)', '새 ‘출석 체크(한 화면)’ 화면: 오른쪽 화면을 스크롤하지 않고 모든 묶음이 한 번에 보이도록 화면 크기에 맞춰 열 개수와 줄 높이를 자동으로 맞춰요(사람이 아주 많으면 최소 높이에서 스크롤)', '이름 찾기·반 거르기·전원 출석은 그대로 쓰고, 검색하면 해당 없는 묶음은 숨겨져요'] },

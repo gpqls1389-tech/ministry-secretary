@@ -1,5 +1,6 @@
 // 로그인과 사용자별 서버 저장. /api가 없거나(정적 미리보기) 서버 설정 전이면 로컬 모드(이 브라우저에만 저장)로 동작한다.
 import { KEY, emptyState, validateState } from './store.js';
+import { nextDelay } from './savedelay.js';
 import { writePending, readPending, clearPending, pendingAction } from './pending.js';
 import { loadImages, imgSrc } from './images.js';
 
@@ -93,17 +94,17 @@ AUTH.discardPending = () => pendingClear();
 
 // ---- 서버 저장 어댑터: store는 동기 저장소를 기대하므로 메모리에 두고 변경 시 서버로 보낸다 ----
 function makeAdapter(initial) {
-  let cache = initial, dirty = false, inflight = false, timer = null, retry = 0, blocked = false;
+  let cache = initial, dirty = false, inflight = false, timer = null, retry = 0, blocked = false, savedStr = initial, firstDirtyAt = 0;
   const set = (s, m = '') => { AUTH.status = s; AUTH.message = m; AUTH.onStatus(s, m); };
   async function flush() {
-    if (inflight || blocked) return; inflight = true; clearTimeout(timer); timer = null;
+    if (inflight || blocked) { timer = null; return; } inflight = true; clearTimeout(timer); timer = null;
     try {
-      while (dirty && !blocked) {
-        dirty = false; const snap = cache;
+      if (dirty && !blocked) { // 저장하는 동안 또 바뀌었으면 바로 다시 올리지 않고 finally에서 간격을 두고 예약한다
+        dirty = false; firstDirtyAt = 0; const snap = cache;
         try {
           const wantSnap = AUTH.snapNext === true; // 비우기·가져오기·덮어쓰기처럼 되돌릴 수 있어야 하는 저장은 서버가 이전 상태를 꼭 보관하게 한다
           const r = await req('PUT', '/api/state', wantSnap ? { baseVersion: AUTH.version, state: snap, snap: true } : { baseVersion: AUTH.version, state: snap });
-          AUTH.version = r.version; retry = 0; if (wantSnap) AUTH.snapNext = false; if (!dirty) { set('saved'); pendingClear(); } else pendingWrite(cache); } // 그 사이 더 바뀌었으면 새 서버 버전을 기준으로 임시 보관을 갱신
+          AUTH.version = r.version; retry = 0; savedStr = snap; if (wantSnap) AUTH.snapNext = false; if (!dirty) { set('saved'); pendingClear(); } else pendingWrite(cache); } // 그 사이 더 바뀌었으면 새 서버 버전을 기준으로 임시 보관을 갱신
         catch (e) {
           dirty = true;
           if (e.status === 409) { blocked = true; set('failed', '다른 기기에서 먼저 저장했어요.'); AUTH.onConflict(e.data.version); return; }
@@ -112,13 +113,22 @@ function makeAdapter(initial) {
           retry++; set('failed', e.message + ' 자동으로 다시 시도합니다.'); timer = setTimeout(flush, Math.min(30000, 2000 * 2 ** retry)); return;
         }
       }
-    } finally { inflight = false; }
+    } finally { inflight = false; if (dirty && !blocked && !timer) timer = setTimeout(flush, nextDelay(Date.now(), firstDirtyAt || Date.now())); }
   }
+  // 화면을 숨기거나(탭 전환·앱 최소화) 인터넷이 다시 연결되면 기다리지 않고 바로 저장
+  const nowFlush = () => { if (dirty && !inflight && !blocked) flush(); };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') nowFlush(); });
+  window.addEventListener('pagehide', nowFlush); window.addEventListener('online', nowFlush); AUTH.flushNow = nowFlush;
   AUTH.forceSave = async serverVersion => { AUTH.snapNext = true; AUTH.version = serverVersion; blocked = false; dirty = true; set('saving'); await flush(); };
   window.addEventListener('beforeunload', e => { if (dirty || inflight || AUTH.status === 'failed') { e.preventDefault(); e.returnValue = ''; } });
   return {
     getItem: k => (k === KEY ? cache : null),
-    setItem(k, v) { if (k !== KEY) return; cache = v; dirty = true; pendingWrite(v); set('saving'); clearTimeout(timer); timer = setTimeout(flush, 700); }, // 저장 오류는 상태 표시로 알림(동기 오류를 던지지 않음). 서버에 올리기 전까지 이 기기에도 임시 보관
+    setItem(k, v) {
+      if (k !== KEY) return; cache = v;
+      if (v === savedStr && !inflight) { dirty = false; clearTimeout(timer); timer = null; firstDirtyAt = 0; pendingClear(); set('saved'); return; } // 서버와 같은 내용이면 올리지 않는다
+      if (!dirty || !firstDirtyAt) firstDirtyAt = Date.now(); dirty = true; pendingWrite(v); set('saving');
+      clearTimeout(timer); timer = setTimeout(flush, nextDelay(Date.now(), firstDirtyAt)); // 입력이 멈추면 한 번에 저장(계속 고쳐도 30초 안에는 저장)
+    }, // 저장 오류는 상태 표시로 알림(동기 오류를 던지지 않음). 서버에 올리기 전까지 이 기기에도 임시 보관
   };
 }
 
