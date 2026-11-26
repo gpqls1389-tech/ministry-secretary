@@ -622,3 +622,23 @@ tr.partrow td { background:var(--soft); }
 .refrow { border:1px solid var(--line); border-radius:var(--radius-md); padding:8px 10px; margin-bottom:8px; background:var(--soft); }
 .refrow textarea { width:100%; margin-top:6px; }
 #sshelf h3, #stheme h3 { margin:18px 0 6px; font-family:var(--serif); }
+
+/* ===== MB12.20 출석: 선생님(반)별 묶음 · 한 화면 맞춤 ===== */
+.att-board { --rowh:40px; display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; align-items:start; }
+.att-board.fit { align-items:stretch; }
+.att-group { display:flex; flex-direction:column; min-width:0; background:var(--card); border:1px solid var(--line); border-radius:var(--radius-md); overflow:hidden; }
+.att-group[hidden] { display:none; }
+.att-group > header { display:flex; align-items:center; gap:6px; height:calc(var(--rowh) * 1.9); line-height:1.25; padding:0 10px; background:var(--soft); border-bottom:1px solid var(--line); white-space:nowrap; overflow:hidden; }
+.att-group > header .gt { flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden; } .att-group > header .gt > * { overflow:hidden; text-overflow:ellipsis; }
+.att-group > header .gc { font-variant-numeric:tabular-nums; }
+.att-group .att-row { min-height:0; height:var(--rowh); padding:0 8px 0 10px; gap:8px; border:0; border-bottom:1px solid var(--line); border-radius:0; box-shadow:none; font-size:clamp(.78rem, calc(var(--rowh) * .36), 1rem); }
+.att-group .att-row:last-child { border-bottom:0; }
+.att-group .att-row .who { gap:8px; }
+.att-group .att-row .avatar { width:calc(var(--rowh) * .62); height:calc(var(--rowh) * .62); font-size:.8em; flex:none; }
+.att-group .att-row .chk i { min-width:calc(var(--rowh) * 1.45); height:calc(var(--rowh) * .66); padding:0 8px; font-size:.82em; }
+#main.attmode .pagehead .sub, #main.attmode .tip, #main.attmode .tip-min { display:none; }
+#main.attmode .pagehead { margin-bottom:6px; padding-bottom:4px; }
+.attbar { align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+.attbar .attsum { margin:0; font-size:1rem; display:flex; align-items:center; gap:6px; }
+@media (max-width:700px) { .att-board.fit { grid-template-columns:1fr !important; } }
+#main.attmode .pagehead h1 { font-size:1.25rem; }

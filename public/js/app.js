@@ -161,7 +161,7 @@ function paintSeason() {
 }
 function render() {
   flushWorship(); flushSermon();
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'sermon' || view === 'shelf' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'att' || view === 'sermon' || view === 'shelf' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
   $('#nav').innerHTML = NAV.filter(n => !(GUEST && n[0] === 'community')).map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${IC[NAV_ICON[k] || k] || ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
@@ -169,8 +169,8 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !GUEST && !demo && !window.__memOnly; bar.innerHTML = GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, sermon: vSermon, shelf: vShelf, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
-  $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, att: vAtt, sermon: vSermon, shelf: vShelf, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
+  $('#main').innerHTML = ''; $('#main').classList.toggle('attmode', view === 'att'); V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
   a11yPass();
 }
@@ -433,25 +433,69 @@ function vServices() {
 }
 const AT = { cls: '', q: '', id: null };
 // 이름 검색은 화면만 걸러 낸다(다시 그리지 않아 검색칸의 입력 위치가 그대로 남는다)
+// ----- 출석 명단: 선생님(반)별 묶음과 ‘한 화면’ 맞춤(MB12.20) -----
+// 같은 반(class_name)에 있는 교사가 그 반의 선생님이다. 교사 → 봉사자 → 아이 순으로 한 묶음에 보여 준다.
+function attGroups(list) {
+  const m = new Map(); for (const p of list) { const k = p.class_name || ''; if (!m.has(k)) m.set(k, []); m.get(k).push(p); }
+  const rank = p => (p.kind === 'teacher' ? 0 : p.kind === 'volunteer' ? 1 : 2);
+  return [...m].map(([cls, ps]) => { const all = ps.slice().sort((a, b) => rank(a) - rank(b)); return { cls, staff: all.filter(p => p.kind === 'teacher'), all }; })
+    .sort((a, b) => (!a.cls) - (!b.cls)); // 반이 없는 묶음은 맨 뒤
+}
+function attBoard(s, id, shown, att, visIds, vis, fit) {
+  const groups = attGroups(shown); const tag = p => (p.kind === 'teacher' ? '<span class="mute small"> 교사</span>' : p.kind === 'volunteer' ? '<span class="mute small"> 봉사자</span>' : '');
+  const nm = p => (p.display === p.name ? p.name : `${p.name} (${p.birth_year ? p.birth_year + '년생' : '#' + p.id})`); // 반으로 묶었으니 반 이름은 빼고, 동명이인만 구분
+  const row = p => `<label class="att-row ${att.get(p.id) ? 'on' : ''}" data-pid="${p.id}"${visIds.has(p.id) ? '' : ' hidden'}><span class="who"><span class="avatar dk-${dk(s.dept_id)}">${esc(p.name.slice(0, 1))}</span><span style="min-width:0"><b>${esc(nm(p))}${tag(p)}</b></span></span><span class="chk"><input type="checkbox" data-att="${id}/${p.id}" ${att.get(p.id) ? 'checked' : ''} aria-label="${esc(p.name)} 출석"><i><span class="y">✓ 출석</span><span class="n">출석</span></i></span></label>`;
+  const head = g => { const names = g.staff.map(p => p.name).join('·'); const kids = g.all.filter(p => p.kind !== 'teacher').length;
+    return `<header><span class="gt"><b>${names ? esc(names) + ' 선생님' : esc(g.cls || '반 미정')}</b><span class="mute small">${names ? esc(g.cls || '반 미정') + ' · ' : ''}아이 ${kids}명</span></span><span class="gc tag" data-gc></span></header>`; };
+  const body = groups.map(g => `<section class="att-group">${head(g)}${g.all.map(row).join('')}</section>`).join('')
+    || emptyState('명단이 없어요', '인원·출석에서 이 부서의 인원을 먼저 등록하세요.', '<button class="sm pri" data-go="#people">인원 등록하러 가기</button>');
+  return `<div class="att-board${fit ? ' fit' : ''}">${body}</div>${shown.length ? `<p class="mute" id="att-none"${vis.length ? ' hidden' : ''}>검색어에 맞는 사람이 없습니다.</p>` : ''}`;
+}
+// 묶음마다 ‘출석 n/전체’ 표시와, 검색으로 비게 된 묶음 숨기기
+function paintGroupCounts() {
+  $$('.att-group').forEach(g => { const rows = $$('.att-row', g).filter(r => !r.hidden); g.hidden = !rows.length; const on = rows.filter(r => r.classList.contains('on')).length; const gc = $('[data-gc]', g); if (gc) { gc.textContent = `${on}/${rows.length}`; gc.className = `gc tag${rows.length && on === rows.length ? ' ok' : ''}`; } });
+}
+// 한 화면 맞춤: 묶음을 몇 줄로 놓을지 정하고, 줄 높이를 화면 높이에 맞춘다(너무 많으면 최소 높이에서 스크롤)
+function fitAtt() {
+  paintGroupCounts(); const b = $('.att-board.fit'); if (!b) return; const groups = $$('.att-group', b).filter(g => !g.hidden); if (!groups.length) return;
+  const gap = 10; const minW = 150; const maxN = Math.max(1, Math.min(groups.length, Math.floor((b.clientWidth + gap) / (minW + gap))));
+  const rows = groups.map(g => $$('.att-row', g).filter(r => !r.hidden).length); const top = b.getBoundingClientRect().top + window.scrollY; let best = null;
+  for (let n = 1; n <= maxN; n++) { // 열 개수마다 줄 높이를 계산해 가장 크게 나오는 쪽을 고른다(같으면 열이 적은 쪽)
+    let units = 0, chunks = 0; for (let i = 0; i < groups.length; i += n) { units += Math.max(...rows.slice(i, i + n)) + 2; chunks++; }
+    const h = Math.floor((window.innerHeight - top - 18 - (chunks - 1) * gap - chunks * 2) / units); if (!best || h > best.h) best = { n, h };
+  }
+  b.style.gridTemplateColumns = `repeat(${best.n}, minmax(0, 1fr))`; b.style.setProperty('--rowh', `${Math.max(28, Math.min(52, best.h))}px`);
+}
+window.addEventListener('resize', () => { if ($('.att-board.fit')) fitAtt(); });
+
+function vAtt(id) {
+  const s = store.service(id); if (!s) { page('✅', '출석', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
+  const people = store.people({ deptId: s.dept_id }); const classes = [...new Set(people.map(p => p.class_name).filter(Boolean))]; const att = new Map(store.get().attendance.filter(a => a.service_id === id).map(a => [a.person_id, a.present]));
+  if (AT.id !== id) { AT.id = id; AT.q = ''; } const shown = inClass(people, AT.cls); const vis = visiblePeople(people, AT); const visIds = new Set(vis.map(p => p.id)); const c = store.attendanceCount(id);
+  page('✅', `${s.title} 출석`, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)}`, `<div class="row noprint attbar"><button data-go="#service/${id}">◀ 예배</button><h2 id="att-sec" class="attsum">출석 <span class="tag ok">출석 ${c.present}명</span> <span class="tag">기록 ${c.recorded}명</span></h2><span class="seg" role="group" aria-label="반 거르기"><button class="sm ${!AT.cls ? 'on' : ''}" data-cls="" aria-pressed="${!AT.cls}">전체</button>${classes.map(x => `<button class="sm ${AT.cls === x ? 'on' : ''}" data-cls="${esc(x)}" aria-pressed="${AT.cls === x}">${esc(x)}</button>`).join('')}</span><input type="search" id="att-q" data-attq placeholder="이름으로 찾기" aria-label="출석 명단에서 이름 찾기" value="${esc(AT.q)}" autocomplete="off" style="max-width:170px"><span class="sp"></span><button data-act="allPresent" data-id="${id}" id="att-all">보이는 ${vis.length}명 전원 출석</button><button data-act="newPersonHere" data-id="${id}">+ 새 사람</button></div><span id="att-scope" class="mute small" hidden></span>
+  ${attBoard(s, id, shown, att, visIds, vis, true)}`);
+  window.scrollTo(0, 0); fitAtt();
+}
+
 function paintAttSearch() {
   const s = store.service(Number(AT.id)); if (!s || !$('#att-q')) return; const people = store.people({ deptId: s.dept_id }); const vis = visiblePeople(people, AT); const ids = new Set(vis.map(p => p.id));
-  $$('.att-list label[data-pid]').forEach(l => { l.hidden = !ids.has(Number(l.dataset.pid)); });
-  $('#att-scope').textContent = scopeText(people, AT); const none = $('#att-none'); if (none) none.hidden = !!vis.length || !inClass(people, AT.cls).length; const b = $('#att-all'); if (b) b.textContent = `보이는 ${vis.length}명 전원 출석`;
+  $$('.att-board label[data-pid]').forEach(l => { l.hidden = !ids.has(Number(l.dataset.pid)); });
+  $('#att-scope').textContent = scopeText(people, AT); const none = $('#att-none'); if (none) none.hidden = !!vis.length || !inClass(people, AT.cls).length; const b = $('#att-all'); if (b) b.textContent = `보이는 ${vis.length}명 전원 출석`; fitAtt();
 }
 function vService(id) {
   const s = store.service(id); if (!s) { page('⛪', '예배', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
   const people = store.people({ deptId: s.dept_id }); const classes = [...new Set(people.map(p => p.class_name).filter(Boolean))]; const att = new Map(store.get().attendance.filter(a => a.service_id === id).map(a => [a.person_id, a.present]));
   if (AT.id !== id) { AT.id = id; AT.q = ''; } const shown = inClass(people, AT.cls); const vis = visiblePeople(people, AT); const visIds = new Set(vis.map(p => p.id)); const c = store.attendanceCount(id);
-  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button class="pri" data-act="toAtt">✅ 출석 체크로</button><button data-act="orderEdit" data-id="${id}">🧩 순서 짜기</button><button data-act="sermonForService" data-id="${id}">✍️ 설교 준비</button><button data-go="#brief/${id}">🧑‍🏫 교사 브리핑</button><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><details class="more"><summary>더 보기 ▾</summary><div class="menu"><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><button data-act="print">인쇄</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button class="dng" data-act="delService" data-id="${id}">예배 삭제</button></div></details></div>
+  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button class="pri" data-go="#att/${id}">✅ 출석 체크(한 화면)</button><button data-act="orderEdit" data-id="${id}">🧩 순서 짜기</button><button data-act="sermonForService" data-id="${id}">✍️ 설교 준비</button><button data-go="#brief/${id}">🧑‍🏫 교사 브리핑</button><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><details class="more"><summary>더 보기 ▾</summary><div class="menu"><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><button data-act="print">인쇄</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button class="dng" data-act="delService" data-id="${id}">예배 삭제</button></div></details></div>
   <section class="svhero" style="--lc:${LITU_HEX[churchInfo(s.date).color] || '#3f9d5f'}"><div class="lc"><span class="lcdot" style="background:var(--lc)"></span>${esc(churchLabel(s.date))} <span class="mute small">(자동 계산 · 전례 색 ${esc(churchInfo(s.date).color)})</span></div><div class="sv-main"><div><div class="k">성경 본문</div><div class="v">${esc(s.scripture) || '<span class="mute">미정</span>'}</div></div><div><div class="k">설교 제목</div><div class="v">${esc(s.sermon_title) || '<span class="mute">미정</span>'}</div></div></div></section>
   ${lessonBlock(s)}
   ${growthBlock(s)}
   <dl class="props" style="margin-top:14px"><dt>담당</dt><dd>${esc(s.leader) || '-'}</dd>${s.order_items && s.order_items.length ? '' : `<dt>순서</dt><dd style="white-space:pre-wrap">${esc(s.order_text) || '-'}</dd>`}</dl>
   ${orderBlock(s)}
   <h2 id="att-sec">출석 체크 <span class="tag ok">출석 ${c.present}명</span> <span class="tag">기록 ${c.recorded}명</span></h2><p class="mute small noprint">이름을 누르면 바로 저장됩니다. 같은 회차에서 한 사람은 한 번만 집계되고, 복제한 예배의 출석은 비어 있습니다.</p>
-  <div class="row noprint" style="margin-bottom:10px"><span class="seg" role="group" aria-label="반 거르기"><button class="sm ${!AT.cls ? 'on' : ''}" data-cls="" aria-pressed="${!AT.cls}">전체</button>${classes.map(x => `<button class="sm ${AT.cls === x ? 'on' : ''}" data-cls="${esc(x)}" aria-pressed="${AT.cls === x}">${esc(x)}</button>`).join('')}</span><span class="sp"></span><button data-act="allPresent" data-id="${id}" id="att-all">보이는 ${vis.length}명 전원 출석</button><button data-act="newPersonHere" data-id="${id}">+ 새 사람</button></div>
+  <div class="row noprint" style="margin-bottom:10px"><button data-go="#att/${id}">⛶ 한 화면으로 보기</button><span class="seg" role="group" aria-label="반 거르기"><button class="sm ${!AT.cls ? 'on' : ''}" data-cls="" aria-pressed="${!AT.cls}">전체</button>${classes.map(x => `<button class="sm ${AT.cls === x ? 'on' : ''}" data-cls="${esc(x)}" aria-pressed="${AT.cls === x}">${esc(x)}</button>`).join('')}</span><span class="sp"></span><button data-act="allPresent" data-id="${id}" id="att-all">보이는 ${vis.length}명 전원 출석</button><button data-act="newPersonHere" data-id="${id}">+ 새 사람</button></div>
   <div class="row noprint" style="margin-bottom:10px"><input type="search" id="att-q" data-attq placeholder="이름으로 찾기" aria-label="출석 명단에서 이름 찾기" value="${esc(AT.q)}" autocomplete="off" style="max-width:240px"><span class="mute small" id="att-scope" aria-live="polite">${esc(scopeText(people, AT))}</span></div>
-  <div class="att-list">${shown.map(p => `<label class="att-row ${att.get(p.id) ? 'on' : ''}" data-pid="${p.id}"${visIds.has(p.id) ? '' : ' hidden'}><span class="who"><span class="avatar dk-${dk(s.dept_id)}">${esc(p.name.slice(0, 1))}</span><span style="min-width:0"><b>${esc(p.display)}</b><span class="mute small">${esc(p.class_name)}${p.kind === 'teacher' ? ' · 교사' : ''}</span></span></span><span class="chk"><input type="checkbox" data-att="${id}/${p.id}" ${att.get(p.id) ? 'checked' : ''} aria-label="${esc(p.name)} 출석"><i><span class="y">✓ 출석</span><span class="n">출석 체크</span></i></span></label>`).join('') || emptyState('명단이 없어요', '인원·출석에서 이 부서의 인원을 먼저 등록하세요.', '<button class="sm pri" data-go="#people">인원 등록하러 가기</button>')}${shown.length ? `<p class="mute" id="att-none"${vis.length ? ' hidden' : ''}>검색어에 맞는 사람이 없습니다.</p>` : ''}</div>`);
+  ${attBoard(s, id, shown, att, visIds, vis, false)}`);
 }
 
 // ----- 부서 사역(MB12): 주간 체크·달란트, 가정 안내문, 시험 기간, 새가족 정착, 장기 부재 -----
@@ -1616,7 +1660,7 @@ document.addEventListener('change', e => {
   else if (t.matches('[data-guidesel]')) { if (GUIDES[t.value]) { UI.evGuide = { id: Number(t.dataset.guidesel), key: t.value }; render(); } }
   else if (t.matches('[data-evstatus]')) { const ev = store.ev(Number(t.dataset.evstatus)); guard(() => store.saveEvent({ ...ev, status: t.value }), '저장했습니다.'); render(); }
   else if (t.matches('[data-pstat]')) { const [a, b] = t.dataset.pstat.split('/').map(Number); guard(() => store.setParticipant(a, b, t.value)); render(); }
-  else if (t.matches('[data-att]')) { const [a, b] = t.dataset.att.split('/').map(Number); guard(() => store.setAttendance(a, b, t.checked)); t.closest('label').classList.toggle('on', t.checked); const c = store.attendanceCount(a); const h = $('#main h2 .tag.ok'); if (h) { h.textContent = `출석 ${c.present}명`; h.nextElementSibling.textContent = `기록 ${c.recorded}명`; } }
+  else if (t.matches('[data-att]')) { const [a, b] = t.dataset.att.split('/').map(Number); guard(() => store.setAttendance(a, b, t.checked)); t.closest('label').classList.toggle('on', t.checked); paintGroupCounts(); const c = store.attendanceCount(a); const h = $('#main h2 .tag.ok'); if (h) { h.textContent = `출석 ${c.present}명`; h.nextElementSibling.textContent = `기록 ${c.recorded}명`; } }
   else if (t.matches('[data-supply]')) { guard(() => store.toggleSupply(Number(t.dataset.supply), t.checked)); render(); }
   else if (t.matches('[data-calsvc]')) { UI.calSvc = t.checked; render(); }
   else if (t.matches('[data-calles]')) { UI.calLes = t.checked; render(); }
