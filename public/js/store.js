@@ -7,6 +7,7 @@ import { HANDOVER_FIELDS, HANDOVER_META, HANDOVER_MAX } from './handover.js';
 import { cleanInfo, mainPhone } from './people.js';
 import { formByKey, blankValues, PRIVACY_ROWS } from './admin.js';
 import { cleanOrder, orderText } from './order.js';
+import { cleanSheet, SHEET_MAX, toServiceItems, fromServiceItems, cleanBlocks } from './worship.js';
 
 export const KEY = 'ministry-secretary:v1';
 export class ValidationError extends Error {}
@@ -64,6 +65,8 @@ export function validateState(j) {
   if (j.growth !== undefined && (!Array.isArray(j.growth) || j.growth.length > 50000)) bad('주간 체크');
   if (j.docs !== undefined && (!Array.isArray(j.docs) || j.docs.length > 500 || j.docs.some(d => !d || !isId(d.id) || typeof d.form !== 'string' || typeof d.values !== 'object' || d.values === null))) bad('행정 문서');
   for (const s of j.services) if (s.order_items !== undefined && !Array.isArray(s.order_items)) bad('예배 순서');
+  if (j.orders !== undefined && (!Array.isArray(j.orders) || j.orders.length > SHEET_MAX)) bad('예배 순서지');
+  for (const o of (j.orders || [])) if (!o || !isId(o.id) || typeof o.title !== 'string' || !Array.isArray(o.blocks) || o.blocks.length > 200 || !dids.has(o.dept_id) || (o.service_id != null && !sids.has(o.service_id))) bad('예배 순서지');
   if (j.deptCfg !== undefined && (typeof j.deptCfg !== 'object' || Array.isArray(j.deptCfg) || j.deptCfg === null)) bad('부서 설정');
   if (j.curricula !== undefined && (!Array.isArray(j.curricula) || j.curricula.length > MAX_CURRICULA)) bad('교재');
   for (const c of (j.curricula || [])) if (!isId(c.id) || typeof c.name !== 'string' || !Number.isInteger(c.years) || c.years < 1 || c.years > 3 || !Array.isArray(c.lessons) || c.lessons.length > MAX_LESSONS || !(c.dept_id === 0 || dids.has(c.dept_id)) || c.lessons.some(l => !Number.isInteger(l.year) || !Number.isInteger(l.no) || LESSON_KEYS.some(k => typeof l[k] !== 'string' || l[k].length > FIELD_MAX[k]))) bad('교재');
@@ -85,7 +88,7 @@ export function normalizeState(j) {
     j.depts.splice(at >= 0 ? at + 1 : j.depts.length, 0, { id, name: '중고등부', kind: 'teen' });
   }
   j.teenAdded = true; // 사용자가 중고등부를 지운 뒤에 다시 생기지 않게
-  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth', 'docs']) j[k] = j[k] || [];
+  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth', 'docs', 'orders']) j[k] = j[k] || [];
   j.deptCfg = j.deptCfg || {};
   return j;
 }
@@ -115,7 +118,7 @@ export function createStore(storage, today = kstToday) {
   }
   load();
   // 불러오기 실패 복구: 검사에 걸리는 선택 항목(목록)만 비우고 열 수 있는지 시험한다. 이 함수는 저장하지 않는다.
-  const SALVAGE = { docs: '행정 문서', curricula: '교재', growth: '주간 체크', schedules: '일정', visits: '심방 기록', assets: '비품', links: '내 사이트', todos: '할 일', supplies: '준비물', deptCfg: '부서 설정' };
+  const SALVAGE = { docs: '행정 문서', orders: '예배 순서지', curricula: '교재', growth: '주간 체크', schedules: '일정', visits: '심방 기록', assets: '비품', links: '내 사이트', todos: '할 일', supplies: '준비물', deptCfg: '부서 설정' };
   function salvageRaw(raw) {
     let j; try { j = JSON.parse(raw); } catch { return null; }
     if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
@@ -409,7 +412,7 @@ export function createStore(storage, today = kstToday) {
     deleteSeries(kind, id) {
       const list = kind === 'service' ? S.services : S.schedules; const x = list.find(v => v.id === id); if (!x) return 0;
       const gone = new Set(list.filter(v => v.id === id || (x.series && v.series === x.series && v.date >= x.date)).map(v => v.id));
-      if (kind === 'service') { S.attendance = S.attendance.filter(a => !gone.has(a.service_id)); S.services = S.services.filter(v => !gone.has(v.id)); } else S.schedules = S.schedules.filter(v => !gone.has(v.id));
+      if (kind === 'service') { S.attendance = S.attendance.filter(a => !gone.has(a.service_id)); S.services = S.services.filter(v => !gone.has(v.id)); for (const o of (S.orders || [])) if (gone.has(o.service_id)) o.service_id = null; } else S.schedules = S.schedules.filter(v => !gone.has(v.id));
       save(); return gone.size;
     },
     // ----- 일정(교사 기도회·회의 등. 예배·행사와 별도) -----
@@ -527,7 +530,32 @@ export function createStore(storage, today = kstToday) {
     // ----- 부서별 사역(MB12) -----
     deptKind: id => ((dept(id) || {}).kind) || guessDeptKind((dept(id) || {}).name, id),
     // ----- 예배 순서 칸(담당·시간·준비물·메모) -----
-    setServiceOrder(id, items) { const s = api.service(id); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); const v = cleanOrder(items); if (v.length) { s.order_items = v; s.order_text = orderText(v, s.time); } else { delete s.order_items; } save(); return v; },
+    setServiceOrder(id, items, start) { const s = api.service(id); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.'); const v = cleanOrder(items); if (v.length) { s.order_items = v; s.order_text = orderText(v, start || s.time); } else { delete s.order_items; } save(); return v; },
+
+    // ----- 예배 순서지(MB12.16): 블록·파트로 짠 순서를 날짜와 상관없이 보관하고, 원하면 예배 하나에 붙여 그 예배의 순서로 쓴다 -----
+    orders(deptId, type) { return (S.orders || []).filter(o => (!deptId || o.dept_id === deptId) && (!type || o.type === type)).sort((a, b) => String(b.updated).localeCompare(String(a.updated)) || b.id - a.id); },
+    order: id => (S.orders || []).find(o => o.id === id),
+    saveOrder(raw) {
+      S.orders = S.orders || []; const c = cleanSheet(raw, m => { throw new ValidationError(m); }); const dept_id = Number(raw.dept_id);
+      if (!dept(dept_id)) throw new ValidationError('부서를 찾을 수 없습니다.');
+      const sid = raw.service_id == null || raw.service_id === '' ? null : Number(raw.service_id);
+      if (sid != null && !api.service(sid)) throw new ValidationError('연결할 예배를 찾을 수 없습니다.');
+      let o = raw.id ? S.orders.find(x => x.id === Number(raw.id)) : null;
+      if (!o) { if (S.orders.length >= SHEET_MAX) throw new ValidationError(`순서지는 ${SHEET_MAX}개까지 만들 수 있어요. 안 쓰는 것을 지워 주세요.`); o = { id: nid() }; S.orders.push(o); }
+      if (sid != null) for (const x of S.orders) if (x !== o && x.service_id === sid) x.service_id = null; // 예배 하나에는 순서지 하나만
+      Object.assign(o, c, { dept_id, service_id: sid, updated: today() });
+      if (sid != null) api.setServiceOrder(sid, toServiceItems(c.blocks), c.time); else save();
+      return o.id;
+    },
+    deleteOrder(id) { S.orders = (S.orders || []).filter(o => o.id !== id); save(); },
+    duplicateOrder(id) { const o = api.order(id); if (!o) throw new ValidationError('순서지를 찾을 수 없습니다.'); return api.saveOrder({ ...o, id: undefined, service_id: null, title: `${o.title} (복사)`.slice(0, 60), blocks: cleanBlocks(o.blocks).map(b => ({ ...b, id: undefined })) }); },
+    orderOfService: sid => (S.orders || []).find(o => o.service_id === sid) || null,
+    // 예배의 기존 순서(칸 또는 글)에서 순서지를 만들어 그 예배에 연결한다. 이미 있으면 그대로 돌려준다.
+    orderForService(sid, blocks) {
+      const have = api.orderOfService(sid); if (have) return have.id; const s = api.service(sid); if (!s) throw new ValidationError('예배를 찾을 수 없습니다.');
+      const bl = s.order_items && s.order_items.length ? fromServiceItems(s.order_items) : blocks || [];
+      return api.saveOrder({ title: `${s.date.slice(5).replace('-', '/')} ${s.title}`.slice(0, 60), type: s.kind === 'special' ? 'special' : 'regular', dept_id: s.dept_id, service_id: sid, time: s.time, blocks: bl });
+    },
 
     // ----- 행정 문서: 서식으로 쓴 문서를 저장(부서별) -----
     docs(deptId) { return (S.docs || []).filter(d => !deptId || d.dept_id === deptId).sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || b.id - a.id); },
@@ -901,7 +929,7 @@ export function createStore(storage, today = kstToday) {
       x.name = reqText(p.name, '이름'); x.kind = ['child', 'teen', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : x.kind;
       x.birth_year = p.birth_year ? Number(p.birth_year) : null; x.class_name = p.class_name || ''; if (p.dept_id) x.dept_id = Number(p.dept_id); save();
     },
-    deleteService(id) { S.attendance = S.attendance.filter(a => a.service_id !== id); S.growth = (S.growth || []).filter(g => g.service_id !== id); S.services = S.services.filter(s => s.id !== id); save(); },
+    deleteService(id) { S.attendance = S.attendance.filter(a => a.service_id !== id); S.growth = (S.growth || []).filter(g => g.service_id !== id); S.services = S.services.filter(s => s.id !== id); for (const o of (S.orders || [])) if (o.service_id === id) o.service_id = null; save(); },
     updateTransaction(id, t) {
       const x = S.transactions.find(v => v.id === id); if (!x || x.voided) throw new ValidationError('수정할 수 없는 거래입니다.');
       const old = { ...x }; const id0 = x.id;
