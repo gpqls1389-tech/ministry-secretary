@@ -1,6 +1,6 @@
 // 목회 비서 데이터 로직. 브라우저(localStorage)와 Node 테스트 양쪽에서 동작하도록 저장소를 주입받는다.
 import { makeSeed } from './seed.js';
-import { DEFAULT_CHECKS, MAX_CHECKS, NEWCOMER_STEPS, AWAY_REASONS, AWAY_EVERY, EXAM_TYPE, guessDeptKind } from './ministry.js';
+import { DEFAULT_CHECKS, MAX_CHECKS, NEWCOMER_STEPS, AWAY_REASONS, AWAY_EVERY, EXAM_TYPE, guessDeptKind, DEPT_KINDS, KIND_ORDER, DEPT_MAX, LEARNER_KINDS, SELF_CONTACT } from './ministry.js';
 import { LESSON_KEYS, FIELD_MAX, MAX_LESSONS, MAX_CURRICULA, CURRICULUM_PRESETS, PICK_PRESETS, blankLessons, cleanLesson, sundaysBetween, lessonLabel } from './curriculum.js';
 import { churchYear, EVENT_TEMPLATES, eventTaskDue, seasonTemplates, MONTH_THEMES, repeatDates, MAX_REPEAT, SCHEDULE_TYPES, VISIT_TYPES, ASSET_CATEGORIES, ASSET_STATUS } from './templates.js';
 import { HANDOVER_FIELDS, HANDOVER_META, HANDOVER_MAX } from './handover.js';
@@ -88,7 +88,7 @@ export function emptyState(todayStr = kstToday()) {
 
 // 부서마다 종류(kid·teen·youth)를 붙이고, 중고등부가 없으면 아동부 다음에 만든다(MB12). 새 목록도 빈 배열로 채운다.
 export function normalizeState(j) {
-  for (const d of j.depts) if (!['kid', 'teen', 'youth'].includes(d.kind)) d.kind = guessDeptKind(d.name, d.id);
+  for (const d of j.depts) if (!Object.hasOwn(DEPT_KINDS, d.kind)) d.kind = guessDeptKind(d.name, d.id);
   if (!j.depts.some(d => d.kind === 'teen') && !j.teenAdded) {
     const id = Math.max(...j.depts.map(d => d.id)) + 1; const at = j.depts.findIndex(d => d.kind === 'kid');
     j.depts.splice(at >= 0 ? at + 1 : j.depts.length, 0, { id, name: '중고등부', kind: 'teen' });
@@ -288,19 +288,19 @@ export function createStore(storage, today = kstToday) {
     // ----- 인원 -----
     addPerson(p) {
       const id = nid();
-      S.people.push({ id, name: reqText(p.name, '이름'), kind: ['child', 'teen', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : 'child', dept_id: Number(p.dept_id) || null, class_name: p.class_name || '', birth_year: p.birth_year ? Number(p.birth_year) : null, status: 'active' }); save(); return id;
+      S.people.push({ id, name: reqText(p.name, '이름'), kind: ['child', 'teen', 'youth', 'adult', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : 'child', dept_id: Number(p.dept_id) || null, class_name: p.class_name || '', birth_year: p.birth_year ? Number(p.birth_year) : null, status: 'active' }); save(); return id;
     },
     // 명단 한꺼번에 등록: 먼저 검사만 하고(planPeopleImport) 사용자가 확인한 뒤 한 번에 저장한다(addPeopleBulk).
     // rows: [{ name, kind, dept, class_name, birth_year }] (kind는 아동/청년/교사/봉사자, dept는 부서 이름. 비우면 기본값)
     planPeopleImport(rows, defaultDeptId) {
       if (rows.length > 500) throw new ValidationError('한 번에 500명까지 등록할 수 있어요. 파일을 나눠서 올려 주세요.');
-      const KINDS = { 아동: 'child', 청소년: 'teen', 학생: 'teen', teen: 'teen', 청년: 'youth', 교사: 'teacher', 봉사자: 'volunteer', child: 'child', youth: 'youth', teacher: 'teacher', volunteer: 'volunteer' };
+      const KINDS = { 아동: 'child', 청소년: 'teen', 학생: 'teen', teen: 'teen', 청년: 'youth', 장년: 'adult', 성인: 'adult', 성도: 'adult', 교사: 'teacher', 봉사자: 'volunteer', child: 'child', youth: 'youth', teacher: 'teacher', volunteer: 'volunteer' };
       const key = p => `${p.name}|${p.dept_id}|${p.birth_year || ''}|${p.class_name || ''}`; const have = new Set(S.people.filter(p => p.status !== 'inactive').map(key)); const seen = new Set();
       const ok = [], dup = [], errors = [];
       rows.forEach((r, i) => {
         const line = r.line || i + 2; const name = String(r.name || '').trim(); if (!name) { errors.push({ line, msg: '이름이 비어 있어요.' }); return; }
         if (name.length > 40) { errors.push({ line, msg: `이름이 너무 길어요(${name.slice(0, 8)}…).` }); return; }
-        const kindTxt = String(r.kind || '').trim(); const kind = kindTxt ? KINDS[kindTxt] : (defaultDeptId === 2 ? 'youth' : 'child'); if (!kind) { errors.push({ line, msg: `‘${kindTxt}’은(는) 알 수 없는 구분이에요(아동/청년/교사/봉사자).` }); return; }
+        const kindTxt = String(r.kind || '').trim(); const kind = kindTxt ? KINDS[kindTxt] : (['youth', 'adult'].includes(api.deptKind(defaultDeptId)) ? api.deptKind(defaultDeptId) : 'child'); if (!kind) { errors.push({ line, msg: `‘${kindTxt}’은(는) 알 수 없는 구분이에요(아동/청년/교사/봉사자).` }); return; }
         const dtxt = String(r.dept || '').trim(); const d = dtxt ? S.depts.find(x => x.name === dtxt) : dept(defaultDeptId); if (!d) { errors.push({ line, msg: `‘${dtxt}’ 부서를 찾을 수 없어요(${S.depts.map(x => x.name).join('/')}).` }); return; }
         const byTxt = String(r.birth_year || '').trim(); const by = byTxt ? Number(byTxt) : null; if (byTxt && (!Number.isInteger(by) || by < 1900 || by > 2100)) { errors.push({ line, msg: `출생년도 ‘${byTxt}’이(가) 올바르지 않아요(예: 2016).` }); return; }
         const p = { name, kind, dept_id: d.id, class_name: String(r.class_name || '').trim().slice(0, 30), birth_year: by };
@@ -573,6 +573,43 @@ export function createStore(storage, today = kstToday) {
       return api.saveOrder({ title: `${s.date.slice(5).replace('-', '/')} ${s.title}`.slice(0, 60), type: s.kind === 'special' ? 'special' : 'regular', dept_id: s.dept_id, service_id: sid, time: s.time, blocks: bl });
     },
 
+    // ----- 부서 관리(MB12.26): 기본 부서는 그대로 두고, 설정에서 부서를 더하고 이름을 고치고 지운다 -----
+    deptUsage(id) {
+      const n = (arr, f) => (arr || []).filter(f).length; const p = n(S.people, x => x.dept_id === id); const e = n(S.events, x => x.dept_id === id); const sv = n(S.services, x => x.dept_id === id); const tx = n(S.transactions, x => x.dept_id === id);
+      const b = n(S.budgets, x => x.dept_id === id); const sc = n(S.schedules, x => x.dept_id === id); const o = n(S.orders, x => x.dept_id === id) + n(S.sermons, x => x.dept_id === id); const as = n(S.assets, x => x.dept_id === id); const v = n(S.visits, x => (api.person(x.person_id) || {}).dept_id === id);
+      return { people: p, events: e, services: sv, transactions: tx, budgets: b, schedules: sc, notes: o, assets: as, visits: v, total: p + e + sv + tx + b + sc + o + as + v };
+    },
+    addDept(name, kind) {
+      const n = String(name || '').replace(/\s+/g, ' ').trim(); if (!n) throw new ValidationError('부서 이름을 입력하세요.'); if (n.length > 12) throw new ValidationError('부서 이름은 12자까지예요.');
+      if (!Object.hasOwn(DEPT_KINDS, kind)) throw new ValidationError('부서 종류를 고르세요.'); if (S.depts.length >= DEPT_MAX) throw new ValidationError(`부서는 ${DEPT_MAX}개까지 만들 수 있어요.`);
+      if (S.depts.some(d => d.name === n)) throw new ValidationError('같은 이름의 부서가 이미 있어요.');
+      const id = nid(); const rank = k => KIND_ORDER.indexOf(k); let at = S.depts.length; for (let i = 0; i < S.depts.length; i++) if (rank(S.depts[i].kind) > rank(kind)) { at = i; break; }
+      S.depts.splice(at, 0, { id, name: n, kind, custom: true }); save(); return id;
+    },
+    renameDept(id, name) {
+      const d = dept(id); if (!d) throw new ValidationError('부서를 찾을 수 없습니다.'); const n = String(name || '').replace(/\s+/g, ' ').trim(); if (!n) throw new ValidationError('부서 이름을 입력하세요.'); if (n.length > 12) throw new ValidationError('부서 이름은 12자까지예요.');
+      if (S.depts.some(x => x.id !== id && x.name === n)) throw new ValidationError('같은 이름의 부서가 이미 있어요.'); d.name = n; save(); return n;
+    },
+    // 기본 부서와, 기록(인원·행사·예배·회계 등)이 하나라도 있는 부서는 지우지 않는다(기록이 사라지지 않게)
+    deleteDept(id) {
+      const d = dept(id); if (!d) throw new ValidationError('부서를 찾을 수 없습니다.'); if (!d.custom) throw new ValidationError('기본 부서는 지울 수 없어요.');
+      const u = api.deptUsage(id); if (u.total) throw new ValidationError(`이 부서에 기록이 있어 지울 수 없어요(인원 ${u.people} · 행사 ${u.events} · 예배 ${u.services} · 회계 ${u.transactions + u.budgets} · 일정 ${u.schedules}). 기록을 먼저 옮기거나 지워 주세요.`);
+      S.depts = S.depts.filter(x => x.id !== id); if (S.deptCfg) delete S.deptCfg[id]; save();
+    },
+    // 장년부 속회(‘반·조’ 칸)별 현황: 인원, 최근 출석률, 마지막 심방
+    groupSummary(deptId) {
+      const M = api.attendanceMatrix(deptId, { last: 8 }); const vis = api.visits({ deptId }); const groups = new Map();
+      for (const p of S.people.filter(x => x.dept_id === deptId && x.status === 'active')) { const k = p.class_name || ''; if (!groups.has(k)) groups.set(k, { name: k, members: [], leaders: [] }); const g = groups.get(k); (p.kind === 'teacher' ? g.leaders : g.members).push(p); }
+      return [...groups.values()].map(g => { const ids = new Set(g.members.map(m => m.id)); const rows = M.rows.filter(r => ids.has(r.person.id) && r.rate !== null); const avg = rows.length ? Math.round(rows.reduce((a, r) => a + r.rate, 0) / rows.length) : null;
+        const last = vis.filter(v => v.person && ids.has(v.person.id)).map(v => v.date).sort().pop() || ''; return { name: g.name, leaders: g.leaders.map(x => x.name), count: g.members.length, rate: avg, low: rows.filter(r => r.rate < 50).length, lastVisit: last }; })
+        .sort((a, b) => (!a.name) - (!b.name) || a.name.localeCompare(b.name, 'ko'));
+    },
+    // 유치부 안전·돌봄: 알레르기·건강 주의, 보호자 연락처가 없는 아이, 이번 달 생일
+    careSummary(deptId, ym) {
+      const kids = S.people.filter(x => x.dept_id === deptId && x.status === 'active' && x.kind !== 'teacher' && x.kind !== 'volunteer');
+      return { total: kids.length, health: kids.filter(p => p.info && p.info.health).map(p => ({ name: p.name, class_name: p.class_name, health: p.info.health })), noGuardian: kids.filter(p => !(p.info && (p.info.guardian_phone || p.info.phone))).map(p => p.name), birthdays: kids.filter(p => p.info && p.info.birth && p.info.birth.slice(5, 7) === String(ym).slice(5, 7)).map(p => ({ name: p.name, day: Number(p.info.birth.slice(8)) })).sort((a, b) => a.day - b.day) };
+    },
+
     // ----- 설교 노트(MB12.18): 본문·연구·핵심·구조 블록·점검을 한 편으로 보관. 예배에 연결하면 그 예배의 본문·설교 제목이 비어 있을 때 채운다 -----
     sermons(deptId) { return (S.sermons || []).filter(o => !deptId || o.dept_id === deptId).sort((a, b) => String(b.updated).localeCompare(String(a.updated)) || b.id - a.id); },
     sermon: id => (S.sermons || []).find(o => o.id === id),
@@ -629,7 +666,7 @@ export function createStore(storage, today = kstToday) {
     formDraft(key, deptId, ctx = {}, t = today()) {
       const f = formByKey(key); if (!f) throw new ValidationError('서식을 찾을 수 없습니다.'); const d = dept(deptId) || { name: '' }; const v = blankValues(f);
       const won = n => Math.round(n || 0).toLocaleString('ko-KR'); const mdd = x => `${Number(x.slice(5, 7))}/${Number(x.slice(8))}`;
-      const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active'); const learners = active.filter(p => ['child', 'teen', 'youth'].includes(p.kind)); const staff = active.filter(p => p.kind === 'teacher' || p.kind === 'volunteer');
+      const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active'); const learners = active.filter(p => LEARNER_KINDS.includes(p.kind)); const staff = active.filter(p => p.kind === 'teacher' || p.kind === 'volunteer');
       const fillRows = (k, rows) => { const n = Math.max(v[k].length, rows.length); v[k] = Array.from({ length: n }, (_, i) => rows[i] || v[k][0].map(() => '')); };
       if ('dept' in v) v.dept = d.name; if ('church' in v) v.church = d.name;
       const e = ctx.event_id ? S.events.find(x => x.id === Number(ctx.event_id)) : null;
@@ -682,7 +719,7 @@ export function createStore(storage, today = kstToday) {
         const days = Math.round((Date.parse(e.start_date) - Date.parse(t)) / 864e5), after = Math.round((Date.parse(t) - Date.parse(e.end_date)) / 864e5); const ctx = { event_id: e.id };
         if (days >= 0 && days <= 45 && !hasDoc('eventPlan', ctx)) add('eventPlan', `‘${e.title}’까지 ${days}일 남았어요. 계획서로 결재를 받아 두세요.`, ctx, 1);
         const away = e.end_date > e.start_date || /수련회|캠프|소풍|성경학교|여행|봉사/.test(e.title + e.type);
-        if (days >= 0 && days <= 30 && away && kind !== 'youth' && !hasDoc('consentEvent', ctx)) add('consentEvent', `‘${e.title}’ — 외부·숙박 행사예요. 보호자 동의서를 받으세요.`, ctx, 1);
+        if (days >= 0 && days <= 30 && away && !SELF_CONTACT.has(kind) && !hasDoc('consentEvent', ctx)) add('consentEvent', `‘${e.title}’ — 외부·숙박 행사예요. 보호자 동의서를 받으세요.`, ctx, 1);
         if (days >= 0 && days <= 10 && away && !hasDoc('safety', ctx)) add('safety', `‘${e.title}’ 안전 점검을 1주 전에 해 두세요.`, ctx, 2);
         if (after >= 0 && after <= 30 && !hasDoc('eventReport', ctx)) add('eventReport', `‘${e.title}’ 행사가 끝났어요. 2주 안에 결과 보고서를 남기세요.`, ctx, 2);
       }
@@ -708,8 +745,8 @@ export function createStore(storage, today = kstToday) {
       const tasks = S.tasks.filter(k => k.status !== 'done' && evMap.has(k.event_id) && (!k.due || k.due <= addDays(s.date, 14))).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'))
         .slice(0, 12).map(k => ({ title: k.title, due: k.due, assignee: k.assignee || '', event: evMap.get(k.event_id).title, overdue: !!(k.due && k.due < t) }));
       const schedules = (S.schedules || []).filter(x => x.dept_id === deptId && x.date >= mon && x.date <= sun).sort((a, b) => a.date.localeCompare(b.date));
-      const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active'); const learners = active.filter(p => ['child', 'teen', 'youth'].includes(p.kind));
-      const M = api.attendanceMatrix(deptId, { last: 8 }); const low = M.rows.filter(r => !r.former && r.rate !== null && r.rate < 50 && ['child', 'teen', 'youth'].includes(r.person.kind)).map(r => r.person.name);
+      const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active'); const learners = active.filter(p => LEARNER_KINDS.includes(p.kind));
+      const M = api.attendanceMatrix(deptId, { last: 8 }); const low = M.rows.filter(r => !r.former && r.rate !== null && r.rate < 50 && LEARNER_KINDS.includes(r.person.kind)).map(r => r.person.name);
       const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)); const birthdays = [];
       for (const p of active) { const b = p.info && p.info.birth; if (!b) continue; const day = days.find(d => d.slice(5) === b.slice(5)); if (day) birthdays.push({ name: p.name, date: day }); }
       const health = active.filter(p => p.info && p.info.health).map(p => ({ name: p.name, health: p.info.health }));
@@ -718,8 +755,8 @@ export function createStore(storage, today = kstToday) {
       const lastAtt = prev ? { date: prev.date, present: api.attendanceCount(prev.id).present } : null;
       // 같은 번호(형제·자매)는 한 사람으로 묶는다: 문자도 한 번만 보내고 이름은 ‘가온·나래’처럼 붙인다
       const phoneKey = x => String(x || '').split(/[,/]/)[0].replace(/\D/g, ''); const groups = new Map();
-      for (const p of learners) { const i = p.info || {}; const phone = kind === 'youth' ? (i.phone || '') : (i.guardian_phone || i.phone || ''); const key = phoneKey(phone) || 'p' + p.id;
-        const who = kind === 'youth' ? '' : (i.guardian ? `${i.guardian}${i.guardian_rel ? '(' + i.guardian_rel + ')' : ''}` : '보호자'); const g = groups.get(key);
+      for (const p of learners) { const i = p.info || {}; const phone = SELF_CONTACT.has(kind) ? (i.phone || '') : (i.guardian_phone || i.phone || ''); const key = phoneKey(phone) || 'p' + p.id;
+        const who = SELF_CONTACT.has(kind) ? '' : (i.guardian ? `${i.guardian}${i.guardian_rel ? '(' + i.guardian_rel + ')' : ''}` : '보호자'); const g = groups.get(key);
         if (g) { g.ids.push(p.id); g.names.push(p.name); } else groups.set(key, { id: p.id, ids: [p.id], names: [p.name], phone, who }); }
       const recipients = [...groups.values()].map(g => ({ id: g.id, ids: g.ids, name: g.names.join('·'), phone: g.phone, who: g.who }));
       return { service: s, dept: dept(deptId), kind, next, events, tasks, schedules, low, birthdays, health, newcomers, lastAtt, recipients };
@@ -739,7 +776,7 @@ export function createStore(storage, today = kstToday) {
     handoverDraft(deptId, t = today()) {
       const d = dept(deptId); if (!d) throw new ValidationError('부서를 선택하세요.'); const year = Number(t.slice(0, 4)); const won = n => `${Math.round(n).toLocaleString('ko-KR')}원`;
       const until = addDays(t, 92); const active = S.people.filter(p => p.dept_id === deptId && p.status === 'active');
-      const learners = active.filter(p => ['child', 'teen', 'youth'].includes(p.kind)); const staff = active.filter(p => p.kind === 'teacher' || p.kind === 'volunteer');
+      const learners = active.filter(p => LEARNER_KINDS.includes(p.kind)); const staff = active.filter(p => p.kind === 'teacher' || p.kind === 'volunteer');
       const regular = S.services.filter(s => s.dept_id === deptId && s.kind === 'regular' && s.date <= t).sort((a, b) => b.date.localeCompare(a.date));
       const rec = regular.slice(0, 8).map(s => api.attendanceCount(s.id)).filter(c => c.recorded > 0); const avg = rec.length ? Math.round(rec.reduce((a, c) => a + c.present, 0) / rec.length * 10) / 10 : null;
       const last = regular[0]; const goal = api.plan(deptId, year).goal;
@@ -956,7 +993,7 @@ export function createStore(storage, today = kstToday) {
       const p = api.plan(deptId, year);
       return { dept: d, year, asOf: t, partial: t < `${Y}-12-31`, goal: p.goal, review: p.review || '', themes: p.themes || {}, nextGoal: api.plan(deptId, year + 1).goal,
         attendance: { held: regular.length, recorded: rec.length, avg: avg(rec), top, low, months, special },
-        people: { active: active.length, child: byKind('child'), teen: byKind('teen'), youth: byKind('youth'), teacher: byKind('teacher'), volunteer: byKind('volunteer'), newcomers },
+        people: { active: active.length, child: byKind('child'), teen: byKind('teen'), youth: byKind('youth'), adult: byKind('adult'), teacher: byKind('teacher'), volunteer: byKind('volunteer'), newcomers },
         events, visits: { count: vis.length, people: new Set(vis.map(v => v.person_id)).size, byType },
         money, monthly, draft: { events: draftEvents, budget: draftBudget, total: draftBudget.reduce((a, x) => a + x.suggest, 0) } };
     },
@@ -976,7 +1013,7 @@ export function createStore(storage, today = kstToday) {
     setPersonInfo(id, info) { const x = person(id); if (!x) throw new ValidationError('사람을 찾을 수 없습니다.'); const v = cleanInfo(info, m => { throw new ValidationError(m); }); if (Object.keys(v).length) x.info = v; else delete x.info; save(); return v; },
     updatePerson(id, p) {
       const x = person(id); if (!x) throw new ValidationError('사람을 찾을 수 없습니다.');
-      x.name = reqText(p.name, '이름'); x.kind = ['child', 'teen', 'youth', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : x.kind;
+      x.name = reqText(p.name, '이름'); x.kind = ['child', 'teen', 'youth', 'adult', 'teacher', 'volunteer'].includes(p.kind) ? p.kind : x.kind;
       x.birth_year = p.birth_year ? Number(p.birth_year) : null; x.class_name = p.class_name || ''; if (p.dept_id) x.dept_id = Number(p.dept_id); save();
     },
     deleteService(id) { S.attendance = S.attendance.filter(a => a.service_id !== id); S.growth = (S.growth || []).filter(g => g.service_id !== id); S.services = S.services.filter(s => s.id !== id); for (const o of [...(S.orders || []), ...(S.sermons || [])]) if (o.service_id === id) o.service_id = null; save(); },
