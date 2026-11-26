@@ -1,13 +1,17 @@
 // 목회 비서 데스크톱 프로그램: 사이트(https://ministry-secretary.pages.dev)를 앱 창으로 여는 얇은 껍데기입니다.
 // 화면과 기능은 사이트가 그대로 제공하므로, 사이트 버전(MB11.x)이 올라가면 이 프로그램도 열 때마다 자동으로 새 버전이 됩니다.
-// 데이터는 로그인 계정의 서버 저장소에 있어 그대로 이어집니다. 이 프로그램은 파일·시스템에 접근하는 기능을 노출하지 않습니다.
+// 데이터는 로그인 계정의 서버 저장소에 있어 그대로 이어집니다. 열어 주는 기능은 둘뿐입니다: ① 로그인 정보 저장(암호화) ② ‘내 컴퓨터에만 저장’용 정해진 폴더(내 문서\목회비서)의 데이터 파일 읽기·쓰기·백업.
 'use strict';
 const { app, BrowserWindow, Menu, dialog, session, shell, ipcMain, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const localdata = require('./localdata');
 
+// 개발 중 시험용: 설치본(app.isPackaged)에서는 아래 두 환경 변수를 무시한다.
+const DEV = !app.isPackaged;
 const SITE = 'https://ministry-secretary.pages.dev/';
-const ORIGIN = new URL(SITE).origin;
+const BASE = (DEV && process.env.MB_SITE) || SITE; // 시험용 주소(설치본에서는 항상 SITE)
+const ORIGIN = new URL(BASE).origin;
 const SMOKE = !app.isPackaged && process.env.MB_SMOKE; // 개발 중 시험용(설치본에서는 동작하지 않음)
 
 app.setAppUserModelId('app.ministry-secretary.desktop');
@@ -31,6 +35,21 @@ function registerCred() {
     fs.writeFileSync(credFile(), safeStorage.encryptString(JSON.stringify({ email, password }))); return true;
   });
   ipcMain.handle('cred:clear', e => { if (!fromSite(e)) return false; try { fs.unlinkSync(credFile()); } catch (err) { /* 없으면 그만 */ } return true; });
+}
+
+// ---- 내 컴퓨터에만 저장(사용자가 시작 화면에서 고른 경우만) ----
+// 정해진 폴더(내 문서\목회비서)의 data.json과 backup 폴더만 다룬다. 경로·파일 이름은 바깥에서 받지 않고(백업 이름은 형식 검사), 요청은 목회 비서 사이트 화면에서 온 것만 받는다.
+let LD = null; const ld = () => LD || (LD = localdata.create((DEV && process.env.MB_DATA_DIR) || path.join(app.getPath('documents'), '목회비서')));
+const NO = { ok: false, error: '허용되지 않은 요청이에요.' };
+function registerLocal() {
+  ipcMain.handle('ld:info', e => (fromSite(e) ? ld().info() : NO));
+  ipcMain.handle('ld:read', e => (fromSite(e) ? ld().read() : NO));
+  ipcMain.handle('ld:write', (e, state) => (fromSite(e) ? ld().write(state) : NO));
+  ipcMain.on('ld:writeSync', (e, state) => { e.returnValue = fromSite(e) ? ld().write(state) : NO; }); // 창을 닫는 순간 마지막 저장용
+  ipcMain.handle('ld:backup', e => (fromSite(e) ? ld().backupNow() : NO));
+  ipcMain.handle('ld:list', e => (fromSite(e) ? ld().list() : NO));
+  ipcMain.handle('ld:readBackup', (e, name) => (fromSite(e) ? ld().readBackup(name) : NO));
+  ipcMain.handle('ld:open', async e => { if (!fromSite(e)) return NO; try { fs.mkdirSync(ld().dir, { recursive: true }); const err = await shell.openPath(ld().dir); return err ? { ok: false, error: err } : { ok: true }; } catch (err) { return { ok: false, error: String(err.message || err) }; } });
 }
 
 // 사이트 밖 주소는 이 창에서 열지 않고, http(s)만 기본 브라우저로 넘긴다.
@@ -57,7 +76,7 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => { let ok = false; try { const u = new URL(url); ok = u.origin === ORIGIN || (u.protocol === 'file:' && u.pathname.endsWith('/offline.html')); } catch (err) { ok = false; } if (!ok) { e.preventDefault(); openExternal(url); } });
   win.webContents.on('did-fail-load', (e, code, desc, url, isMain) => { if (isMain && code !== -3) win.loadFile(path.join(__dirname, 'offline.html'), { query: { to: SITE } }); }); // -3 = 사용자가 취소
   win.on('closed', () => { win = null; });
-  win.loadURL(SITE);
+  win.loadURL(BASE);
   if (SMOKE) {
     win.webContents.on('did-finish-load', async () => {
       try { const r = await win.webContents.executeJavaScript('JSON.stringify({title: document.title, desktopUA: navigator.userAgent.includes("MokhoeBiseoDesktop/"), url: location.href, hasApp: !!document.getElementById("main")})'); fs.writeFileSync(SMOKE, r); } catch (err) { fs.writeFileSync(SMOKE, 'ERR ' + err.message); }
@@ -73,7 +92,7 @@ app.whenReady().then(() => {
   const allowed = (permission, url) => { if (permission !== 'notifications') return false; try { return new URL(url).origin === ORIGIN; } catch (e) { return false; } };
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(allowed(permission, (details && details.requestingUrl) || wc.getURL())));
   session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => allowed(permission, requestingOrigin));
-  registerCred(); buildMenu(); createWindow();
+  registerCred(); registerLocal(); buildMenu(); createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { app.quit(); });

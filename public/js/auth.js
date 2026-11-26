@@ -1,6 +1,7 @@
 // 로그인과 사용자별 서버 저장. /api가 없거나(정적 미리보기) 서버 설정 전이면 로컬 모드(이 브라우저에만 저장)로 동작한다.
 import { KEY, emptyState, validateState } from './store.js';
 import { nextDelay } from './savedelay.js';
+import { desktopFile, makeFileAdapter, STORAGE_KEY, MIGRATE_KEY } from './localfile.js';
 import { offlineEnabled, saveCopy, readCopy, lastUser, clearOfflineData } from './offline.js';
 import { writePending, readPending, clearPending, pendingAction } from './pending.js';
 import { loadImages, imgSrc } from './images.js';
@@ -166,6 +167,7 @@ function showLogin(signupOpen, { preview = false, quick = null } = {}) {
               <div class="err" role="alert">${esc(err)}</div>
               <button class="pri">${tab === 'login' ? '로그인' : '가입하고 시작'}</button>
             </form>`}
+            ${preview || tab === 'register' || !desktopFile() ? '' : '<div class="guestbox"><button class="ghost" id="filego" type="button">내 컴퓨터에만 저장하고 쓰기</button><p class="small">서버·로그인 없이 이 컴퓨터(내 문서\\목회비서 폴더)에만 저장해요. 다른 기기와는 동기화되지 않고, 설정에서 언제든 서버 계정으로 옮길 수 있어요.</p></div>'}
             ${preview || tab === 'register' ? '' : '<div class="guestbox"><button class="ghost" id="guestgo" type="button">게스트로 둘러보기</button><p class="small">로그인 없이 가상 데이터로 써 볼 수 있어요. 입력한 내용은 저장되지 않고, 창을 닫거나 새로고침하면 사라져요.</p></div>'}
           </div>
           <p class="auth-foot">로그인하면 사용자마다 따로 저장돼요. 같은 사이트를 써도 다른 사람의 데이터는 보이지 않아요. 공용 컴퓨터에서는 사용 후 꼭 로그아웃하세요. 비밀번호를 잊으면 관리자에게 문의하세요(자동 재설정은 아직 없어요).</p>
@@ -181,6 +183,7 @@ function showLogin(signupOpen, { preview = false, quick = null } = {}) {
         if (cred) cred.get().then(c => { if (c && !em.value) { em.value = c.email; pw.value = c.password; box.checked = true; } }).catch(() => {});
         else { const saved = lsGet(EMAIL_KEY); if (saved && !em.value) { em.value = saved; box.checked = true; pw.focus(); } }
       }
+      const fg = el.querySelector('#filego'); if (fg) fg.onclick = () => { lsSet(STORAGE_KEY, 'file'); el.remove(); resolve('file'); };
       const gg = el.querySelector('#guestgo'); if (gg) gg.onclick = () => { el.remove(); resolve('guest'); };
       if (preview) el.querySelector('#pv-close').onclick = () => { el.remove(); resolve(); };
       el.querySelector('form').onsubmit = async e => {
@@ -217,8 +220,19 @@ function offlineStart() {
   return AUTH;
 }
 AUTH.clearOffline = () => { const ls = lsRaw(); if (ls) clearOfflineData(ls); }; // 로그아웃·계정 삭제 때 이 기기의 복사본을 지운다
+// 내 컴퓨터에만 저장(설치형 앱): 내 문서\목회비서\data.json 을 읽어 시작한다. 읽지 못하거나 깨진 파일은 덮어쓰지 않는다.
+async function fileStart(ld) {
+  const r = await ld.read();
+  if (!r || !r.ok) { const m = new Map(); window.__memOnly = true; AUTH.reason = 'file-error'; AUTH.fileError = (r && r.error) || '파일을 읽지 못했어요.'; AUTH.storage = { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); } }; return AUTH; }
+  let initial = r.state; if (initial === null) { initial = JSON.stringify(emptyState()); const w = await ld.write(initial); if (!w || !w.ok) { AUTH.fileError = (w && w.error) || ''; } } // 처음이면 빈 데이터로 시작하고 파일부터 만든다
+  const setStatus = (s, m = '') => { AUTH.status = s; AUTH.message = m; AUTH.onStatus(s, m); };
+  const ad = makeFileAdapter(ld, initial, { savedStr: r.state === null ? initial : r.state, onStatus: setStatus });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') ad.flushSync(); }); window.addEventListener('pagehide', () => ad.flushSync()); window.addEventListener('beforeunload', () => { ad.flushSync(); });
+  AUTH.mode = 'local'; AUTH.reason = 'file'; AUTH.user = null; AUTH.filePath = r.path || ''; AUTH.storage = ad; AUTH.fileAdapter = ad; return AUTH;
+}
 export async function initAuth() {
   await loadImages();
+  { const ld0 = desktopFile(); if (ld0 && lsGet(STORAGE_KEY) === 'file') return fileStart(ld0); } // 이 컴퓨터에만 저장하기로 한 앱은 서버·로그인을 거치지 않는다
   let me;   try { me = await req('GET', '/api/me'); } catch (e) {
     if (e.offline) { const off = offlineStart(); if (off) return off; } // 인터넷이 없고 오프라인 사용을 켜 둔 기기: 이 기기의 복사본으로 연다
     AUTH.reason = e.missing ? 'api-missing' : 'offline'; AUTH.storage = localStorageSafe(); return AUTH;
@@ -226,6 +240,7 @@ export async function initAuth() {
   if (!me.configured) { AUTH.reason = 'not-configured'; AUTH.storage = localStorageSafe(); return AUTH; }
   if (!me.user) {
     const r = await showLogin(me.signup, { quick: me.quick });
+    if (r === 'file') return fileStart(desktopFile());
     if (r === 'guest') { // 게스트: 서버·이 브라우저 어디에도 저장하지 않고 메모리의 가상 데이터로만 쓴다
       const m = new Map(); AUTH.mode = 'guest'; AUTH.user = { name: '게스트', email: '' }; AUTH.storage = { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); } }; return AUTH;
     }
@@ -242,6 +257,12 @@ export async function initAuth() {
     if (act === 'restore') { initial = pend.state; restore = true; AUTH.pendingNote = `저장하지 못했던 변경(${new Date(pend.at).toLocaleString('ko-KR')})을 되살려 다시 저장해요.`; }
     else if (act === 'conflict') AUTH.pendingConflict = pend;
     else clearPending(ls, me.user.email);
+  }
+  // 컴퓨터 데이터를 새 계정으로 옮기기(설정에서 ‘서버 계정으로 옮기기’를 누른 뒤 첫 로그인): 서버가 비어 있을 때만 옮기고, 이미 있으면 건드리지 않는다
+  const ldm = desktopFile(); if (ldm && lsGet(MIGRATE_KEY) === '1') {
+    lsSet(MIGRATE_KEY, null); const fr = await ldm.read(); let fok = false; try { if (fr && fr.ok && fr.state) { validateState(JSON.parse(fr.state)); fok = true; } } catch { /* 깨진 파일은 옮기지 않는다 */ }
+    if (fok && st.state === null && !restore) { initial = fr.state; restore = true; AUTH.pendingNote = '이 컴퓨터의 데이터를 내 계정으로 옮겼어요. 컴퓨터의 파일은 그대로 남아 있어요.'; }
+    else if (fok) AUTH.pendingNote = '서버에 이미 데이터가 있어서 컴퓨터의 데이터를 옮기지 않았어요. 컴퓨터의 파일(내 문서\\목회비서)은 그대로예요. 필요하면 설정의 ‘가져오기’로 불러오세요.';
   }
   AUTH.storage = makeAdapter(initial, st.state); // 서버가 가진 내용과 같으면 올리지 않고, 되살린 변경처럼 다르면 올린다
   if (restore) AUTH.storage.setItem(KEY, initial); // 변경으로 취급해 서버에 다시 올린다

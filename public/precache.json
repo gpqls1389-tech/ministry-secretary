@@ -16,6 +16,7 @@
  "js/icons.js",
  "js/images.js",
  "js/install.js",
+ "js/localfile.js",
  "js/ministry.js",
  "js/offline.js",
  "js/order.js",
