@@ -151,6 +151,7 @@ function showLogin(signupOpen, { preview = false, quick = null } = {}) {
               <div class="err" role="alert">${esc(err)}</div>
               <button class="pri">${tab === 'login' ? '로그인' : '가입하고 시작'}</button>
             </form>`}
+            ${preview || tab === 'register' ? '' : '<div class="guestbox"><button class="ghost" id="guestgo" type="button">게스트로 둘러보기</button><p class="small">로그인 없이 가상 데이터로 써 볼 수 있어요. 입력한 내용은 저장되지 않고, 창을 닫거나 새로고침하면 사라져요.</p></div>'}
           </div>
           <p class="auth-foot">로그인하면 사용자마다 따로 저장돼요. 같은 사이트를 써도 다른 사람의 데이터는 보이지 않아요. 공용 컴퓨터에서는 사용 후 꼭 로그아웃하세요. 비밀번호를 잊으면 관리자에게 문의하세요(자동 재설정은 아직 없어요).</p>
         </section></div>`;
@@ -165,6 +166,7 @@ function showLogin(signupOpen, { preview = false, quick = null } = {}) {
         if (cred) cred.get().then(c => { if (c && !em.value) { em.value = c.email; pw.value = c.password; box.checked = true; } }).catch(() => {});
         else { const saved = lsGet(EMAIL_KEY); if (saved && !em.value) { em.value = saved; box.checked = true; pw.focus(); } }
       }
+      const gg = el.querySelector('#guestgo'); if (gg) gg.onclick = () => { el.remove(); resolve('guest'); };
       if (preview) el.querySelector('#pv-close').onclick = () => { el.remove(); resolve(); };
       el.querySelector('form').onsubmit = async e => {
         e.preventDefault(); const f = new FormData(e.target);
@@ -194,7 +196,13 @@ export async function initAuth() {
   await loadImages();
   let me; try { me = await req('GET', '/api/me'); } catch (e) { AUTH.reason = e.missing ? 'api-missing' : 'offline'; AUTH.storage = localStorageSafe(); return AUTH; }
   if (!me.configured) { AUTH.reason = 'not-configured'; AUTH.storage = localStorageSafe(); return AUTH; }
-  if (!me.user) { await showLogin(me.signup, { quick: me.quick }); me = await req('GET', '/api/me'); }
+  if (!me.user) {
+    const r = await showLogin(me.signup, { quick: me.quick });
+    if (r === 'guest') { // 게스트: 서버·이 브라우저 어디에도 저장하지 않고 메모리의 가상 데이터로만 쓴다
+      const m = new Map(); AUTH.mode = 'guest'; AUTH.user = { name: '게스트', email: '' }; AUTH.storage = { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); } }; return AUTH;
+    }
+    me = await req('GET', '/api/me');
+  }
   AUTH.mode = 'account'; AUTH.user = me.user; AUTH.signup = !!me.signup;
   const st = await req('GET', '/api/state'); AUTH.version = st.version;
   let initial = st.state ?? JSON.stringify(emptyState()); // 새 계정은 가상 데이터 없이 빈 상태로 시작
