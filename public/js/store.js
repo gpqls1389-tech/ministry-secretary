@@ -72,6 +72,7 @@ export function validateState(j) {
   if (j.sermons !== undefined && (!Array.isArray(j.sermons) || j.sermons.length > SERMON_MAX)) bad('설교 노트');
   for (const o of (j.sermons || [])) if (!o || !isId(o.id) || typeof o.title !== 'string' || !Array.isArray(o.blocks) || o.blocks.length > 100 || !dids.has(o.dept_id) || (o.service_id != null && !sids.has(o.service_id))) bad('설교 노트');
   if (j.shelf !== undefined && (!Array.isArray(j.shelf) || j.shelf.length > SHELF_MAX || j.shelf.some(x => !x || !isId(x.id) || typeof x.title !== 'string' || typeof x.series !== 'string' || !Array.isArray(x.books)))) bad('주석 서가');
+  if (j.scheduleTypes !== undefined && (!Array.isArray(j.scheduleTypes) || j.scheduleTypes.length > 30 || j.scheduleTypes.some(x => typeof x !== 'string' || !x.trim() || x.length > 20))) bad('일정 구분');
   if (j.deptCfg !== undefined && (typeof j.deptCfg !== 'object' || Array.isArray(j.deptCfg) || j.deptCfg === null)) bad('부서 설정');
   if (j.curricula !== undefined && (!Array.isArray(j.curricula) || j.curricula.length > MAX_CURRICULA)) bad('교재');
   for (const c of (j.curricula || [])) if (!isId(c.id) || typeof c.name !== 'string' || !Number.isInteger(c.years) || c.years < 1 || c.years > 3 || !Array.isArray(c.lessons) || c.lessons.length > MAX_LESSONS || !(c.dept_id === 0 || dids.has(c.dept_id)) || c.lessons.some(l => !Number.isInteger(l.year) || !Number.isInteger(l.no) || LESSON_KEYS.some(k => typeof l[k] !== 'string' || l[k].length > FIELD_MAX[k]))) bad('교재');
@@ -93,7 +94,7 @@ export function normalizeState(j) {
     j.depts.splice(at >= 0 ? at + 1 : j.depts.length, 0, { id, name: '중고등부', kind: 'teen' });
   }
   j.teenAdded = true; // 사용자가 중고등부를 지운 뒤에 다시 생기지 않게
-  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth', 'docs', 'orders', 'sermons', 'shelf']) j[k] = j[k] || [];
+  for (const k of ['schedules', 'visits', 'assets', 'links', 'todos', 'curricula', 'growth', 'docs', 'orders', 'sermons', 'shelf', 'scheduleTypes']) j[k] = j[k] || [];
   j.deptCfg = j.deptCfg || {};
   return j;
 }
@@ -123,7 +124,7 @@ export function createStore(storage, today = kstToday) {
   }
   load();
   // 불러오기 실패 복구: 검사에 걸리는 선택 항목(목록)만 비우고 열 수 있는지 시험한다. 이 함수는 저장하지 않는다.
-  const SALVAGE = { docs: '행정 문서', orders: '예배 순서지', sermons: '설교 노트', shelf: '주석 서가', curricula: '교재', growth: '주간 체크', schedules: '일정', visits: '심방 기록', assets: '비품', links: '내 사이트', todos: '할 일', supplies: '준비물', deptCfg: '부서 설정' };
+  const SALVAGE = { docs: '행정 문서', orders: '예배 순서지', sermons: '설교 노트', shelf: '주석 서가', scheduleTypes: '일정 구분', curricula: '교재', growth: '주간 체크', schedules: '일정', visits: '심방 기록', assets: '비품', links: '내 사이트', todos: '할 일', supplies: '준비물', deptCfg: '부서 설정' };
   function salvageRaw(raw) {
     let j; try { j = JSON.parse(raw); } catch { return null; }
     if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
@@ -421,8 +422,18 @@ export function createStore(storage, today = kstToday) {
       save(); return gone.size;
     },
     // ----- 일정(교사 기도회·회의 등. 예배·행사와 별도) -----
+    // 일정 구분: 기본 목록 + 내가 추가한 구분(최대 30개, 20자). 기본 구분은 지울 수 없다.
+    scheduleTypes() { const base = SCHEDULE_TYPES.filter(x => x !== '기타'); return [...base, ...(S.scheduleTypes || []), '기타']; },
+    customScheduleTypes: () => (S.scheduleTypes || []).slice(),
+    addScheduleType(name) {
+      const n = String(name || '').replace(/\s+/g, ' ').trim(); if (!n) throw new ValidationError('구분 이름을 입력하세요.'); if (n.length > 20) throw new ValidationError('구분 이름은 20자까지예요.');
+      if (api.scheduleTypes().includes(n)) return n; S.scheduleTypes = S.scheduleTypes || []; if (S.scheduleTypes.length >= 30) throw new ValidationError('내 구분은 30개까지 만들 수 있어요. 안 쓰는 것을 지워 주세요.');
+      S.scheduleTypes.push(n); save(); return n;
+    },
+    removeScheduleType(name) { S.scheduleTypes = (S.scheduleTypes || []).filter(x => x !== name); save(); },
     saveSchedule(s) {
-      const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '일정 이름'), type: SCHEDULE_TYPES.includes(s.type) ? s.type : '기타', date: reqDate(s.date), time: s.time || '', place: s.place || '', note: s.note || '', end: s.end ? reqDate(s.end, '끝나는 날') : '' };
+      const prev = s.id ? (S.schedules || []).find(x => x.id === s.id) : null; // 고치는 일정은 지금 구분(지운 내 구분 포함)을 유지할 수 있다
+      const rec = { dept_id: Number(s.dept_id), title: reqText(s.title, '일정 이름'), type: api.scheduleTypes().includes(s.type) || (prev && prev.type === s.type) ? s.type : '기타', date: reqDate(s.date), time: s.time || '', place: s.place || '', note: s.note || '', end: s.end ? reqDate(s.end, '끝나는 날') : '' };
       if (rec.end && rec.end < rec.date) throw new ValidationError('끝나는 날이 시작보다 앞서요.'); if (rec.end === rec.date) rec.end = '';
       if (!dept(rec.dept_id)) throw new ValidationError('부서를 선택하세요.');
       S.schedules = S.schedules || [];
@@ -438,7 +449,7 @@ export function createStore(storage, today = kstToday) {
         if (!dept(Number(it.dept_id))) throw new ValidationError(`${n}: 부서를 선택하세요.`);
         const title = reqText(it.title, `${n} 이름`); if (title.length > 80) throw new ValidationError(`${n}: 이름이 너무 길어요.`);
         const date = reqDate(it.date, `${n} 날짜`); const end = it.end ? reqDate(it.end, `${n} 끝 날짜`) : date; if (end < date) throw new ValidationError(`${n}: 끝 날짜가 시작보다 빨라요.`);
-        return { kind, dept_id: Number(it.dept_id), title, date, end, time: /^\d{2}:\d{2}$/.test(it.time || '') ? it.time : '', type: SCHEDULE_TYPES.includes(it.type) ? it.type : '기타', scripture: String(it.scripture || '').slice(0, 60) };
+        return { kind, dept_id: Number(it.dept_id), title, date, end, time: /^\d{2}:\d{2}$/.test(it.time || '') ? it.time : '', type: api.scheduleTypes().includes(it.type) ? it.type : '기타', scripture: String(it.scripture || '').slice(0, 60) };
       });
       S.schedules = S.schedules || []; const snap = JSON.stringify(S); const made = { event: 0, schedule: 0, service: 0 }; let skipped = 0;
       try {
