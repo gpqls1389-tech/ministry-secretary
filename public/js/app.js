@@ -32,6 +32,7 @@ import { ADMIN_CATS, ADMIN_FORMS, formByKey, formBlocks, blocksText, blankValues
 import { buildHwpx, HWPX_BASE_FILES } from './hwpx.js';
 import { orderTimes, orderTotal, parseOrderText } from './order.js';
 import * as WS from './worship.js';
+import * as SMN from './sermon.js';
 import { makeReceiptStore, compressImage } from './receipts.js';
 import { parsePlanLines, guessScheduleType } from './planparse.js';
 import { RESOURCES, RESOURCE_CATEGORIES, RESOURCES_CHECKED } from './resources.js';
@@ -158,8 +159,8 @@ function paintSeason() {
   el.title = `오늘(${t})의 교회력 · 감리회 성서일과 기준 자동 계산`;
 }
 function render() {
-  flushWorship();
-  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
+  flushWorship(); flushSermon();
+  const [view, id] = (location.hash || '#home').slice(1).split('/'); const base = view === 'event' || view === 'guides' || view === 'season' ? 'events' : view === 'service' || view === 'worship' || view === 'sermon' || view === 'curricula' || view === 'curriculum' || view === 'brief' ? 'services' : view === 'schedule' || view === 'annual' ? 'plan' : view === 'asset' || view === 'assets' || view === 'doc' ? 'admin' : view === 'report' ? 'money' : view === 'handover' ? 'settings' : view === 'post' || view === 'dm' || view === 'chat' ? 'community' : view;
   $('#nav').innerHTML = NAV.filter(n => !(GUEST && n[0] === 'community')).map(([k, ico, l]) => `<a data-go="#${k}" class="${base === k ? 'on' : ''}"><span class="ico">${IC[NAV_ICON[k] || k] || ico}</span>${l}${k === 'community' && UI.commUnread ? `<span class="navbadge" aria-label="새 글·댓글">${UI.commUnread > 99 ? '99+' : UI.commUnread}</span>` : ''}</a>`).join('');
   $('#dept-box').innerHTML = [...store.depts().map(d => [String(d.id), d.name, 'dk-' + dk(d.id)]), ['all', '전체', 'dk-all']].map(([v, l, c]) => `<button data-dept="${v}" class="${c}${UI.dept === v ? ' on' : ''}">${esc(l)}</button>`).join('');
   paintAcct();
@@ -167,7 +168,7 @@ function render() {
   document.body.dataset.theme = UI.dept === 'all' ? 'all' : ({ kid: 'kid', teen: 'teen', youth: 'youth' }[dk(did())] || 'all'); // 아동부 노랑 · 중고등부 빨강 · 청년부 파랑 · 전체 초록
   const bar = $('#demo-bar'); const demo = store.get().demo;
   bar.hidden = !GUEST && !demo && !window.__memOnly; bar.innerHTML = GUEST ? '게스트 모드 — 가상 데이터로 둘러보는 중이에요. 입력한 내용은 저장되지 않고, 새로고침하거나 창을 닫으면 사라져요. <button class="sm" data-act="guestLogin">로그인하기</button>' : window.__memOnly ? '이 브라우저는 저장을 허용하지 않아 입력한 내용이 창을 닫으면 사라집니다.' : '가상 데이터로 체험 중입니다. 설정에서 ‘실제 데이터로 시작’을 누르면 비어 있는 상태로 시작합니다.';
-  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
+  const V = { home: vHome, plan: vPlan, events: vEvents, event: vEvent, services: vServices, service: vService, worship: vWorship, sermon: vSermon, schedule: vSchedule, assets: vAssets, asset: vAsset, admin: vAdmin, doc: vDoc, report: vReport, annual: vAnnual, ministry: vMinistry, curricula: vCurricula, curriculum: vCurriculum, resources: vResources, guides: vGuides, season: vSeason, people: vPeople, money: vMoney, settings: vSettings, handover: vHandover, brief: vBrief, community: vCommunity, post: vPost, dm: vDm, chat: vChat, 'login-preview': vLoginPreview }[view] || vHome;
   $('#main').innerHTML = ''; V(id ? Number(id) : null); document.body.classList.remove('nav-open');
   $('#crumb').textContent = (NAV.find(n => n[0] === base) || NAV[0])[2] + (UI.dept === 'all' ? '' : ' · ' + (store.dept(did()) || {}).name);
   a11yPass();
@@ -426,7 +427,7 @@ function vServices() {
   const nextSv = store.services(did()).filter(s => s.date >= today()).sort((a, b) => a.date.localeCompare(b.date) || String(a.time).localeCompare(String(b.time)))[0];
   const nextSvHtml = nextSv ? (() => { const ci = churchInfo(nextSv.date); const n = Math.round((Date.parse(nextSv.date + 'T00:00:00Z') - Date.parse(today() + 'T00:00:00Z')) / 864e5); const miss = [!nextSv.scripture ? '성경 본문' : '', !nextSv.sermon_title ? '설교 제목' : '', !String(nextSv.order_text || '').trim() ? '순서' : ''].filter(Boolean);
     return `<a class="nextsv noprint" href="#service/${nextSv.id}" style="--lc:${LITU_HEX[ci.color] || '#3f9d5f'}"><span class="dd">${n === 0 ? '오늘' : 'D-' + n}</span><span class="sp"><b>${esc(nextSv.title)}</b><span>${esc(md(nextSv.date))} ${esc(nextSv.time || '')} · ${esc(churchLabel(nextSv.date))}${nextSv.sermon_title ? ' · ' + esc(nextSv.sermon_title) : ''}</span>${miss.length ? `<span class="miss">비어 있는 항목: ${miss.join(', ')}</span>` : ''}</span><span class="go">예배 열기</span></a>`; })() : '';
-  page('⛪', '예배', `${yearSel()}`, `${nextSvHtml}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button><button data-go="#worship">🧩 예배 순서지</button><button data-act="briefNext">🧑‍🏫 이번 주 교사 브리핑</button><button data-act="familyNext">📣 가정 메시지</button><button data-go="#curricula">📚 교재·공과 연간 배치</button><button class="ghost" data-act="pdfServices">PDF에서 가져오기</button></div>${attPts.length >= 2 ? '<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>출석 추이</h3><span class="sub">출석을 기록한 정기예배 최근 ' + attPts.length + '회' + (UI.dept === 'all' ? ' · 같은 날 예배는 합계' : '') + '</span></div><div class="cardb"><div id="attchart"></div><details class="noprint" style="margin-top:8px"><summary class="small">표로 보기</summary><table class="t"><thead><tr><th>날짜</th><th class="num">출석(명)</th></tr></thead><tbody>' + attPts.map(p => '<tr><td>' + md(p.date) + '</td><td class="num">' + p.value + '</td></tr>').join('') + '</tbody></table></details></div></section>' : ''}<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>교회력</th><th>부서</th><th>설교 제목</th><th class="hide-sm">공과</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="hide-sm small">${s.lesson ? esc(lessonLabel(s.lesson)) : s.lesson_hold ? '<span class="tag warn">공과 쉼</span>' : ''}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="7">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 예배 순서가 채워지고, ‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
+  page('⛪', '예배', `${yearSel()}`, `${nextSvHtml}<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="newService">+ 새 예배</button><button data-go="#worship">🧩 예배 순서지</button><button data-go="#sermon">✍️ 설교 작업대</button><button data-act="briefNext">🧑‍🏫 이번 주 교사 브리핑</button><button data-act="familyNext">📣 가정 메시지</button><button data-go="#curricula">📚 교재·공과 연간 배치</button><button class="ghost" data-act="pdfServices">PDF에서 가져오기</button></div>${attPts.length >= 2 ? '<section class="box" style="margin-bottom:16px"><div class="cardh"><h3>출석 추이</h3><span class="sub">출석을 기록한 정기예배 최근 ' + attPts.length + '회' + (UI.dept === 'all' ? ' · 같은 날 예배는 합계' : '') + '</span></div><div class="cardb"><div id="attchart"></div><details class="noprint" style="margin-top:8px"><summary class="small">표로 보기</summary><table class="t"><thead><tr><th>날짜</th><th class="num">출석(명)</th></tr></thead><tbody>' + attPts.map(p => '<tr><td>' + md(p.date) + '</td><td class="num">' + p.value + '</td></tr>').join('') + '</tbody></table></details></div></section>' : ''}<div class="tablewrap"><table class="t"><thead><tr><th>날짜</th><th>예배</th><th>교회력</th><th>부서</th><th>설교 제목</th><th class="hide-sm">공과</th><th class="num">출석</th></tr></thead><tbody>${list.map(s => { const c = store.attendanceCount(s.id); return `<tr class="link" data-open="service/${s.id}"><td>${md(s.date)} <span class="mute small">${esc(s.time)}</span></td><td><b>${esc(s.title)}</b> ${s.kind === 'special' ? '<span class="tag warn">특별</span>' : ''}</td><td><span class="lcdot" style="background:${churchInfo(s.date).colorHex}"></span>${esc(churchLabel(s.date))}</td><td>${deptTag(s.dept_id)}</td><td>${esc(s.sermon_title)}</td><td class="hide-sm small">${s.lesson ? esc(lessonLabel(s.lesson)) : s.lesson_hold ? '<span class="tag warn">공과 쉼</span>' : ''}</td><td class="num">${c.recorded ? c.present + '명' : '<span class="mute">미기록</span>'}</td></tr>`; }).join('') || `<tr><td colspan="7">${emptyState(others > 0 ? '이 해에는 예배가 없어요' : '아직 예배가 없어요', others > 0 ? `다른 해에 예배가 ${others}개 있어요. 위에서 연도를 바꿔 보세요.` : '예배를 만들고 눌러서 출석을 체크해요. ‘예시로 시작’을 고르면 예배 순서가 채워지고, ‘반복’을 매주로 하면 한 해 주일예배를 한 번에 만들 수 있어요.', '<button class="sm pri" data-act="newService">+ 예배 만들기</button>')}</td></tr>`}</tbody></table></div>`);
   if (attPts.length >= 2) lineChart(document.getElementById('attchart'), attPts, { label: '출석', color: getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#2f7d4f' });
 }
 const AT = { cls: '', q: '', id: null };
@@ -440,7 +441,7 @@ function vService(id) {
   const s = store.service(id); if (!s) { page('⛪', '예배', '', '<div class="callout bad">예배를 찾을 수 없습니다.</div>'); return; }
   const people = store.people({ deptId: s.dept_id }); const classes = [...new Set(people.map(p => p.class_name).filter(Boolean))]; const att = new Map(store.get().attendance.filter(a => a.service_id === id).map(a => [a.person_id, a.present]));
   if (AT.id !== id) { AT.id = id; AT.q = ''; } const shown = inClass(people, AT.cls); const vis = visiblePeople(people, AT); const visIds = new Set(vis.map(p => p.id)); const c = store.attendanceCount(id);
-  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button class="pri" data-act="toAtt">✅ 출석 체크로</button><button data-act="orderEdit" data-id="${id}">🧩 순서 짜기</button><button data-go="#brief/${id}">🧑‍🏫 교사 브리핑</button><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><details class="more"><summary>더 보기 ▾</summary><div class="menu"><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><button data-act="print">인쇄</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button class="dng" data-act="delService" data-id="${id}">예배 삭제</button></div></details></div>
+  page('⛪', s.title, `${deptTag(s.dept_id)} ${md(s.date)} ${esc(s.time)} ${esc(s.place)} · ${esc(churchLabel(s.date))}`, `<div class="row noprint"><button data-go="#services">◀ 목록</button><button class="pri" data-act="toAtt">✅ 출석 체크로</button><button data-act="orderEdit" data-id="${id}">🧩 순서 짜기</button><button data-act="sermonForService" data-id="${id}">✍️ 설교 준비</button><button data-go="#brief/${id}">🧑‍🏫 교사 브리핑</button><button data-act="familyMsg" data-id="${id}">📣 가정 메시지</button><details class="more"><summary>더 보기 ▾</summary><div class="menu"><button data-act="editService" data-id="${id}">수정</button><button data-act="cloneService" data-id="${id}">다음 예배로 복제</button><button data-act="notice" data-kind="service" data-id="${id}">안내 문구</button><button data-act="print">인쇄</button>${store.seriesCount('service', id) > 1 ? `<button data-act="delSeries" data-kind="service" data-id="${id}">이 날짜부터 반복 ${store.seriesCount('service', id)}개 삭제</button>` : ''}<button class="dng" data-act="delService" data-id="${id}">예배 삭제</button></div></details></div>
   <section class="svhero" style="--lc:${LITU_HEX[churchInfo(s.date).color] || '#3f9d5f'}"><div class="lc"><span class="lcdot" style="background:var(--lc)"></span>${esc(churchLabel(s.date))} <span class="mute small">(자동 계산 · 전례 색 ${esc(churchInfo(s.date).color)})</span></div><div class="sv-main"><div><div class="k">성경 본문</div><div class="v">${esc(s.scripture) || '<span class="mute">미정</span>'}</div></div><div><div class="k">설교 제목</div><div class="v">${esc(s.sermon_title) || '<span class="mute">미정</span>'}</div></div></div></section>
   ${lessonBlock(s)}
   ${growthBlock(s)}
@@ -956,6 +957,92 @@ function paintBlocks() {
   paintTimes();
 }
 
+// ----- 설교 작업대(MB12.18) -----
+const SM = { sm: null, timer: null, tab: 'text' };
+const SM_TABS = [['text', '① 본문'], ['study', '② 연구'], ['core', '③ 핵심'], ['struct', '④ 구조'], ['check', '⑤ 점검'], ['doc', '원고']];
+function saveSermon() {
+  if (!SM.sm) return; const el = $('#ssave');
+  if (!String(SM.sm.title).trim()) { if (el) el.textContent = '제목을 적으면 저장돼요'; return; }
+  try { store.saveSermon(SM.sm); if (el) el.textContent = '✓ 저장됨'; } catch (e) { if (el) el.textContent = ''; toast(e.message, true); }
+}
+function flushSermon() { if (SM.timer) { clearTimeout(SM.timer); SM.timer = null; saveSermon(); } }
+function queueSermon() { const el = $('#ssave'); if (el) el.textContent = '저장 중…'; clearTimeout(SM.timer); SM.timer = setTimeout(() => { SM.timer = null; saveSermon(); }, 500); }
+window.addEventListener('pagehide', flushSermon);
+
+function vSermon(id) {
+  if (!id) return vSermonList();
+  const o = store.sermon(id); if (!o) { page('✍️', '설교 노트를 찾을 수 없어요', '', '<div class="row"><button data-go="#sermon">◀ 목록</button></div>'); return; }
+  SM.sm = JSON.parse(JSON.stringify(o)); drawSermon();
+}
+function vSermonList() {
+  const list = store.sermons(did());
+  const card = o => { const sv = o.service_id ? store.service(o.service_id) : null; const ac = SMN.autoChecks(o).filter(c => c.ok !== null); const done = ac.filter(c => c.ok).length;
+    return `<section class="box wcard"><div class="cardh"><h3><a href="#sermon/${o.id}">${esc(o.title)}</a></h3>${deptTag(o.dept_id)}</div>
+      <p class="small mute">${esc(o.scripture || '본문 미정')} · ${SMN.AUDIENCES[o.audience]}${o.season ? ' · ' + esc(o.season) : ''}${o.minutes ? ` · 목표 ${o.minutes}분` : ''}<br>점검 ${done}/${ac.length} · 직접 확인 ${SMN.manualDone(o)}/${SMN.MANUAL_CHECKS.length} · 수정 ${esc(o.updated || '')}${sv ? ` · 🔗 ${md(sv.date)} ${esc(sv.title)}` : ''}</p>
+      <div class="row"><button class="sm pri" data-act="sermonOpen" data-id="${o.id}">열기</button><button class="sm" data-act="sermonDupList" data-id="${o.id}">복제</button><span class="sp"></span><button class="sm dng" data-act="sermonDelList" data-id="${o.id}">삭제</button></div></section>`; };
+  page('✍️', '설교 작업대', `${UI.dept === 'all' ? '모든 부서' : deptTag(did())} 본문 → 연구 → 핵심 → 구조 → 점검 순서로 설교를 준비해요. 대신 써 주지 않고, 생각을 붙잡아 줘요.`,
+    `<div class="row noprint" style="margin-bottom:12px"><button class="pri" data-act="sermonNew">+ 새 설교 노트</button><button data-go="#services">◀ 예배</button><button data-go="#worship">🧩 예배 순서지</button></div>
+    ${list.length ? `<div class="wcards">${list.map(card).join('')}</div>` : '<section class="box"><p>아직 설교 노트가 없어요. ‘+ 새 설교 노트’에서 정식 설교·이야기식·짧은 말씀·대림성탄 틀을 골라 시작할 수 있어요. 예배 화면의 ‘설교 준비’를 눌러도 그 예배에 연결된 노트가 만들어져요.</p></section>'}`);
+}
+function drawSermon() {
+  const sm = SM.sm; const svs = store.services(sm.dept_id).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+  const sel = (id, opts, v) => `<select id="${id}">${opts.map(([a, b]) => `<option value="${esc(a)}"${String(a) === String(v) ? ' selected' : ''}>${esc(b)}</option>`).join('')}</select>`;
+  const ta = (path, label, ph, rows = 4, max = 3000) => `<label class="f">${label}<textarea data-s="${path}" rows="${rows}" maxlength="${max}" placeholder="${esc(ph)}">${esc(path.split('.').reduce((o, k) => o[k], sm))}</textarea></label>`;
+  const panels = {
+    text: `<div class="wmetag"><label class="f wfull">설교 제목<input data-s="title" maxlength="80" value="${esc(sm.title)}"></label>
+      <label class="f wfull">본문 (장·절)<input data-s="scripture" maxlength="60" value="${esc(sm.scripture)}" placeholder="예: 누가복음 2:1-7"><span class="hint">개역개정 본문은 직접 확인해서 옮겨 적어요. 앱은 본문을 대신 쓰지 않아요.</span></label>
+      <label class="f">대상${sel('s-aud', Object.entries(SMN.AUDIENCES), sm.audience)}</label><label class="f">목표 시간(분)<input data-s="minutes" type="number" min="0" max="120" inputmode="numeric" value="${sm.minutes || ''}"></label>
+      <label class="f">절기${sel('s-season', SMN.SEASONS.map(s => [s, s || '해당 없음']), sm.season)}</label><label class="f">부서${sel('s-dept', deptOpts(), sm.dept_id)}</label>
+      <label class="f wfull">연결할 예배${sel('s-svc', [['', '연결 안 함'], ...svs.map(x => [x.id, `${md(x.date)} ${x.title}`])], sm.service_id ?? '')}<span class="hint">연결하면 그 예배의 본문·설교 제목이 비어 있을 때 채워 줘요.</span></label></div>
+      <p class="small">절기 참고: ${esc(churchLabel(today()))} (오늘 기준)</p>`,
+    study: ta('study.context', '문맥 — 앞뒤 본문은 무엇을 말하나요?', '앞 단락과 뒷 단락, 책 전체에서의 자리') + ta('study.words', '핵심 단어·표현', '반복되는 낱말, 번역이 갈리는 곳(원어는 확인한 것만)') + ta('study.background', '배경 — 역사·문화·기록된 상황', '본문에 있는 내용과 전승·추정은 나눠 적어 두세요') + ta('study.sources', '참고 자료·출처', '책·주석·논문의 제목, 저자, 쪽수. 예화·통계의 출처도 여기에', 5, 1500),
+    core: ta('core.idea', '전하려는 한 문장', '이 설교가 한 문장이라면?', 2, 400) + ta('core.apply', '적용 한 가지', '이번 주에 할 수 있는 한 가지 응답', 2, 400) + ta('core.question', '듣는 이의 질문', '이 본문 앞에서 듣는 이가 품을 만한 질문', 2, 400) + '<p class="mute small">한 문장이 구조의 모든 블록을 끌고 가는지 ④ 구조에서 확인해 보세요.</p>',
+    struct: `<div class="row noprint" style="margin-bottom:8px"><label class="small">틀 ${sel('s-struct', Object.entries(SMN.STRUCTURES).map(([k, v]) => [k, v.name]), 'three')}</label><button class="sm" data-sm="applyStruct">틀로 바꾸기</button><span class="sp"></span><b id="ssum"></b></div><div id="slist" class="wlist" role="list"></div><div class="row noprint" style="margin-top:10px"><button class="pri" data-sm="addBlock">+ 블록 추가</button></div>`,
+    check: '<div id="scheck"></div>', doc: '<div id="sdoc"></div>',
+  };
+  page('✍️', '설교 작업대', `${deptTag(sm.dept_id)} 고치는 즉시 저장돼요. <span class="mute small" id="ssave"></span>`,
+    `<nav class="stabs noprint" role="tablist">${SM_TABS.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" class="${SM.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
+    <div id="spanels">${SM_TABS.map(([k]) => `<section class="box spanel${SM.tab === k ? ' on' : ''}" data-panel="${k}">${panels[k]}</section>`).join('')}</div>`,
+    `<button data-go="#sermon">◀ 목록</button><button data-act="sermonCopy">글로 복사</button><button data-act="print">인쇄</button><button data-act="sermonDup">복제</button><button class="dng" data-act="sermonDel">삭제</button>`);
+  paintSBlocks(); paintSCheck(); paintSDoc();
+  const root = $('#spanels'); const setPath = (path, v) => { const ks = path.split('.'); let o = sm; while (ks.length > 1) o = o[ks.shift()]; o[ks[0]] = v; };
+  root.addEventListener('input', e => { const el = e.target; if (el.dataset.s) { setPath(el.dataset.s, el.dataset.s === 'minutes' ? Math.max(0, Math.min(120, Math.round(Number(el.value) || 0))) : el.value); queueSermon(); } });
+  root.addEventListener('change', e => { const m = { 's-aud': 'audience', 's-season': 'season' }[e.target.id]; if (m) { sm[m] = e.target.value; queueSermon(); } else if (e.target.id === 's-dept') { sm.dept_id = Number(e.target.value); sm.service_id = null; queueSermon(); drawSermon(); } else if (e.target.id === 's-svc') { sm.service_id = e.target.value ? Number(e.target.value) : null; queueSermon(); } });
+  $('.stabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (!b) return; SM.tab = b.dataset.tab; $$('.stabs button').forEach(x => x.classList.toggle('on', x === b)); $$('.spanel').forEach(x => x.classList.toggle('on', x.dataset.panel === SM.tab)); if (SM.tab === 'check') paintSCheck(); if (SM.tab === 'doc') paintSDoc(); });
+  $('#scheck').addEventListener('change', e => { const k = e.target.dataset.ck; if (!k) return; if (e.target.checked) sm.checks[k] = true; else delete sm.checks[k]; paintSCheck(); queueSermon(); });
+  const list = $('#slist');
+  SMN_enableDrag(list, (from, to) => { sm.blocks = WS.moveBlock(sm.blocks, from, to); paintSBlocks(); queueSermon(); });
+  list.addEventListener('input', e => { const el = e.target.closest('[data-f]'); const b = el && sm.blocks[Number(el.closest('.wblk').dataset.i)]; if (!b) return; b[el.dataset.f] = el.dataset.f === 'min' ? Math.max(0, Math.min(120, Math.round(Number(el.value) || 0))) : el.value; if (el.dataset.f === 'min') paintSSum(); queueSermon(); });
+  list.addEventListener('keydown', e => { const bl = e.target.closest('.wblk'); if (bl && e.target.classList.contains('whandle') && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); const i = Number(bl.dataset.i); sMove(i, i + (e.key === 'ArrowUp' ? -1 : 1), true); } });
+  list.addEventListener('click', async e => {
+    const b = e.target.closest('button[data-w]'); if (!b) return; const i = Number(b.closest('.wblk').dataset.i); const x = sm.blocks[i];
+    if (b.dataset.w === 'up') sMove(i, i - 1); else if (b.dataset.w === 'down') sMove(i, i + 1);
+    else if (b.dataset.w === 'del') { if (x.memo.trim() && !(await ask(`‘${x.title || '이 블록'}’을 지울까요? 적어 둔 내용도 함께 지워져요.`, '지우기'))) return; sm.blocks.splice(i, 1); paintSBlocks(); queueSermon(); }
+  });
+  $('[data-panel=struct]').addEventListener('click', async e => {
+    const b = e.target.closest('[data-sm]'); if (!b) return;
+    if (b.dataset.sm === 'addBlock') { if (sm.blocks.length >= SMN.BLOCK_MAX) { toast(`블록은 ${SMN.BLOCK_MAX}개까지예요.`, true); return; } sm.blocks.push(SMN.newBlock('', 0)); paintSBlocks(); queueSermon(); const t = $$('#slist [data-f=title]').pop(); if (t) t.focus(); }
+    else if (b.dataset.sm === 'applyStruct') { if (sm.blocks.some(x => x.memo.trim()) && !(await ask('지금 적은 블록 내용이 사라지고 선택한 틀로 바뀌어요. 바꿀까요?', '바꾸기'))) return; sm.blocks = SMN.starterBlocks($('#s-struct').value); paintSBlocks(); queueSermon(); }
+  });
+}
+function SMN_enableDrag(list, cb) { WS.enableDrag(list, cb); }
+function sMove(i, to, keepFocus) {
+  const sm = SM.sm; if (to < 0 || to >= sm.blocks.length) return; sm.blocks = WS.moveBlock(sm.blocks, i, to); paintSBlocks(); queueSermon();
+  const el = $(`#slist .wblk[data-i="${to}"]`); if (el && keepFocus) $('.whandle', el).focus();
+}
+function paintSSum() { const sm = SM.sm; const tot = SMN.totalMin(sm.blocks); const at = SMN.blockTimes(sm.blocks); $$('#slist .wat').forEach(el => { el.textContent = `${at[Number(el.dataset.i)]}분째`; }); const s = $('#ssum'); if (s) s.textContent = `블록 ${sm.blocks.length}개 · 합계 ${tot}분${sm.minutes ? ` / 목표 ${sm.minutes}분` : ''}`; }
+function paintSBlocks() {
+  const sm = SM.sm; const list = $('#slist'); if (!list) return;
+  list.innerHTML = sm.blocks.length ? sm.blocks.map((b, i) => `<div class="wblk item" data-i="${i}" role="listitem"><button class="whandle noprint" type="button" aria-label="끌어서 순서 바꾸기 (손잡이에서 ↑↓ 키로도 옮겨요)">⠿</button><span class="wno">${i + 1}</span><div class="wbody"><div class="wfields"><label class="wprep" style="flex:2">블록 이름<input data-f="title" value="${esc(b.title)}" maxlength="${SMN.LIMITS.block}" placeholder="예: 첫째 대지"></label><label>분<input data-f="min" type="number" min="0" max="120" inputmode="numeric" value="${b.min || ''}" placeholder="0"></label><span class="wat" data-i="${i}"></span></div><textarea data-f="memo" rows="4" maxlength="${SMN.LIMITS.memo}" placeholder="${esc(b.guide || '이 블록에서 전할 내용 · 원고')}" aria-label="내용">${esc(b.memo)}</textarea>${b.guide ? `<span class="mute small">❓ ${esc(b.guide)}</span>` : ''}</div><div class="wact noprint"><button type="button" data-w="up" aria-label="위로">↑</button><button type="button" data-w="down" aria-label="아래로">↓</button><button type="button" data-w="del" aria-label="지우기">✕</button></div></div>`).join('') : '<div class="wempty">블록이 없어요. 위에서 틀을 고르거나 ‘+ 블록 추가’를 눌러 시작하세요.</div>';
+  paintSSum();
+}
+function paintSCheck() {
+  const sm = SM.sm; const el = $('#scheck'); if (!el) return; const ac = SMN.autoChecks(sm);
+  el.innerHTML = `<h3 style="margin-top:0">자동 점검</h3><ul class="chk">${ac.map(c => `<li class="${c.ok === true ? 'ok' : c.ok === false ? 'no' : 'na'}"><span class="mk" aria-hidden="true">${c.ok === true ? '✓' : c.ok === false ? '✗' : '–'}</span><span><b>${esc(c.label)}</b>${c.detail ? `<br><span class="mute small">${esc(c.detail)}</span>` : ''}</span></li>`).join('')}</ul>
+    <h3>직접 확인 <span class="mute small">${SMN.manualDone(sm)}/${SMN.MANUAL_CHECKS.length}</span></h3><p class="mute small">앱이 알 수 없는 점검이에요. 확인한 것만 체크하세요.</p>${SMN.MANUAL_CHECKS.map(([k, l]) => `<label class="ckrow"><input type="checkbox" data-ck="${k}"${sm.checks[k] ? ' checked' : ''}> ${esc(l)}</label>`).join('')}`;
+}
+function paintSDoc() { const el = $('#sdoc'); if (el) el.innerHTML = `<pre class="sdoc">${esc(SMN.sermonText(SM.sm))}</pre><p class="mute small noprint">성경 본문 글귀는 원고에 들어가지 않아요(장·절만 표시). 인쇄 전에 본문을 개역개정에서 확인해 붙여 넣으세요.</p>`; }
+
 // ----- 행정: 서식·연간 계획서·추천·비품 -----
 let HWPX_BASE = null;
 async function downloadHwpx(title, blocks) {
@@ -1217,6 +1304,25 @@ const ACT = {
     }
     const id = store.orderForService(sid, blocks); location.hash = '#worship/' + id;
   },
+  sermonForService: d => { const sid = Number(d.id); const s = store.service(sid); if (!s) return; const have = store.sermonOfService(sid); const lbl = churchLabel(s.date); const key = /성탄|대림/.test(lbl) ? 'advent' : ({ kid: 'short', teen: 'short' }[dk(s.dept_id)] || 'three'); location.hash = '#sermon/' + (have ? have.id : store.sermonForService(sid, SMN.starterBlocks(key))); },
+  sermonOpen: d => { location.hash = '#sermon/' + Number(d.id); },
+  sermonNew: () => {
+    const svs = store.services(workDept()).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
+    form({ title: '새 설교 노트', submit: '만들고 열기', fields: [
+      { k: 'title', label: '설교 제목', req: true }, { k: 'scripture', label: '본문 (장·절)', ph: '예: 누가복음 2:1-7', hint: '개역개정 본문은 직접 확인해 주세요.' },
+      { k: 'structure', label: '시작 틀', type: 'select', options: Object.entries(SMN.STRUCTURES).map(([k, v]) => [k, v.name]), def: 'three' },
+      { k: 'audience', label: '대상', type: 'select', options: Object.entries(SMN.AUDIENCES), def: 'all' }, { k: 'minutes', label: '목표 시간(분)', type: 'number' },
+      { k: 'season', label: '절기', type: 'select', options: SMN.SEASONS.map(x => [x, x || '해당 없음']) },
+      { k: 'dept_id', label: '부서', type: 'select', options: deptOpts(), def: workDept() },
+      { k: 'service_id', label: '연결할 예배(선택)', type: 'select', options: [['', '연결 안 함'], ...svs.map(x => [x.id, `${md(x.date)} ${x.title}`])] }],
+      values: { dept_id: workDept(), structure: 'three', audience: 'all' },
+      onSubmit: o => { const id = store.saveSermon({ title: o.title, scripture: o.scripture, audience: o.audience, minutes: o.minutes, season: o.season, dept_id: Number(o.dept_id), service_id: o.service_id, blocks: SMN.starterBlocks(o.structure) }); location.hash = '#sermon/' + id; } });
+  },
+  sermonDupList: d => { const id = store.duplicateSermon(Number(d.id)); toast('복제했어요.'); location.hash = '#sermon/' + id; },
+  sermonDelList: async d => { const o = store.sermon(Number(d.id)); if (o && await ask(`‘${o.title}’ 설교 노트를 지울까요? 되돌릴 수 없어요.`, '삭제')) { store.deleteSermon(o.id); toast('삭제했어요.'); render(); } },
+  sermonDup: () => { flushSermon(); const id = store.duplicateSermon(SM.sm.id); toast('복제했어요. 복제본을 열었어요.'); location.hash = '#sermon/' + id; },
+  sermonDel: async () => { const o = SM.sm; if (o && await ask(`‘${o.title}’ 설교 노트를 지울까요? 되돌릴 수 없어요.`, '삭제')) { clearTimeout(SM.timer); SM.timer = null; store.deleteSermon(o.id); SM.sm = null; toast('삭제했어요.'); location.hash = '#sermon'; } },
+  sermonCopy: async () => { const t = SMN.sermonText(SM.sm); try { await navigator.clipboard.writeText(t); toast('원고를 글로 복사했어요.'); } catch { const d = modal('<div class="dlg"><h3>글로 복사</h3><textarea readonly rows="14" style="width:100%"></textarea><div class="dlg-foot"><button class="pri" data-x>닫기</button></div></div>'); $('textarea', d).value = t; $('[data-x]', d).onclick = () => d.close(); } },
   wfilter: d => { UI.wtype = d.t || ''; render(); },
   orderOpen: d => { location.hash = '#worship/' + Number(d.id); },
   orderNew: () => {
